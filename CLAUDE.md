@@ -13,21 +13,21 @@ $GEV, $PLTR, $APP, $AVGO, $META, $MU, $NVDA, $TSLA, $AMD, $TSM
 ## The Matrix
 For each stock, we evaluate the following 32 data points:
 
-| | 5% | 7% | 10% | 12% |
-|---|---|---|---|---|
-| **Calls (4 week)** | ratio | ratio | ratio | ratio |
-| **Calls (3 week)** | ratio | ratio | ratio | ratio |
-| **Calls (2 week)** | ratio | ratio | ratio | ratio |
-| **Calls (1 week)** | ratio | ratio | ratio | ratio |
-| **Puts (1 week)** | ratio | ratio | ratio | ratio |
-| **Puts (2 week)** | ratio | ratio | ratio | ratio |
-| **Puts (3 week)** | ratio | ratio | ratio | ratio |
-| **Puts (4 week)** | ratio | ratio | ratio | ratio |
+| | 3% | 5% | 7% | 10% | 15% |
+|---|---|---|---|---|---|
+| **Calls (4 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Calls (3 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Calls (2 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Calls (1 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Puts (1 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Puts (2 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Puts (3 week)** | ratio | ratio | ratio | ratio | ratio |
+| **Puts (4 week)** | ratio | ratio | ratio | ratio | ratio |
 
-- **Columns** = strike distance from current stock price: 5%, 7%, 10%, 12%
+- **Columns** = strike distance from current stock price: 3%, 5%, 7%, 10%, 15%
 - **Rows** = expiration timeframe (1, 2, 3, 4 weeks out) for both calls and puts
-- **Total data points per stock**: 32
-- **Total data points across all 10 stocks**: 320
+- **Total data points per stock**: 40
+- **Total data points across all 10 stocks**: 400
 
 ---
 

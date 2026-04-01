@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 TICKERS = ["GEV", "PLTR", "APP", "AVGO", "META", "MU", "NVDA", "TSLA", "AMD", "TSM"]
-DISTANCES = [0.05, 0.07, 0.10, 0.12]
+DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
 
 
 def get_next_fridays(n=4):
@@ -79,18 +79,20 @@ def build_rows(ticker, price, expirations):
 
             # --- CALL ---
             call_target = round(price * (1 + dist), 2)
+            call_actual = None
             call_premium = None
             if calls_df is not None and not calls_df.empty:
-                call_strike = find_closest_strike(list(calls_df.index), call_target)
-                call_row = calls_df.loc[call_strike]
+                call_actual = find_closest_strike(list(calls_df.index), call_target)
+                call_row = calls_df.loc[call_actual]
                 call_premium = get_midpoint(call_row)
 
             # --- PUT ---
             put_target = round(price * (1 - dist), 2)
+            put_actual = None
             put_premium = None
             if puts_df is not None and not puts_df.empty:
-                put_strike = find_closest_strike(list(puts_df.index), put_target)
-                put_row = puts_df.loc[put_strike]
+                put_actual = find_closest_strike(list(puts_df.index), put_target)
+                put_row = puts_df.loc[put_actual]
                 put_premium = get_midpoint(put_row)
 
             rows.append({
@@ -99,9 +101,11 @@ def build_rows(ticker, price, expirations):
                 "Expiration": exp,
                 "Week": week_label,
                 "Dist %": f"{dist_pct}%",
-                "Call Strike": round(price * (1 + dist), 2),
+                "Call Target": call_target,
+                "Call Actual": call_actual,
                 "Call Premium": call_premium,
-                "Put Strike": round(price * (1 - dist), 2),
+                "Put Target": put_target,
+                "Put Actual": put_actual,
                 "Put Premium": put_premium,
             })
 
@@ -109,9 +113,9 @@ def build_rows(ticker, price, expirations):
 
 
 def print_ticker_table(ticker, rows):
-    print(f"\n{'=' * 72}")
+    print(f"\n{'=' * 106}")
     print(f"  {ticker}")
-    print(f"{'=' * 72}")
+    print(f"{'=' * 106}")
 
     if not rows:
         print("  No data.")
@@ -120,17 +124,24 @@ def print_ticker_table(ticker, rows):
     price = rows[0]["Price"]
     print(f"  Current Price: ${price}\n")
 
-    header = f"  {'Week':<8} {'Dist':>5}  {'Call Strike':>12} {'Call Prem':>10}  {'Put Strike':>12} {'Put Prem':>10}"
+    header = (
+        f"  {'Expiration':<12} {'Wk':>3} {'Dist':>5}  "
+        f"{'Call Target':>12} {'Call Actual':>12} {'Call Prem':>10}  "
+        f"{'Put Target':>12} {'Put Actual':>12} {'Put Prem':>10}"
+    )
     print(header)
-    print(f"  {'-' * 66}")
+    print(f"  {'-' * 100}")
 
     for r in rows:
-        call_p = f"${r['Call Premium']:.4f}" if r["Call Premium"] is not None else "  N/A"
-        put_p = f"${r['Put Premium']:.4f}" if r["Put Premium"] is not None else "  N/A"
+        call_actual = f"{r['Call Actual']:.2f}" if r["Call Actual"] is not None else "N/A"
+        put_actual  = f"{r['Put Actual']:.2f}"  if r["Put Actual"]  is not None else "N/A"
+        call_p = f"${r['Call Premium']:.4f}" if r["Call Premium"] is not None else "N/A"
+        put_p  = f"${r['Put Premium']:.4f}"  if r["Put Premium"]  is not None else "N/A"
+        wk = r["Week"].replace("Week ", "W")
         print(
-            f"  {r['Week']:<8} {r['Dist %']:>5}  "
-            f"{r['Call Strike']:>12.2f} {call_p:>10}  "
-            f"{r['Put Strike']:>12.2f} {put_p:>10}"
+            f"  {r['Expiration']:<12} {wk:>3} {r['Dist %']:>5}  "
+            f"{r['Call Target']:>12.2f} {call_actual:>12} {call_p:>10}  "
+            f"{r['Put Target']:>12.2f} {put_actual:>12} {put_p:>10}"
         )
 
 
