@@ -10,7 +10,7 @@ def calculate_ratios(all_rows):
 
         # --- Call ---
         call_delta = r.get("Call Delta")
-        if r["Call Premium"] is not None and r["Call Actual"] is not None and call_delta and call_delta >= 0.01:
+        if r["Call Premium"] is not None and r["Call Actual"] is not None and call_delta and call_delta >= 0.05:
             ratio = (r["Call Premium"] / price) / call_delta
             ranked.append({
                 "Ticker":     r["Ticker"],
@@ -27,7 +27,7 @@ def calculate_ratios(all_rows):
 
         # --- Put ---
         put_delta = r.get("Put Delta")
-        if r["Put Premium"] is not None and r["Put Actual"] is not None and put_delta and put_delta >= 0.01:
+        if r["Put Premium"] is not None and r["Put Actual"] is not None and put_delta and put_delta >= 0.05:
             ratio = (r["Put Premium"] / price) / put_delta
             ranked.append({
                 "Ticker":     r["Ticker"],
@@ -43,13 +43,28 @@ def calculate_ratios(all_rows):
             })
 
     ranked.sort(key=lambda x: x["Ratio"], reverse=True)
-    return ranked
+
+    # Deduplicate: for the same (Ticker, Side, Expiration, Strike), keep lowest Dist %
+    # ranked is sorted by ratio desc; iterate and keep first occurrence per key at lowest dist
+    best = {}  # key -> row with lowest Dist %
+    for r in ranked:
+        key = (r["Ticker"], r["Side"], r["Expiration"], r["Strike"])
+        dist = float(r["Dist %"].rstrip("%"))
+        if key not in best or dist < float(best[key]["Dist %"].rstrip("%")):
+            best[key] = r
+
+    # Rebuild in ratio-descending order, one entry per key
+    deduped = sorted(best.values(), key=lambda x: x["Ratio"], reverse=True)
+    duplicates_removed = len(ranked) - len(deduped)
+    return deduped, duplicates_removed
 
 
-def print_ranked_table(ranked_rows):
+def print_ranked_table(ranked_rows, duplicates_removed=0):
     print(f"\n{'=' * 100}")
     print("  RANKED OPTIONS — Luo Capital")
     print(f"  Algorithm: V2 — Delta Adjusted")
+    print(f"  Minimum delta threshold: 0.05")
+    print(f"  Duplicates removed: {duplicates_removed}")
     print(f"  Run Date: {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 100}")
 
@@ -69,11 +84,11 @@ def print_ranked_table(ranked_rows):
         )
 
     print(f"  {'-' * 94}")
-    print(f"  {len(ranked_rows)} data points ranked.\n")
+    print(f"  {len(ranked_rows)} data points ranked (after deduplication).\n")
 
 
 if __name__ == "__main__":
     print("Fetching options data (silent)...")
     all_rows = fetch_all_rows(verbose=False)
-    ranked = calculate_ratios(all_rows)
-    print_ranked_table(ranked)
+    ranked, dupes = calculate_ratios(all_rows)
+    print_ranked_table(ranked, dupes)
