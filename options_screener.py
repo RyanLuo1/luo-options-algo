@@ -153,8 +153,13 @@ def print_ticker_table(ticker, rows):
         print("  No data.")
         return
 
+    from event_filter import get_earnings_flag
     price = rows[0]["Price"]
-    print(f"  Current Price: ${price}\n")
+    last_expiration = rows[-1]["Expiration"]
+    earnings = get_earnings_flag(ticker, last_expiration)
+    earnings_display = earnings.replace("EARNINGS ", "") if "EARNINGS" in earnings else "None in next 4 weeks"
+    print(f"  Current Price: ${price}")
+    print(f"  Earnings: {earnings_display}\n")
 
     header = (
         f"  {'Expiration':<12} {'Wk':>3} {'Dist':>5}  "
@@ -203,6 +208,8 @@ def fetch_all_rows(verbose=True):
 
 
 def main():
+    from event_filter import load_events
+    load_events()
     fetch_all_rows(verbose=True)
 
 

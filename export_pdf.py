@@ -99,5 +99,5 @@ def generate_pdf(output_path):
 
 
 if __name__ == "__main__":
-    output = "/Users/binkmaster/Desktop/Luo Capital/ranked_options.pdf"
+    output = "/Users/binkmaster/Desktop/Luo Capital/reports/ranked_options.pdf"
     generate_pdf(output)
