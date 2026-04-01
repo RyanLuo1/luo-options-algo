@@ -1,6 +1,8 @@
 import yfinance as yf
 from datetime import datetime, timedelta
 import pandas as pd
+import math
+from scipy.stats import norm
 
 TICKERS = ["GEV", "PLTR", "APP", "AVGO", "META", "MU", "NVDA", "TSLA", "AMD", "TSM"]
 DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
@@ -15,6 +17,23 @@ def get_next_fridays(n=4):
             fridays.append(d.date())
         d += timedelta(days=1)
     return fridays
+
+
+RISK_FREE_RATE = 0.045  # approximate current risk-free rate
+
+
+def black_scholes_delta(S, K, T, sigma, side):
+    """Returns BS delta for a call or put. Returns None if inputs are invalid."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return None
+    try:
+        d1 = (math.log(S / K) + (RISK_FREE_RATE + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        if side == "call":
+            return norm.cdf(d1)
+        else:
+            return abs(norm.cdf(d1) - 1)  # abs of put delta
+    except Exception:
+        return None
 
 
 def find_closest_strike(strikes, target):
@@ -74,6 +93,9 @@ def build_rows(ticker, price, expirations):
         calls_df = chain.calls.set_index("strike") if not chain.calls.empty else None
         puts_df = chain.puts.set_index("strike") if not chain.puts.empty else None
 
+        exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        T = (exp_date - datetime.today().date()).days / 365.0
+
         for dist in DISTANCES:
             dist_pct = int(dist * 100)
 
@@ -81,32 +103,42 @@ def build_rows(ticker, price, expirations):
             call_target = round(price * (1 + dist), 2)
             call_actual = None
             call_premium = None
+            call_delta = None
             if calls_df is not None and not calls_df.empty:
                 call_actual = find_closest_strike(list(calls_df.index), call_target)
                 call_row = calls_df.loc[call_actual]
                 call_premium = get_midpoint(call_row)
+                iv = call_row.get("impliedVolatility", None)
+                if iv and iv == iv and iv > 0.01:  # skip placeholder IV values (e.g. 0.00001)
+                    call_delta = black_scholes_delta(price, call_actual, T, float(iv), "call")
 
             # --- PUT ---
             put_target = round(price * (1 - dist), 2)
             put_actual = None
             put_premium = None
+            put_delta = None
             if puts_df is not None and not puts_df.empty:
                 put_actual = find_closest_strike(list(puts_df.index), put_target)
                 put_row = puts_df.loc[put_actual]
                 put_premium = get_midpoint(put_row)
+                iv = put_row.get("impliedVolatility", None)
+                if iv and iv == iv and iv > 0.01:  # skip placeholder IV values (e.g. 0.00001)
+                    put_delta = black_scholes_delta(price, put_actual, T, float(iv), "put")
 
             rows.append({
-                "Ticker": ticker,
-                "Price": price,
-                "Expiration": exp,
-                "Week": week_label,
-                "Dist %": f"{dist_pct}%",
-                "Call Target": call_target,
-                "Call Actual": call_actual,
+                "Ticker":       ticker,
+                "Price":        price,
+                "Expiration":   exp,
+                "Week":         week_label,
+                "Dist %":       f"{dist_pct}%",
+                "Call Target":  call_target,
+                "Call Actual":  call_actual,
                 "Call Premium": call_premium,
-                "Put Target": put_target,
-                "Put Actual": put_actual,
-                "Put Premium": put_premium,
+                "Call Delta":   call_delta,
+                "Put Target":   put_target,
+                "Put Actual":   put_actual,
+                "Put Premium":  put_premium,
+                "Put Delta":    put_delta,
             })
 
     return rows
@@ -145,21 +177,33 @@ def print_ticker_table(ticker, rows):
         )
 
 
-def main():
-    print("\nOptions Screener — Luo Capital")
-    print(f"Run Date: {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}")
+def fetch_all_rows(verbose=True):
+    if verbose:
+        print("\nOptions Screener — Luo Capital")
+        print(f"Run Date: {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}")
 
+    all_rows = []
     for ticker in TICKERS:
-        print(f"\nFetching {ticker}...")
+        if verbose:
+            print(f"\nFetching {ticker}...")
         price, expirations = fetch_ticker_data(ticker)
         if price is None:
             continue
 
         rows = build_rows(ticker, price, expirations)
-        print_ticker_table(ticker, rows)
+        all_rows.extend(rows)
+        if verbose:
+            print_ticker_table(ticker, rows)
 
-    print(f"\n{'=' * 72}")
-    print("Done.")
+    if verbose:
+        print(f"\n{'=' * 106}")
+        print("Done.")
+
+    return all_rows
+
+
+def main():
+    fetch_all_rows(verbose=True)
 
 
 if __name__ == "__main__":
