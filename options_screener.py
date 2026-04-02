@@ -104,26 +104,38 @@ def build_rows(ticker, price, expirations):
             call_actual = None
             call_premium = None
             call_delta = None
+            call_volume = None
+            call_oi = None
             if calls_df is not None and not calls_df.empty:
                 call_actual = find_closest_strike(list(calls_df.index), call_target)
                 call_row = calls_df.loc[call_actual]
                 call_premium = get_midpoint(call_row)
                 iv = call_row.get("impliedVolatility", None)
-                if iv and iv == iv and iv > 0.01:  # skip placeholder IV values (e.g. 0.00001)
+                if iv and iv == iv and iv > 0.01:
                     call_delta = black_scholes_delta(price, call_actual, T, float(iv), "call")
+                raw_vol = call_row.get("volume", None)
+                raw_oi  = call_row.get("openInterest", None)
+                call_volume = int(raw_vol) if raw_vol is not None and raw_vol == raw_vol else None
+                call_oi     = int(raw_oi)  if raw_oi  is not None and raw_oi  == raw_oi  else None
 
             # --- PUT ---
             put_target = round(price * (1 - dist), 2)
             put_actual = None
             put_premium = None
             put_delta = None
+            put_volume = None
+            put_oi = None
             if puts_df is not None and not puts_df.empty:
                 put_actual = find_closest_strike(list(puts_df.index), put_target)
                 put_row = puts_df.loc[put_actual]
                 put_premium = get_midpoint(put_row)
                 iv = put_row.get("impliedVolatility", None)
-                if iv and iv == iv and iv > 0.01:  # skip placeholder IV values (e.g. 0.00001)
+                if iv and iv == iv and iv > 0.01:
                     put_delta = black_scholes_delta(price, put_actual, T, float(iv), "put")
+                raw_vol = put_row.get("volume", None)
+                raw_oi  = put_row.get("openInterest", None)
+                put_volume = int(raw_vol) if raw_vol is not None and raw_vol == raw_vol else None
+                put_oi     = int(raw_oi)  if raw_oi  is not None and raw_oi  == raw_oi  else None
 
             rows.append({
                 "Ticker":       ticker,
@@ -135,19 +147,23 @@ def build_rows(ticker, price, expirations):
                 "Call Actual":  call_actual,
                 "Call Premium": call_premium,
                 "Call Delta":   call_delta,
+                "Call Volume":  call_volume,
+                "Call OI":      call_oi,
                 "Put Target":   put_target,
                 "Put Actual":   put_actual,
                 "Put Premium":  put_premium,
                 "Put Delta":    put_delta,
+                "Put Volume":   put_volume,
+                "Put OI":       put_oi,
             })
 
     return rows
 
 
 def print_ticker_table(ticker, rows):
-    print(f"\n{'=' * 106}")
+    print(f"\n{'=' * 128}")
     print(f"  {ticker}")
-    print(f"{'=' * 106}")
+    print(f"{'=' * 128}")
 
     if not rows:
         print("  No data.")
@@ -163,22 +179,26 @@ def print_ticker_table(ticker, rows):
 
     header = (
         f"  {'Expiration':<12} {'Wk':>3} {'Dist':>5}  "
-        f"{'Call Target':>12} {'Call Actual':>12} {'Call Prem':>10}  "
-        f"{'Put Target':>12} {'Put Actual':>12} {'Put Prem':>10}"
+        f"{'Call Target':>12} {'Call Actual':>12} {'Call Prem':>10} {'C.Vol':>7} {'C.OI':>7}  "
+        f"{'Put Target':>12} {'Put Actual':>12} {'Put Prem':>10} {'P.Vol':>7} {'P.OI':>7}"
     )
     print(header)
-    print(f"  {'-' * 100}")
+    print(f"  {'-' * 130}")
 
     for r in rows:
         call_actual = f"{r['Call Actual']:.2f}" if r["Call Actual"] is not None else "N/A"
         put_actual  = f"{r['Put Actual']:.2f}"  if r["Put Actual"]  is not None else "N/A"
         call_p = f"${r['Call Premium']:.4f}" if r["Call Premium"] is not None else "N/A"
         put_p  = f"${r['Put Premium']:.4f}"  if r["Put Premium"]  is not None else "N/A"
+        c_vol  = str(r["Call Volume"]) if r["Call Volume"] is not None else "N/A"
+        c_oi   = str(r["Call OI"])     if r["Call OI"]     is not None else "N/A"
+        p_vol  = str(r["Put Volume"])  if r["Put Volume"]  is not None else "N/A"
+        p_oi   = str(r["Put OI"])      if r["Put OI"]      is not None else "N/A"
         wk = r["Week"].replace("Week ", "W")
         print(
             f"  {r['Expiration']:<12} {wk:>3} {r['Dist %']:>5}  "
-            f"{r['Call Target']:>12.2f} {call_actual:>12} {call_p:>10}  "
-            f"{r['Put Target']:>12.2f} {put_actual:>12} {put_p:>10}"
+            f"{r['Call Target']:>12.2f} {call_actual:>12} {call_p:>10} {c_vol:>7} {c_oi:>7}  "
+            f"{r['Put Target']:>12.2f} {put_actual:>12} {put_p:>10} {p_vol:>7} {p_oi:>7}"
         )
 
 

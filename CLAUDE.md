@@ -87,7 +87,8 @@ Ratio = (Premium Collected / Stock Price) / Delta
 ### `ratio_ranker.py`
 - Imports `fetch_all_rows` from `options_screener.py`
 - `calculate_ratios(all_rows)` — computes V2 ratio for every valid call and put, applies delta threshold (≥ 0.05), deduplicates by (Ticker, Side, Expiration, Strike) keeping lowest Dist %, and returns ranked list + duplicate count
-- `print_ranked_table(ranked_rows, duplicates_removed)` — prints the full ranked table with algorithm metadata in the header, including an Event Risk column populated by `get_event_flags()`
+- `print_ranked_table(ranked_rows, duplicates_removed)` — prints the full ranked table with algorithm metadata in the header; column order is Rank, Ticker, Side, Expiration, Wk, Dist, Delta, Strike, Premium, Stock Price, Volume, OI, Ratio, | Earnings
+- Volume values below 10 are highlighted red; OI values below 100 are highlighted red; header notes: `Liquidity: Volume < 10 flagged red, OI < 100 flagged red`
 - Run directly with `python3 ratio_ranker.py` to fetch data and print rankings
 
 ### `event_filter.py`
@@ -109,10 +110,6 @@ Ratio = (Premium Collected / Stock Price) / Delta
 - Handles page breaks automatically via ReportLab Platypus
 - Output filename: `luo_capital_report_YYYY-MM-DD_HHMM.pdf`, saved in the project folder
 
-### `export_pdf.py`
-- Earlier standalone PDF export of the ranked table only (superseded by `report.py`)
-- Uses `reportlab` for PDF generation
-- Output saved to `ranked_options.pdf`
 
 ### `test_v2.py`
 - Standalone tests for the V2 algorithm
