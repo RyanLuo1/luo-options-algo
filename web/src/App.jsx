@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './index.css'
 
 import useOptionsData  from './hooks/useOptionsData'
@@ -9,7 +9,8 @@ import RankedTable     from './components/RankedTable'
 import LoadingSpinner  from './components/LoadingSpinner'
 
 export default function App() {
-  const [tickerInput, setTickerInput] = useState('')
+  const [tickerInput,   setTickerInput]   = useState('')
+  const [activeTickers, setActiveTickers] = useState([])
 
   const {
     marketOpen, lastRun,
@@ -18,6 +19,18 @@ export default function App() {
     loading, error, hasResult,
     runScan,
   } = useOptionsData()
+
+  // When a scan completes, reset the active filter to the full result set
+  useEffect(() => {
+    setActiveTickers(tickersUsed)
+  }, [tickersUsed])
+
+  const filteredRanked = activeTickers.length > 0
+    ? ranked.filter(r => activeTickers.includes(r.ticker))
+    : ranked
+
+  // Re-rank after filter so rank numbers stay contiguous
+  const rerankedFiltered = filteredRanked.map((r, i) => ({ ...r, rank: i + 1 }))
 
   function parseTickers(raw) {
     return raw
@@ -29,6 +42,10 @@ export default function App() {
   function handleRun() {
     const tickers = parseTickers(tickerInput)
     runScan(tickers.length > 0 ? tickers : undefined)
+  }
+
+  function handleRemoveTicker(ticker) {
+    setActiveTickers(prev => prev.filter(t => t !== ticker))
   }
 
   return (
@@ -62,12 +79,13 @@ export default function App() {
         </span>
       </div>
 
-      {/* Tickers used after a successful scan */}
+      {/* Tickers used after a successful scan — dismissible to filter table in real time */}
       {tickersUsed.length > 0 && (
         <Holdings
-          tickers={tickersUsed}
+          tickers={activeTickers}
           skipped={tickersSkipped}
           source={tickersSource}
+          onRemove={handleRemoveTicker}
         />
       )}
 
@@ -78,7 +96,7 @@ export default function App() {
 
         {!loading && !error && (
           hasResult
-            ? <RankedTable rows={ranked} duplicatesRemoved={duplicatesRemoved} />
+            ? <RankedTable rows={rerankedFiltered} duplicatesRemoved={duplicatesRemoved} />
             : <EmptyState />
         )}
       </main>

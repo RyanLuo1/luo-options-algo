@@ -1,4 +1,4 @@
-export default function Holdings({ tickers, skipped, source }) {
+export default function Holdings({ tickers, skipped, source, onRemove }) {
   if (!tickers || tickers.length === 0) return null
 
   return (
@@ -9,9 +9,18 @@ export default function Holdings({ tickers, skipped, source }) {
       {tickers.map(t => (
         <span
           key={t}
-          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium bg-gray-800 text-gray-300 border border-gray-700"
+          className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded text-xs font-mono font-medium bg-gray-800 text-gray-300 border border-gray-700"
         >
           {t}
+          {onRemove && (
+            <button
+              onClick={() => onRemove(t)}
+              className="ml-0.5 text-gray-600 hover:text-red-400 transition-colors leading-none cursor-pointer"
+              title={`Remove ${t}`}
+            >
+              ×
+            </button>
+          )}
         </span>
       ))}
       {skipped && skipped.length > 0 && (
