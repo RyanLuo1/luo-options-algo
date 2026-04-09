@@ -202,13 +202,14 @@ def print_ticker_table(ticker, rows):
         )
 
 
-def fetch_all_rows(verbose=True):
+def fetch_all_rows(verbose=True, tickers=None):
+    tickers = tickers or TICKERS
     if verbose:
         print("\nOptions Screener — Luo Capital")
         print(f"Run Date: {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}")
 
     all_rows = []
-    for ticker in TICKERS:
+    for ticker in tickers:
         if verbose:
             print(f"\nFetching {ticker}...")
         price, expirations = fetch_ticker_data(ticker)
