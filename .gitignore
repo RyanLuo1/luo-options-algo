@@ -1,0 +1,20 @@
+# Credentials
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Robinhood session cache
+*.pickle
+
+# Node
+web/node_modules/
+web/dist/
+
+# PDF reports
+reports/*.pdf

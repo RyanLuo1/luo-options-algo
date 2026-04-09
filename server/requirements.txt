@@ -1,0 +1,17 @@
+# Existing algo deps
+yfinance
+pandas
+scipy
+requests
+beautifulsoup4
+reportlab
+
+# Web server
+flask
+flask-cors
+
+# Robinhood
+robin-stocks
+
+# Env
+python-dotenv
