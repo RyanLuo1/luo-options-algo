@@ -10,7 +10,7 @@ import os
 # Add project root to path so existing algo modules are importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
@@ -20,7 +20,11 @@ from ratio_ranker import calculate_ratios
 from event_filter import load_events, get_macro_events, get_earnings_flag
 import robinhood
 
-app = Flask(__name__)
+WEB_DIST = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
+)
+
+app = Flask(__name__, static_folder=WEB_DIST, static_url_path="")
 CORS(app)
 
 
@@ -190,6 +194,20 @@ def run():
 
 
 # ─────────────────────────────────────────────────────────────
+# Serve React SPA (must be registered after all /api/* routes)
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    """Serve built React app. Falls back to index.html for client-side routing."""
+    target = os.path.join(WEB_DIST, path) if path else None
+    if target and os.path.isfile(target):
+        return send_from_directory(WEB_DIST, path)
+    return send_from_directory(WEB_DIST, "index.html")
+
+
+# ─────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────
 
@@ -197,4 +215,4 @@ if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
     print("Endpoints: /api/status  /api/holdings  /api/events  /api/run")
-    app.run(debug=False, port=5001)
+    app.run(host='0.0.0.0', port=5001)
