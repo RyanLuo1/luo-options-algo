@@ -23,6 +23,13 @@ import robinhood
 app = Flask(__name__)
 CORS(app)
 
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Catch-all — ensures every unhandled exception returns JSON, never an empty body."""
+    import traceback
+    return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
 # Server-level state (per process — fine for local single-user use)
 _last_run = None
 _events_loaded = False
@@ -99,97 +106,87 @@ def run():
 
     Body (JSON, all optional):
         tickers: list[str]  — override ticker universe; omit to use Robinhood holdings
-
-    Returns:
-        ranked:             list of ranked option rows
-        macro_events:       formatted macro event string
-        duplicates_removed: int
-        market_open:        bool
-        time_et:            current ET time string
-        run_at:             timestamp of this run
-        tickers_used:       tickers that returned options data
-        tickers_skipped:    tickers that returned no options data
-        tickers_source:     "manual" | "robinhood"
-        total_ranked:       int
     """
+    import traceback
     global _last_run
 
-    body = request.get_json(silent=True) or {}
-    requested_tickers = body.get("tickers")
-
-    # ── Resolve ticker universe ──────────────────────────────
-    if requested_tickers:
-        tickers = [t.upper().strip() for t in requested_tickers if t.strip()]
-        tickers_source = "manual"
-    else:
-        try:
-            tickers = robinhood.get_holdings()
-            tickers_source = "robinhood"
-        except Exception:
-            return jsonify({
-                "error": "Robinhood login unavailable. Use manual ticker input.",
-                "robinhood_unavailable": True,
-            }), 503
-
-    if not tickers:
-        return jsonify({
-            "error": "No tickers to scan. Enter tickers manually and click Run Scan."
-        }), 400
-
-    # ── Load events ──────────────────────────────────────────
-    err = _ensure_events()
-    if err:
-        return jsonify({"error": f"Failed to load events: {err}"}), 500
-
-    # ── Fetch options data ───────────────────────────────────
     try:
+        body = request.get_json(silent=True) or {}
+        requested_tickers = body.get("tickers")
+
+        # ── Resolve ticker universe ──────────────────────────────
+        if requested_tickers:
+            tickers = [t.upper().strip() for t in requested_tickers if t.strip()]
+            tickers_source = "manual"
+        else:
+            try:
+                tickers = robinhood.get_holdings()
+                tickers_source = "robinhood"
+            except Exception:
+                return jsonify({
+                    "error": "Robinhood login unavailable. Use manual ticker input.",
+                    "robinhood_unavailable": True,
+                }), 503
+
+        if not tickers:
+            return jsonify({
+                "error": "No tickers to scan. Enter tickers manually and click Run Scan."
+            }), 400
+
+        # ── Load events ──────────────────────────────────────────
+        err = _ensure_events()
+        if err:
+            return jsonify({"error": f"Failed to load events: {err}"}), 500
+
+        # ── Fetch options data ───────────────────────────────────
         all_rows = fetch_all_rows(verbose=False, tickers=tickers)
-    except Exception as e:
-        return jsonify({"error": f"Failed to fetch options data: {e}"}), 500
 
-    # Tickers that came back with zero rows are skipped (no options chain available)
-    tickers_with_data = sorted({r["Ticker"] for r in all_rows})
-    tickers_skipped = [t for t in tickers if t not in tickers_with_data]
+        # Tickers that came back with zero rows are skipped (no options chain available)
+        tickers_with_data = sorted({r["Ticker"] for r in all_rows})
+        tickers_skipped = [t for t in tickers if t not in tickers_with_data]
 
-    # ── Rank ─────────────────────────────────────────────────
-    ranked, duplicates_removed = calculate_ratios(all_rows)
+        # ── Rank ─────────────────────────────────────────────────
+        ranked, duplicates_removed = calculate_ratios(all_rows)
 
-    # ── Serialize + annotate ─────────────────────────────────
-    output = []
-    for i, r in enumerate(ranked, start=1):
-        output.append({
-            "rank":          i,
-            "ticker":        r["Ticker"],
-            "side":          r["Side"],
-            "expiration":    r["Expiration"],
-            "week":          r["Week"],
-            "dist_pct":      r["Dist %"],
-            "delta":         r["Delta"],
-            "strike":        r["Strike"],
-            "premium":       r["Premium"],
-            "price":         r["Price"],
-            "volume":        r.get("Volume"),
-            "oi":            r.get("OI"),
-            "ratio":         r["Ratio"],
-            "earnings_flag": get_earnings_flag(r["Ticker"], r["Expiration"]),
+        # ── Serialize + annotate ─────────────────────────────────
+        output = []
+        for i, r in enumerate(ranked, start=1):
+            output.append({
+                "rank":          i,
+                "ticker":        r["Ticker"],
+                "side":          r["Side"],
+                "expiration":    r["Expiration"],
+                "week":          r["Week"],
+                "dist_pct":      r["Dist %"],
+                "delta":         r["Delta"],
+                "strike":        r["Strike"],
+                "premium":       r["Premium"],
+                "price":         r["Price"],
+                "volume":        r.get("Volume"),
+                "oi":            r.get("OI"),
+                "ratio":         r["Ratio"],
+                "earnings_flag": get_earnings_flag(r["Ticker"], r["Expiration"]),
+            })
+
+        is_open, et_time = _market_status()
+        run_at = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+        _last_run = run_at
+
+        return jsonify({
+            "ranked":             output,
+            "macro_events":       get_macro_events(),
+            "duplicates_removed": duplicates_removed,
+            "market_open":        is_open,
+            "time_et":            et_time,
+            "run_at":             run_at,
+            "tickers_used":       tickers_with_data,
+            "tickers_skipped":    tickers_skipped,
+            "tickers_source":     tickers_source,
+            "total_ranked":       len(output),
         })
 
-    is_open, et_time = _market_status()
-    run_at = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-    _last_run = run_at
-
-    return jsonify({
-        "ranked":             output,
-        "macro_events":       get_macro_events(),
-        "duplicates_removed": duplicates_removed,
-        "market_open":        is_open,
-        "time_et":            et_time,
-        "run_at":             run_at,
-        "tickers_used":       tickers_with_data,
-        "tickers_skipped":    tickers_skipped,
-        "tickers_source":     tickers_source,
-        "total_ranked":       len(output),
-    })
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 # ─────────────────────────────────────────────────────────────
@@ -198,6 +195,6 @@ def run():
 
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
-    print("Listening on http://localhost:5000")
+    print("Listening on http://localhost:5001")
     print("Endpoints: /api/status  /api/holdings  /api/events  /api/run")
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=5001)
