@@ -69,17 +69,18 @@ def status():
 
 @app.route("/api/holdings")
 def holdings():
-    """Fetch open stock positions from Robinhood."""
+    """Fetch open stock positions from Robinhood. Returns 503 if unavailable."""
     try:
         detail = robinhood.get_holdings_detail()
         return jsonify({
             "tickers":   [p["ticker"] for p in detail],
             "positions": detail,
         })
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 503
-    except Exception as e:
-        return jsonify({"error": f"Unexpected error fetching holdings: {e}"}), 500
+    except Exception:
+        return jsonify({
+            "error": "Robinhood login unavailable. Use manual ticker input.",
+            "robinhood_unavailable": True,
+        }), 503
 
 
 @app.route("/api/events")
@@ -124,14 +125,15 @@ def run():
         try:
             tickers = robinhood.get_holdings()
             tickers_source = "robinhood"
-        except RuntimeError as e:
-            return jsonify({"error": str(e)}), 503
-        except Exception as e:
-            return jsonify({"error": f"Failed to fetch Robinhood holdings: {e}"}), 500
+        except Exception:
+            return jsonify({
+                "error": "Robinhood login unavailable. Use manual ticker input.",
+                "robinhood_unavailable": True,
+            }), 503
 
     if not tickers:
         return jsonify({
-            "error": "No tickers to scan. Provide tickers manually or connect Robinhood."
+            "error": "No tickers to scan. Enter tickers manually and click Run Scan."
         }), 400
 
     # ── Load events ──────────────────────────────────────────
