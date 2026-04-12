@@ -45,7 +45,7 @@ Ratio = (Premium Collected / Stock Price) / % Strike Distance
 
 ---
 
-## The Algorithm (V2 — Current)
+## The Algorithm (V2 — Ratio Ranker, active in web UI)
 ```
 Ratio = (Premium Collected / Stock Price) / Delta
 ```
@@ -132,6 +132,43 @@ Ratio = (Premium Collected / Stock Price) / Delta
 - `get_holdings_detail()` — returns list of dicts with ticker, shares, and average cost
 - Login is cached per process (MFA only required on first run with `store_session=True`)
 
+### `v3_screener.py`
+- Standalone CLI screener implementing the V3 Call Spread Risk Reversal strategy
+- Run with `python3 v3_screener.py` or with optional arguments (see below)
+- Imports `get_next_fridays`, `black_scholes_delta`, and `get_midpoint` from `options_screener.py` — no duplication
+
+**Strategy (3 legs):**
+- **Leg A**: Buy ATM call (delta 0.45–0.55) — pay premium
+- **Leg B**: Sell OTM call (delta 0.20–0.35, strike > Leg A) — collect premium; strike targeted near fair value when available
+- **Leg C**: Sell OTM put (delta 0.15–0.25, strike < current price) — collect premium
+- **Goal**: Net Premium = (Leg B + Leg C) − Leg A ≥ $5.00 (credit only)
+
+**Fair value fallback chain** (for Leg B targeting):
+1. `forwardEps × forwardPE` from `yf.Ticker(ticker).info`
+2. `trailingEps × trailingPE`
+3. `targetMeanPrice` (analyst consensus)
+4. `None` — Leg B selected by delta range only
+
+**Filters applied per leg:**
+- IV ≤ 0.01 → excluded (placeholder values from closed market)
+- Volume < 20 → excluded
+- Delta must fall within each leg's specified range
+- Net premium < `--min-premium` → triplet skipped immediately
+- P(max profit) = (1 − Leg B delta) × (1 − Leg C delta) < 0.50 → triplet skipped
+
+**Scoring:** `score = net_premium / spread_width` where `spread_width = Leg B strike − Leg A strike`
+
+**Output columns:** Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Pm, Leg B Strike, Leg B Pm, Leg C Strike, Leg C Pm, Net Prem, Spd Width, Score, P(Profit)%, Fair Value
+
+**Highlighting:**
+- Yellow rows: fair value unavailable, Leg B chosen by delta only
+- Red rows: P(max profit) between 50–55% (borderline)
+
+**CLI arguments:**
+- `--tickers NVDA META` — override default watchlist
+- `--weeks 6` — scan W1–W6 only (default: 12, max: 12)
+- `--min-premium 3.00` — override the $5.00 minimum net credit
+
 ### `test_v2.py`
 - Standalone tests for the V2 algorithm
 - Tests Black-Scholes delta sanity (values between 0–1, deeper OTM = lower delta)
@@ -185,5 +222,5 @@ Built with Vite + React + Tailwind CSS. Source in `web/src/`, built output in `w
 ## Notes
 - Strike prices are calculated as current stock price ± % strike distance
 - Expirations snap to the nearest available Friday expiration for each target week
-- Algorithm will be improved iteratively — V1 is the baseline, V2 is current
+- Algorithm versions: V1 = baseline (% strike distance), V2 = delta-adjusted ratio (active in web UI), V3 = call spread risk reversal (CLI only, `v3_screener.py`)
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)
