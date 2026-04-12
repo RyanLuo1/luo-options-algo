@@ -24,10 +24,10 @@ For each stock, we evaluate the following 40 data points:
 | **Puts (3 week)** | ratio | ratio | ratio | ratio | ratio |
 | **Puts (4 week)** | ratio | ratio | ratio | ratio | ratio |
 
-- **Columns** = strike distance from current stock price: 3%, 5%, 7%, 10%, 15%
-- **Rows** = expiration timeframe (1, 2, 3, 4 weeks out) for both calls and puts
-- **Total data points per stock**: 40
-- **Total data points across all 10 stocks**: 400
+- **Columns** = strike distance from current stock price: customizable, default 3%, 5%, 7%, 10%, 15%
+- **Rows** = expiration timeframe: customizable number of weeks out, default 4 weeks, for both calls and puts
+- **Total data points per stock**: (number of distances) × (weeks) × 2 sides — default 40
+- **Total data points across all 10 stocks**: default 400 (scales with custom distances/weeks)
 
 ---
 
@@ -74,15 +74,15 @@ Ratio = (Premium Collected / Stock Price) / Delta
 ## File Structure
 
 ### `options_screener.py`
-- Defines the watchlist (`TICKERS`) and strike distances (`DISTANCES`)
+- Defines the watchlist (`TICKERS`) and default strike distances (`DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]`)
 - `get_next_fridays(n)` — finds the next N Friday expiration targets
 - `black_scholes_delta(S, K, T, sigma, side)` — computes call or put delta using Black-Scholes and scipy
 - `find_closest_strike(strikes, target)` — snaps a target price to the nearest available chain strike
 - `get_midpoint(row)` — returns bid/ask midpoint, falls back to last price
-- `fetch_ticker_data(ticker)` — fetches current price and matches 4 weekly expirations
-- `build_rows(ticker, price, expirations)` — builds a row for every ticker/expiration/distance combination, including call and put actual strike, premium, and computed delta
+- `fetch_ticker_data(ticker, weeks=4)` — fetches current price and matches N weekly expirations (default 4)
+- `build_rows(ticker, price, expirations, distances=None)` — builds a row for every ticker/expiration/distance combination; distances defaults to `DISTANCES` if None
 - `print_ticker_table(ticker, rows)` — prints per-ticker matrix showing target strike, actual strike, and premium for calls and puts
-- `fetch_all_rows(verbose)` — iterates all tickers, returns full list of rows; used as the data source for `ratio_ranker.py`
+- `fetch_all_rows(verbose, tickers=None, distances=None, weeks=4)` — iterates all tickers, returns full list of rows; distances and weeks are fully customizable; used as the data source for `ratio_ranker.py`
 
 ### `ratio_ranker.py`
 - Imports `fetch_all_rows` from `options_screener.py`
@@ -110,6 +110,15 @@ Ratio = (Premium Collected / Stock Price) / Delta
 - Handles page breaks automatically via ReportLab Platypus
 - Output filename: `luo_capital_report_YYYY-MM-DD_HHMM.pdf`, saved in the project folder
 
+
+### `server/app.py`
+- Flask API server; run with `python3 server/app.py`
+- `/api/run` (POST) accepts optional body fields:
+  - `tickers`: list of strings — override ticker universe
+  - `distances`: list of floats (decimals, e.g. `[0.02, 0.05, 0.10]`) — override strike distances; each must be between 0.01 and 0.50; defaults to `DISTANCES`
+  - `weeks`: integer 1–12 — number of weekly expirations to scan; defaults to 4
+- Response includes `distances_used` and `weeks_used` so the frontend can display what was actually run
+- Serves the built React app from `web/dist`
 
 ### `test_v2.py`
 - Standalone tests for the V2 algorithm
@@ -141,6 +150,6 @@ Ratio = (Premium Collected / Stock Price) / Delta
 
 ## Notes
 - Strike prices are calculated as current stock price ± % strike distance
-- Expirations are the nearest weekly options expiration 1, 2, 3, and 4 weeks out from run date
+- Expirations are the nearest weekly options expiration 1–N weeks out from run date (default 4, configurable 1–12 via UI or API)
 - Algorithm will be improved iteratively — V1 is the baseline, V2 is current
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)

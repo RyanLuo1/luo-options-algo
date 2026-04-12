@@ -14,12 +14,15 @@ export default function useOptionsData() {
       .catch(() => {})  // server may not be up yet; silently ignore
   }, [])
 
-  const runScan = useCallback(async (tickers) => {
+  const runScan = useCallback(async ({ tickers, distances, weeks } = {}) => {
     setLoading(true)
     setError(null)
 
     try {
-      const body = tickers && tickers.length > 0 ? { tickers } : {}
+      const body = {}
+      if (tickers && tickers.length > 0) body.tickers = tickers
+      if (distances && distances.length > 0) body.distances = distances
+      if (weeks !== undefined) body.weeks = weeks
       const res  = await fetch('/api/run', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,6 +66,8 @@ export default function useOptionsData() {
     tickersSkipped:    result?.tickers_skipped ?? [],
     tickersSource:     result?.tickers_source  ?? null,
     totalRanked:       result?.total_ranked    ?? 0,
+    distancesUsed:     result?.distances_used  ?? null,
+    weeksUsed:         result?.weeks_used      ?? null,
     // state
     loading,
     error,

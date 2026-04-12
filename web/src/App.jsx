@@ -8,14 +8,20 @@ import Holdings        from './components/Holdings'
 import RankedTable     from './components/RankedTable'
 import LoadingSpinner  from './components/LoadingSpinner'
 
+const DEFAULT_DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
+
 export default function App() {
-  const [tickerInput,   setTickerInput]   = useState('')
-  const [activeTickers, setActiveTickers] = useState([])
+  const [tickerInput,    setTickerInput]    = useState('')
+  const [activeTickers,  setActiveTickers]  = useState([])
+  const [distInput,      setDistInput]      = useState('')
+  const [distPills,      setDistPills]      = useState(DEFAULT_DISTANCES)
+  const [weeks,          setWeeks]          = useState(4)
 
   const {
     marketOpen, lastRun,
     ranked, macroEvents, duplicatesRemoved,
     tickersUsed, tickersSkipped, tickersSource,
+    distancesUsed, weeksUsed,
     loading, error, hasResult,
     runScan,
   } = useOptionsData()
@@ -25,12 +31,10 @@ export default function App() {
     setActiveTickers(tickersUsed)
   }, [tickersUsed])
 
-  const filteredRanked = activeTickers.length > 0
-    ? ranked.filter(r => activeTickers.includes(r.ticker))
-    : ranked
-
-  // Re-rank after filter so rank numbers stay contiguous
-  const rerankedFiltered = filteredRanked.map((r, i) => ({ ...r, rank: i + 1 }))
+  function fmtDist(d) {
+    const pct = d * 100
+    return `${parseFloat(pct.toPrecision(4))}%`
+  }
 
   function parseTickers(raw) {
     return raw
@@ -39,13 +43,57 @@ export default function App() {
       .filter(Boolean)
   }
 
+  // ── Client-side filtering (instant, no API call) ─────────────
+  const activeDistSet = new Set(distPills.map(fmtDist))
+
+  const filteredRanked = ranked
+    .filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
+    .filter(r => activeDistSet.size === 0 || activeDistSet.has(r.dist_pct))
+
+  // Re-rank after filter so rank numbers stay contiguous
+  const rerankedFiltered = filteredRanked.map((r, i) => ({ ...r, rank: i + 1 }))
+
+  // ── Staleness detection ──────────────────────────────────────
+  // Stale when the displayed results don't cover what the current controls would scan.
+  // Removing pills is NOT stale — the client-side filter handles it instantly.
+  const distancesUsedSet = new Set((distancesUsed ?? []).map(fmtDist))
+  const isStale = hasResult && (
+    (weeksUsed !== null && weeks !== weeksUsed) ||
+    distPills.some(d => !distancesUsedSet.has(fmtDist(d))) ||
+    parseTickers(tickerInput).some(t => !tickersUsed.includes(t))
+  )
+
   function handleRun() {
     const tickers = parseTickers(tickerInput)
-    runScan(tickers.length > 0 ? tickers : undefined)
+    runScan({
+      tickers:   tickers.length > 0 ? tickers : undefined,
+      distances: distPills,
+      weeks,
+    })
   }
 
   function handleRemoveTicker(ticker) {
     setActiveTickers(prev => prev.filter(t => t !== ticker))
+  }
+
+  function addDistPill(raw) {
+    const num = parseFloat(raw)
+    if (isNaN(num) || num <= 0) return
+    const decimal = parseFloat((num / 100).toFixed(4))
+    if (decimal < 0.01 || decimal > 0.50) return
+    setDistPills(prev => prev.includes(decimal) ? prev : [...prev, decimal].sort((a, b) => a - b))
+  }
+
+  function handleDistKeyDown(e) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addDistPill(distInput.replace(',', '').trim())
+      setDistInput('')
+    }
+  }
+
+  function removeDistPill(d) {
+    setDistPills(prev => prev.filter(x => x !== d))
   }
 
   return (
@@ -56,27 +104,94 @@ export default function App() {
         lastRun={lastRun}
         onRun={handleRun}
         loading={loading}
+        isStale={isStale}
       />
 
       <MacroEvents macroEvents={macroEvents} />
 
-      {/* Ticker input bar */}
-      <div className="px-6 py-3 border-b border-gray-800 flex items-center gap-3 flex-wrap">
-        <input
-          type="text"
-          value={tickerInput}
-          onChange={e => setTickerInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
-          placeholder="NVDA, META, TSLA, AMD…"
-          disabled={loading}
-          className="w-80 bg-gray-800 text-gray-100 border border-gray-700 rounded px-3 py-1.5
-                     text-sm font-mono placeholder-gray-600
-                     focus:outline-none focus:border-indigo-500
-                     disabled:opacity-50"
-        />
-        <span className="text-gray-600 text-xs">
-          Comma or space separated · leave empty to use Robinhood holdings
-        </span>
+      {/* Control bar */}
+      <div className="px-6 py-3 border-b border-gray-800 flex items-start gap-8 flex-wrap">
+
+        {/* Tickers */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500 font-medium">Tickers</label>
+          <input
+            type="text"
+            value={tickerInput}
+            onChange={e => setTickerInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
+            placeholder="NVDA, META, TSLA…"
+            disabled={loading}
+            className="w-64 bg-gray-800 text-gray-100 border border-gray-700 rounded px-3 py-1.5
+                       text-sm font-mono placeholder-gray-600
+                       focus:outline-none focus:border-indigo-500
+                       disabled:opacity-50"
+          />
+          <span className="text-gray-600 text-xs">Comma or space · blank = Robinhood</span>
+        </div>
+
+        {/* Dist % pills */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500 font-medium">Dist %</label>
+          <div className="flex items-center gap-1.5 flex-wrap min-h-[32px]">
+            {distPills.map(d => (
+              <span
+                key={d}
+                className="inline-flex items-center gap-1 bg-gray-800 border border-gray-700
+                           rounded px-2 py-0.5 text-xs font-mono text-gray-300"
+              >
+                {fmtDist(d)}
+                <button
+                  onClick={() => removeDistPill(d)}
+                  disabled={loading}
+                  className="text-gray-500 hover:text-gray-200 leading-none disabled:opacity-40"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              type="number"
+              value={distInput}
+              onChange={e => setDistInput(e.target.value)}
+              onKeyDown={handleDistKeyDown}
+              onBlur={() => { if (distInput.trim()) { addDistPill(distInput.trim()); setDistInput('') } }}
+              placeholder="e.g. 7"
+              disabled={loading}
+              className="w-20 bg-gray-800 text-gray-100 border border-gray-700 rounded px-2 py-1
+                         text-xs font-mono placeholder-gray-600
+                         focus:outline-none focus:border-indigo-500
+                         disabled:opacity-50"
+            />
+          </div>
+          <span className="text-gray-600 text-xs">Enter % value · press Enter or comma to add</span>
+        </div>
+
+        {/* Weeks */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500 font-medium">Weeks out</label>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setWeeks(w => Math.max(1, w - 1))}
+              disabled={loading || weeks <= 1}
+              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
+                         text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
+            >
+              −
+            </button>
+            <span className="w-6 text-center text-sm font-mono text-gray-200">{weeks}</span>
+            <button
+              onClick={() => setWeeks(w => Math.min(12, w + 1))}
+              disabled={loading || weeks >= 12}
+              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
+                         text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
+            >
+              +
+            </button>
+          </div>
+          <span className="text-gray-600 text-xs">1 – 12 weeks</span>
+        </div>
+
       </div>
 
       {/* Tickers used after a successful scan — dismissible to filter table in real time */}
@@ -96,7 +211,12 @@ export default function App() {
 
         {!loading && !error && (
           hasResult
-            ? <RankedTable rows={rerankedFiltered} duplicatesRemoved={duplicatesRemoved} />
+            ? <RankedTable
+                rows={rerankedFiltered}
+                duplicatesRemoved={duplicatesRemoved}
+                distancesUsed={distancesUsed}
+                weeksUsed={weeksUsed}
+              />
             : <EmptyState />
         )}
       </main>

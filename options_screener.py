@@ -49,7 +49,7 @@ def get_midpoint(row):
     return round(last, 4)
 
 
-def fetch_ticker_data(ticker):
+def fetch_ticker_data(ticker, weeks=4):
     stock = yf.Ticker(ticker)
     hist = stock.history(period="1d")
     if hist.empty:
@@ -59,7 +59,7 @@ def fetch_ticker_data(ticker):
     price = round(hist["Close"].iloc[-1], 2)
     expirations = stock.options  # all available expiration strings
 
-    target_fridays = get_next_fridays(4)
+    target_fridays = get_next_fridays(weeks)
 
     # Match each target Friday to the nearest available expiration
     matched_expirations = []
@@ -78,7 +78,9 @@ def fetch_ticker_data(ticker):
     return price, matched_expirations
 
 
-def build_rows(ticker, price, expirations):
+def build_rows(ticker, price, expirations, distances=None):
+    if distances is None:
+        distances = DISTANCES
     stock = yf.Ticker(ticker)
     rows = []
 
@@ -96,8 +98,8 @@ def build_rows(ticker, price, expirations):
         exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
         T = (exp_date - datetime.today().date()).days / 365.0
 
-        for dist in DISTANCES:
-            dist_pct = int(dist * 100)
+        for dist in distances:
+            dist_pct = dist * 100
 
             # --- CALL ---
             call_target = round(price * (1 + dist), 2)
@@ -142,7 +144,7 @@ def build_rows(ticker, price, expirations):
                 "Price":        price,
                 "Expiration":   exp,
                 "Week":         week_label,
-                "Dist %":       f"{dist_pct}%",
+                "Dist %":       f"{dist_pct:g}%",
                 "Call Target":  call_target,
                 "Call Actual":  call_actual,
                 "Call Premium": call_premium,
@@ -202,7 +204,7 @@ def print_ticker_table(ticker, rows):
         )
 
 
-def fetch_all_rows(verbose=True, tickers=None):
+def fetch_all_rows(verbose=True, tickers=None, distances=None, weeks=4):
     tickers = tickers or TICKERS
     if verbose:
         print("\nOptions Screener — Luo Capital")
@@ -212,11 +214,11 @@ def fetch_all_rows(verbose=True, tickers=None):
     for ticker in tickers:
         if verbose:
             print(f"\nFetching {ticker}...")
-        price, expirations = fetch_ticker_data(ticker)
+        price, expirations = fetch_ticker_data(ticker, weeks=weeks)
         if price is None:
             continue
 
-        rows = build_rows(ticker, price, expirations)
+        rows = build_rows(ticker, price, expirations, distances=distances)
         all_rows.extend(rows)
         if verbose:
             print_ticker_table(ticker, rows)

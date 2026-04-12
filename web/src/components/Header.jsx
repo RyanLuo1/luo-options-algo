@@ -1,4 +1,4 @@
-export default function Header({ marketOpen, lastRun, onRun, loading }) {
+export default function Header({ marketOpen, lastRun, onRun, loading, isStale }) {
   return (
     <header className="bg-gray-900 border-b border-gray-800 px-6 py-4">
       <div className="flex items-center justify-between gap-4">
@@ -16,13 +16,15 @@ export default function Header({ marketOpen, lastRun, onRun, loading }) {
             onClick={onRun}
             disabled={loading}
             className={`
-              px-5 py-2 rounded text-sm font-semibold transition-colors
+              px-5 py-2 rounded text-sm font-semibold transition-colors whitespace-nowrap
               ${loading
                 ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'}
+                : isStale
+                  ? 'bg-amber-500 hover:bg-amber-400 text-gray-900 cursor-pointer'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'}
             `}
           >
-            {loading ? 'Running…' : 'Run Scan'}
+            {loading ? 'Running…' : isStale ? '⚠ Rescan needed' : 'Run Scan'}
           </button>
         </div>
 

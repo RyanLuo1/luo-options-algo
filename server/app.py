@@ -15,7 +15,7 @@ from flask_cors import CORS
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-from options_screener import fetch_all_rows
+from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES
 from ratio_ranker import calculate_ratios
 from event_filter import load_events, get_macro_events, get_earnings_flag
 import robinhood
@@ -117,10 +117,30 @@ def run():
     try:
         body = request.get_json(silent=True) or {}
         requested_tickers = body.get("tickers")
+        requested_distances = body.get("distances")
+        requested_weeks = body.get("weeks", 4)
+
+        # ── Validate distances ───────────────────────────────────
+        if requested_distances is not None:
+            if not isinstance(requested_distances, list) or len(requested_distances) == 0:
+                return jsonify({"error": "distances must be a non-empty list of floats"}), 400
+            for d in requested_distances:
+                if not isinstance(d, (int, float)) or d < 0.01 or d > 0.50:
+                    return jsonify({
+                        "error": f"Each distance must be between 0.01 (1%) and 0.50 (50%). Got: {d}"
+                    }), 400
+            distances = [float(d) for d in requested_distances]
+        else:
+            distances = None  # will fall back to defaults inside fetch_all_rows
+
+        # ── Validate weeks ───────────────────────────────────────
+        if not isinstance(requested_weeks, int) or requested_weeks < 1 or requested_weeks > 12:
+            return jsonify({"error": "weeks must be an integer between 1 and 12"}), 400
+        weeks = requested_weeks
 
         # ── Resolve ticker universe ──────────────────────────────
         if requested_tickers:
-            tickers = [t.upper().strip() for t in requested_tickers if t.strip()]
+            tickers = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
             tickers_source = "manual"
         else:
             try:
@@ -143,7 +163,8 @@ def run():
             return jsonify({"error": f"Failed to load events: {err}"}), 500
 
         # ── Fetch options data ───────────────────────────────────
-        all_rows = fetch_all_rows(verbose=False, tickers=tickers)
+        all_rows = fetch_all_rows(verbose=False, tickers=tickers, distances=distances, weeks=weeks)
+        effective_distances = distances if distances is not None else DEFAULT_DISTANCES
 
         # Tickers that came back with zero rows are skipped (no options chain available)
         tickers_with_data = sorted({r["Ticker"] for r in all_rows})
@@ -187,6 +208,8 @@ def run():
             "tickers_skipped":    tickers_skipped,
             "tickers_source":     tickers_source,
             "total_ranked":       len(output),
+            "distances_used":     effective_distances,
+            "weeks_used":         weeks,
         })
 
     except Exception as e:

@@ -17,7 +17,12 @@ const COLUMNS = [
   { key: 'earnings_flag',label: 'Earnings',    align: 'left'   },
 ]
 
-export default function RankedTable({ rows, duplicatesRemoved }) {
+function fmtDist(d) {
+  const pct = d * 100
+  return `${parseFloat(pct.toPrecision(4))}%`
+}
+
+export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, weeksUsed }) {
   const [sortKey, setSortKey]   = useState('rank')
   const [sortAsc, setSortAsc]   = useState(true)
 
@@ -47,7 +52,7 @@ export default function RankedTable({ rows, duplicatesRemoved }) {
     <div className="flex flex-col">
 
       {/* metadata bar */}
-      <div className="px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800">
+      <div className="px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
         <span>Algorithm: <span className="text-gray-400">V2 — Delta Adjusted</span></span>
         <span>·</span>
         <span>Min delta: <span className="text-gray-400">0.05</span></span>
@@ -55,6 +60,18 @@ export default function RankedTable({ rows, duplicatesRemoved }) {
         <span>Duplicates removed: <span className="text-gray-400">{duplicatesRemoved ?? 0}</span></span>
         <span>·</span>
         <span>{rows.length} data points ranked</span>
+        {distancesUsed && distancesUsed.length > 0 && (
+          <>
+            <span>·</span>
+            <span>Distances: <span className="text-gray-400">{distancesUsed.map(fmtDist).join(', ')}</span></span>
+          </>
+        )}
+        {weeksUsed != null && (
+          <>
+            <span>·</span>
+            <span>Weeks: <span className="text-gray-400">{weeksUsed}</span></span>
+          </>
+        )}
       </div>
 
       {/* liquidity legend */}
