@@ -50,7 +50,7 @@ MONTH_MAP = {
     "september": 9, "october": 10, "november": 11, "december": 12,
 }
 
-def fetch_fomc_dates():
+def fetch_fomc_dates(weeks=4):
     """Returns list of FOMC decision dates (last day of each meeting) as date objects."""
     results = []
     try:
@@ -60,7 +60,7 @@ def fetch_fomc_dates():
         )
         soup = BeautifulSoup(r.text, "html.parser")
         today = date.today()
-        cutoff = today + timedelta(weeks=4)
+        cutoff = today + timedelta(weeks=weeks)
 
         for panel in soup.select(".panel"):
             heading = panel.select_one(".panel-heading")
@@ -112,14 +112,14 @@ BLS_URLS = {
     "NFP": "https://www.bls.gov/schedule/news_release/empsit.htm",
 }
 
-def fetch_bls_dates(event_name, url):
-    """Returns list of upcoming release dates for a BLS event within the next 4 weeks."""
+def fetch_bls_dates(event_name, url, weeks=4):
+    """Returns list of upcoming release dates for a BLS event within the next N weeks."""
     results = []
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         today = date.today()
-        cutoff = today + timedelta(weeks=4)
+        cutoff = today + timedelta(weeks=weeks)
 
         table = soup.select_one("table")
         if not table:
@@ -152,21 +152,21 @@ def fetch_bls_dates(event_name, url):
 # Load all events (called once at startup)
 # ─────────────────────────────────────────────────────────────
 
-def load_events():
+def load_events(weeks=4):
     """Fetches all earnings and macro event data and stores in module-level cache."""
     global _earnings, _macro
 
     print("  Loading earnings dates...")
     _earnings = fetch_earnings_dates()
 
-    print("  Loading macro events (FOMC, CPI, PPI, NFP)...")
+    print(f"  Loading macro events (FOMC, CPI, PPI, NFP) — {weeks}w window...")
     _macro = []
 
-    for fomc_date in fetch_fomc_dates():
+    for fomc_date in fetch_fomc_dates(weeks=weeks):
         _macro.append(("FOMC", fomc_date))
 
     for event_name, url in BLS_URLS.items():
-        for d in fetch_bls_dates(event_name, url):
+        for d in fetch_bls_dates(event_name, url, weeks=weeks):
             _macro.append((event_name, d))
 
     _macro.sort(key=lambda x: x[1])
@@ -186,7 +186,7 @@ def get_macro_events():
     Returns 'None in next 4 weeks' if cache is empty.
     """
     if not _macro:
-        return "None in next 4 weeks"
+        return "None scheduled"
     parts = [f"{name} {d.month}/{d.day}" for name, d in _macro]
     return "  |  ".join(parts)
 

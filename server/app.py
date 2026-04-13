@@ -15,9 +15,12 @@ from flask_cors import CORS
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES
+import yfinance as yf
+
+from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays
 from ratio_ranker import calculate_ratios
 from event_filter import load_events, get_macro_events, get_earnings_flag
+from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value, match_expirations
 import robinhood
 
 WEB_DIST = os.path.join(
@@ -36,7 +39,7 @@ def handle_exception(e):
 
 # Server-level state (per process — fine for local single-user use)
 _last_run = None
-_events_loaded = False
+_events_loaded_weeks = None  # tracks which weeks value the cache was built with
 
 
 # ─────────────────────────────────────────────────────────────
@@ -50,15 +53,16 @@ def _market_status():
     return is_open, now_et.strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
-def _ensure_events():
-    """Load events if not already cached. Returns error string or None."""
-    global _events_loaded
-    if not _events_loaded:
-        try:
-            load_events()
-            _events_loaded = True
-        except Exception as e:
-            return str(e)
+def _ensure_events(weeks=4):
+    """Load (or reload) events for the given lookback window. Returns error string or None."""
+    global _events_loaded_weeks
+    if _events_loaded_weeks == weeks:
+        return None
+    try:
+        load_events(weeks=weeks)
+        _events_loaded_weeks = weeks
+    except Exception as e:
+        return str(e)
     return None
 
 
@@ -158,7 +162,7 @@ def run():
             }), 400
 
         # ── Load events ──────────────────────────────────────────
-        err = _ensure_events()
+        err = _ensure_events(weeks=weeks)
         if err:
             return jsonify({"error": f"Failed to load events: {err}"}), 500
 
@@ -216,6 +220,120 @@ def run():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@app.route("/api/run_v3", methods=["POST"])
+def run_v3():
+    """
+    Run a V3 Call Spread Risk Reversal scan and return ranked triplets.
+
+    Body (JSON, all optional):
+        tickers       : list[str]  — ticker universe; omit to use Robinhood holdings
+        weeks         : int 1–12  — expirations to scan (default 12)
+        min_premium   : float     — minimum net credit in dollars (default 5.00)
+        min_p_profit  : float 0–1 — minimum P(max profit) (default 0.50)
+    """
+    import traceback
+    global _last_run
+
+    try:
+        body = request.get_json(silent=True) or {}
+        requested_tickers   = body.get("tickers")
+        requested_weeks     = body.get("weeks", 12)
+        requested_min_prem  = body.get("min_premium", 5.00)
+        requested_min_pp    = body.get("min_p_profit", 0.50)
+
+        # ── Validate ─────────────────────────────────────────────
+        if not isinstance(requested_weeks, int) or not (1 <= requested_weeks <= 12):
+            return jsonify({"error": "weeks must be an integer between 1 and 12"}), 400
+        if not isinstance(requested_min_prem, (int, float)) or requested_min_prem < 0:
+            return jsonify({"error": "min_premium must be a non-negative number"}), 400
+        if not isinstance(requested_min_pp, (int, float)) or not (0 <= requested_min_pp <= 1):
+            return jsonify({"error": "min_p_profit must be a float between 0 and 1"}), 400
+
+        # ── Resolve tickers ──────────────────────────────────────
+        if requested_tickers:
+            tickers = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
+        else:
+            try:
+                tickers = robinhood.get_holdings()
+            except Exception:
+                return jsonify({
+                    "error": "Robinhood login unavailable. Use manual ticker input.",
+                    "robinhood_unavailable": True,
+                }), 503
+
+        if not tickers:
+            return jsonify({"error": "No tickers to scan. Enter tickers manually and click Run Scan."}), 400
+
+        # ── Load events ──────────────────────────────────────────
+        err = _ensure_events(weeks=requested_weeks)
+        if err:
+            return jsonify({"error": f"Failed to load events: {err}"}), 500
+
+        # ── Target expirations ───────────────────────────────────
+        target_fridays = get_next_fridays(requested_weeks)
+
+        # ── Scan each ticker ─────────────────────────────────────
+        all_triplets    = []
+        total_evaluated = 0
+        tickers_scanned = []
+
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                hist  = stock.history(period="1d")
+                if hist.empty:
+                    continue
+                price = round(float(hist["Close"].iloc[-1]), 2)
+            except Exception:
+                continue
+
+            fair_value = get_fair_value(ticker)
+
+            try:
+                available = stock.options
+            except Exception:
+                available = ()
+
+            week_exps = match_expirations(available, target_fridays)
+            if not week_exps:
+                continue
+
+            tickers_scanned.append(ticker)
+            triplets, evaluated = v3_scan_ticker(
+                ticker, price, week_exps, fair_value,
+                float(requested_min_prem),
+                min_p_profit=float(requested_min_pp),
+            )
+            total_evaluated += evaluated
+            all_triplets.extend(triplets)
+
+        # ── Rank by score descending ─────────────────────────────
+        ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
+
+        is_open, et_time = _market_status()
+        run_at = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+        _last_run = run_at
+
+        tickers_skipped = [t for t in tickers if t not in tickers_scanned]
+
+        return jsonify({
+            "ranked":            ranked,
+            "macro_events":      get_macro_events(),
+            "total_evaluated":   total_evaluated,
+            "tickers_used":      sorted(tickers_scanned),
+            "tickers_skipped":   tickers_skipped,
+            "market_open":       is_open,
+            "time_et":           et_time,
+            "run_at":            run_at,
+            "weeks_used":        requested_weeks,
+            "min_premium_used":  float(requested_min_prem),
+            "min_p_profit_used": float(requested_min_pp),
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 # ─────────────────────────────────────────────────────────────
 # Serve React SPA (must be registered after all /api/* routes)
 # ─────────────────────────────────────────────────────────────
@@ -237,5 +355,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run")
+    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3")
     app.run(host='0.0.0.0', port=5001)

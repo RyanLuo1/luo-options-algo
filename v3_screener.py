@@ -140,20 +140,23 @@ def enrich_contracts(df, price, T, side):
 
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
-def scan_ticker(ticker, price, week_exps, fair_value, min_premium):
+def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None):
     """
     Builds all valid triplets for one ticker across the provided expirations.
 
     Args:
-        ticker      : str
-        price       : float — current stock price
-        week_exps   : list of (week_num, exp_str) from match_expirations()
-        fair_value  : float or None
-        min_premium : float — minimum net credit required
+        ticker        : str
+        price         : float — current stock price
+        week_exps     : list of (week_num, exp_str) from match_expirations()
+        fair_value    : float or None
+        min_premium   : float — minimum net credit required
+        min_p_profit  : float or None — minimum P(max profit); defaults to MIN_P_MAX_PROFIT
 
     Returns:
         (triplets: list[dict], total_evaluated: int)
     """
+    if min_p_profit is None:
+        min_p_profit = MIN_P_MAX_PROFIT
     stock = yf.Ticker(ticker)
     triplets        = []
     total_evaluated = 0
@@ -215,7 +218,7 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium):
 
                     score = net_premium / spread_width
                     p_max = (1 - leg_b["delta"]) * (1 - leg_c["delta"])
-                    if p_max < MIN_P_MAX_PROFIT:
+                    if p_max < min_p_profit:
                         continue
 
                     triplets.append({

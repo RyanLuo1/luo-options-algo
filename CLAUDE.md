@@ -98,9 +98,9 @@ Ratio = (Premium Collected / Stock Price) / Delta
 ### `event_filter.py`
 - Fetches and caches earnings dates and macro events for use in the ranked output
 - `fetch_earnings_dates()` — uses `yf.Ticker(ticker).calendar` to get the next earnings date for each ticker
-- `fetch_fomc_dates()` — scrapes the Federal Reserve website for upcoming FOMC decision dates within the next 4 weeks
-- `fetch_bls_dates(event_name, url)` — scrapes the BLS website for upcoming CPI, PPI, and NFP release dates within the next 4 weeks
-- `load_events()` — fetches all earnings and macro data once and stores in module-level cache; called once at startup
+- `fetch_fomc_dates(weeks=4)` — scrapes the Federal Reserve website for upcoming FOMC decision dates within the next N weeks
+- `fetch_bls_dates(event_name, url, weeks=4)` — scrapes the BLS website for upcoming CPI, PPI, and NFP release dates within the next N weeks
+- `load_events(weeks=4)` — fetches all earnings and macro data and stores in module-level cache; re-fetches automatically when called with a different `weeks` value than the previous call
 - `get_event_flags(ticker, expiration_date)` — returns a string like `EARNINGS 4/23`, `FOMC 4/22`, or `CLEAR`
 - ForexFactory blocks scraping (403); FOMC sourced from federalreserve.gov, CPI/PPI/NFP from bls.gov
 
@@ -125,6 +125,13 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `distances`: list of floats in decimal form (e.g. `[0.02, 0.05, 0.10]`); validated 0.01–0.50; defaults to `DISTANCES`
   - `weeks`: integer 1–12; defaults to 4
 - `/api/run` response includes: `ranked`, `macro_events`, `duplicates_removed`, `market_open`, `run_at`, `tickers_used`, `tickers_skipped`, `tickers_source`, `distances_used`, `weeks_used`, `total_ranked`
+  - `POST /api/run_v3` — runs a V3 Call Spread Risk Reversal scan and returns ranked triplets
+- `/api/run_v3` request body (all optional):
+  - `tickers`: list of strings — leading `$` is stripped automatically
+  - `weeks`: integer 1–12; defaults to 12
+  - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
+  - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
+- `/api/run_v3` response includes: `ranked`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_used`, `min_premium_used`, `min_p_profit_used`
 
 ### `server/robinhood.py`
 - Handles Robinhood authentication via `robin_stocks`; credentials loaded from `.env`
@@ -133,9 +140,10 @@ Ratio = (Premium Collected / Stock Price) / Delta
 - Login is cached per process (MFA only required on first run with `store_session=True`)
 
 ### `v3_screener.py`
-- Standalone CLI screener implementing the V3 Call Spread Risk Reversal strategy
+- V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run_v3`)
 - Run with `python3 v3_screener.py` or with optional arguments (see below)
 - Imports `get_next_fridays`, `black_scholes_delta`, and `get_midpoint` from `options_screener.py` — no duplication
+- `scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None)` — accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None)
 
 **Strategy (3 legs):**
 - **Leg A**: Buy ATM call (delta 0.45–0.55) — pay premium
@@ -183,19 +191,34 @@ Built with Vite + React + Tailwind CSS. Source in `web/src/`, built output in `w
 
 **To rebuild after frontend changes:** `cd web && npm run build`
 
+### Mode toggle
+
+The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe existing results and resets stale state. Each mode has its own controls and staleness tracking.
+
 ### Key components
 
 - **`App.jsx`** — root component; owns all scan state and control logic
-  - Ticker text input — comma/space separated; blank = use Robinhood holdings
-  - Dist % pill input — type a number (e.g. `7` for 7%), press Enter or comma to add as a pill; default pills: 3%, 5%, 7%, 10%, 15%
-  - Weeks control — +/− buttons, range 1–12, default 4
-  - Client-side filtering: removing a distance or ticker pill instantly hides matching rows from the current results without triggering a new API call
-  - Staleness detection: Run Scan button turns amber with "⚠ Rescan needed" when current controls would produce different results than the last scan (new distance added, new ticker typed, weeks changed); removing pills does NOT trigger stale since it's handled client-side
-- **`Header.jsx`** — branding, market open/closed badge, Run Scan button (blue = fresh, amber = rescan needed, gray = loading)
-- **`RankedTable.jsx`** — sortable ranked results table with liquidity flags (volume < 10 red, OI < 100 red); metadata bar shows algorithm version, distances used, weeks used, duplicates removed
+  - **Shared:** ticker text input (comma/space separated; blank = use Robinhood holdings)
+  - **V2 mode controls:** Dist % pill input (type a number e.g. `7`, press Enter/comma to add; default pills: 3%, 5%, 7%, 10%, 15%) + Weeks +/− control (1–12, default 4)
+  - **V3 mode controls:** Weeks +/− control (1–12, default 12) + Min Premium $ input (default 5.00) + Min P(Profit)% input (default 50)
+  - **Client-side filtering:** removing a distance or ticker pill instantly hides matching rows without a new API call; same for V3 ticker pills
+  - **Staleness detection (per mode):** Run Scan button turns amber "⚠ Rescan needed" when controls diverge from last scan's params. V2: new dist added, weeks changed, new ticker typed. V3: weeks changed, min premium changed, min P(profit) changed, new ticker typed. Removing pills is NOT stale (client-side handled).
+  - `handleModeChange(newMode)` — calls `clearAll()`, switches mode
+  - `handleRun()` — dispatches to `runScan` (V2) or `runV3Scan` (V3) based on current mode
+- **`Header.jsx`** — branding, V2/V3 mode toggle (indigo = V2 active, violet = V3 active), market open/closed badge, Run Scan button (indigo = fresh, amber = stale, gray = loading); toggle and run button disabled during loading
+- **`RankedTable.jsx`** — V2 sortable ranked results table with liquidity flags (volume < 10 red, OI < 100 red); metadata bar shows algorithm version, distances used, weeks used, duplicates removed
+- **`V3Table.jsx`** — V3 sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value)
+  - Leg A Prem: `text-sky-400` (you pay); Leg B & C Prem: `text-emerald-400` (you collect); Net Prem: white bold; Score: emerald bold
+  - Row colors: red bg when P(profit) is between minPP and minPP+10% (borderline); yellow bg when fair value unavailable; alternating gray otherwise
+  - Metadata bar shows: algorithm, weeks, min premium, min P(profit)%, triplets ranked, total evaluated
 - **`Holdings.jsx`** — dismissible ticker pills shown after a scan; removing a pill instantly filters that ticker from the table
 - **`MacroEvents.jsx`** — displays upcoming FOMC, CPI, PPI, NFP dates
 - **`useOptionsData.js`** — custom hook managing all API calls and result state
+  - `runScan({ tickers, distances, weeks })` — POSTs to `/api/run`, stores in `result`
+  - `runV3Scan({ tickers, weeks, minPremium, minPProfit })` — POSTs to `/api/run_v3`, stores in `v3Result`
+  - `clearAll()` — wipes both `result` and `v3Result` and clears any error; called on mode switch
+  - Exposes V3 fields: `v3Ranked`, `v3TickersUsed`, `v3TickersSkipped`, `v3WeeksUsed`, `v3MinPremiumUsed`, `v3MinPProfitUsed`, `v3TotalEvaluated`, `v3HasResult`
+  - `marketOpen` and `lastRun` derived from whichever result is available (result → v3Result → status)
 
 ---
 
@@ -222,5 +245,5 @@ Built with Vite + React + Tailwind CSS. Source in `web/src/`, built output in `w
 ## Notes
 - Strike prices are calculated as current stock price ± % strike distance
 - Expirations snap to the nearest available Friday expiration for each target week
-- Algorithm versions: V1 = baseline (% strike distance), V2 = delta-adjusted ratio (active in web UI), V3 = call spread risk reversal (CLI only, `v3_screener.py`)
+- Algorithm versions: V1 = baseline (% strike distance), V2 = delta-adjusted ratio, V3 = call spread risk reversal; both V2 and V3 are available in the web UI via mode toggle
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)
