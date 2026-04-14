@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Header from '../components/Header'
+import { supabase } from '../lib/supabase'
+import useAuth from '../hooks/useAuth'
 
 function formatDate(iso) {
   try {
@@ -12,14 +14,34 @@ function formatDate(iso) {
 }
 
 export default function TradebookPage() {
-  const [trades, setTrades] = useState(() =>
-    JSON.parse(localStorage.getItem('luo_tradebook') || '[]')
-  )
+  const { user } = useAuth()
+  const [trades,  setTrades]  = useState([])
+  const [loading, setLoading] = useState(true)
 
-  function deleteTrade(id) {
-    const updated = trades.filter(t => t.id !== id)
-    setTrades(updated)
-    localStorage.setItem('luo_tradebook', JSON.stringify(updated))
+  useEffect(() => {
+    if (!user) return
+    setLoading(true)
+    supabase
+      .from('tradebook')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('saved_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!error && data) setTrades(data)
+        setLoading(false)
+      })
+  }, [user])
+
+  async function deleteTrade(id) {
+    await supabase.from('tradebook').delete().eq('id', id)
+    setTrades(prev => prev.filter(t => t.id !== id))
+  }
+
+  async function clearAll() {
+    if (!window.confirm('Clear all saved trades?')) return
+    if (!user) return
+    await supabase.from('tradebook').delete().eq('user_id', user.id)
+    setTrades([])
   }
 
   return (
@@ -31,17 +53,12 @@ export default function TradebookPage() {
         <div>
           <div className="text-white font-semibold text-base">Tradebook</div>
           <div className="text-gray-500 text-xs mt-0.5">
-            {trades.length} saved {trades.length === 1 ? 'trade' : 'trades'}
+            {loading ? 'Loading…' : `${trades.length} saved ${trades.length === 1 ? 'trade' : 'trades'}`}
           </div>
         </div>
         {trades.length > 0 && (
           <button
-            onClick={() => {
-              if (window.confirm('Clear all saved trades?')) {
-                setTrades([])
-                localStorage.removeItem('luo_tradebook')
-              }
-            }}
+            onClick={clearAll}
             className="text-xs text-gray-600 hover:text-red-400 transition-colors"
           >
             Clear all
@@ -50,7 +67,7 @@ export default function TradebookPage() {
       </div>
 
       {/* Empty state */}
-      {trades.length === 0 && (
+      {!loading && trades.length === 0 && (
         <div className="flex flex-col items-center justify-center py-32 gap-3 text-center px-6">
           <p className="text-gray-400 text-sm font-medium">No trades saved yet.</p>
           <p className="text-gray-600 text-xs max-w-sm">
@@ -60,7 +77,7 @@ export default function TradebookPage() {
       )}
 
       {/* Table */}
-      {trades.length > 0 && (
+      {!loading && trades.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono border-collapse">
             <thead>
@@ -95,13 +112,13 @@ export default function TradebookPage() {
                     {trade.expiration}
                   </td>
                   <td className="px-4 py-2.5 text-right text-gray-300">
-                    {trade.leg_a?.strike != null ? `$${trade.leg_a.strike.toFixed(2)}` : '—'}
+                    {trade.leg_a_strike != null ? `$${trade.leg_a_strike.toFixed(2)}` : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right text-gray-300">
-                    {trade.leg_b?.strike != null ? `$${trade.leg_b.strike.toFixed(2)}` : '—'}
+                    {trade.leg_b_strike != null ? `$${trade.leg_b_strike.toFixed(2)}` : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right text-gray-300">
-                    {trade.leg_c?.strike != null ? `$${trade.leg_c.strike.toFixed(2)}` : '—'}
+                    {trade.leg_c_strike != null ? `$${trade.leg_c_strike.toFixed(2)}` : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right text-white font-bold">
                     {trade.net_premium != null ? `$${trade.net_premium.toFixed(4)}` : '—'}

@@ -1,9 +1,15 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 export default function Header({ marketOpen, lastRun, onRun, loading, isStale, mode, onModeChange }) {
   const location = useLocation()
   const navigate  = useNavigate()
   const path      = location.pathname
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    navigate('/login')
+  }
   const isScreener  = path === '/'
   const isTrade     = path === '/trade'
   const isTradebook = path === '/tradebook'
@@ -118,12 +124,20 @@ export default function Header({ marketOpen, lastRun, onRun, loading, isStale, m
           </div>
         )}
 
-        {/* Right — last run */}
-        <div className="flex-shrink-0 text-right">
-          <div className="text-gray-500 text-xs">Last run</div>
-          <div className="text-gray-300 text-xs font-mono mt-0.5">
-            {lastRun ?? '—'}
+        {/* Right — last run + logout */}
+        <div className="flex-shrink-0 flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-gray-500 text-xs">Last run</div>
+            <div className="text-gray-300 text-xs font-mono mt-0.5">
+              {lastRun ?? '—'}
+            </div>
           </div>
+          <button
+            onClick={handleLogout}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors whitespace-nowrap"
+          >
+            Log out
+          </button>
         </div>
 
       </div>

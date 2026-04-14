@@ -31,6 +31,32 @@ app = Flask(__name__, static_folder=None)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 CORS(app)
 
+# ── Supabase auth ──────────────────────────────────────────────────────────────
+_SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+_SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+_supabase = None
+try:
+    from supabase import create_client
+    if _SUPABASE_URL and _SUPABASE_SERVICE_KEY:
+        _supabase = create_client(_SUPABASE_URL, _SUPABASE_SERVICE_KEY)
+except Exception:
+    pass  # supabase package not installed — verify_token will return None
+
+
+def verify_token(req):
+    """Verify Supabase JWT from Authorization header. Returns user object or None."""
+    if _supabase is None:
+        return None
+    auth = req.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return None
+    token = auth.split(' ', 1)[1]
+    try:
+        result = _supabase.auth.get_user(token)
+        return result.user
+    except Exception:
+        return None
+
 
 @app.errorhandler(Exception)
 def handle_exception(e):

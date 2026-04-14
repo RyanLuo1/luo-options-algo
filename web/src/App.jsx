@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './index.css'
+import { supabase } from './lib/supabase'
+import useAuth from './hooks/useAuth'
 
 import useOptionsData  from './hooks/useOptionsData'
 import Header          from './components/Header'
@@ -15,6 +17,7 @@ const DEFAULT_DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
 
 export default function App() {
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState('v2')  // 'v2' | 'v3'
@@ -170,23 +173,37 @@ export default function App() {
   }
 
   // ── Tradebook helpers ──────────────────────────────────────────────────────
-  function saveToTradebook(row) {
+  const [saveError, setSaveError] = useState(null)
+
+  async function saveToTradebook(row) {
+    if (!user) return
+    setSaveError(null)
     const trade = {
-      id:          Date.now(),
-      ticker:      row.ticker,
-      expiration:  row.expiration,
-      saved_at:    new Date().toISOString(),
-      leg_a: { strike: row.leg_a_strike, premium: row.leg_a_prem, delta: row.leg_a_delta, volume: null, oi: null },
-      leg_b: { strike: row.leg_b_strike, premium: row.leg_b_prem, delta: row.leg_b_delta, volume: null, oi: null },
-      leg_c: { strike: row.leg_c_strike, premium: row.leg_c_prem, delta: row.leg_c_delta, volume: null, oi: null },
-      net_premium:  row.net_premium,
-      spread_width: row.spread_width,
-      score:        row.score,
-      p_max_profit: row.p_max_profit,
-      fair_value:   row.fair_value,
+      user_id:       user.id,
+      ticker:        row.ticker,
+      expiration:    row.expiration,
+      saved_at:      new Date().toISOString(),
+      leg_a_strike:  row.leg_a_strike,
+      leg_a_premium: row.leg_a_prem,
+      leg_a_delta:   row.leg_a_delta,
+      leg_b_strike:  row.leg_b_strike,
+      leg_b_premium: row.leg_b_prem,
+      leg_b_delta:   row.leg_b_delta,
+      leg_c_strike:  row.leg_c_strike,
+      leg_c_premium: row.leg_c_prem,
+      leg_c_delta:   row.leg_c_delta,
+      net_premium:   row.net_premium,
+      spread_width:  row.spread_width,
+      score:         row.score,
+      p_max_profit:  row.p_max_profit,
+      fair_value:    row.fair_value,
     }
-    const existing = JSON.parse(localStorage.getItem('luo_tradebook') || '[]')
-    localStorage.setItem('luo_tradebook', JSON.stringify([trade, ...existing]))
+    const { error } = await supabase.from('tradebook').insert(trade)
+    if (error) {
+      console.error('Supabase insert error:', error)
+      setSaveError(`Save failed: ${error.message}`)
+      return
+    }
     showToast()
   }
 
@@ -415,6 +432,17 @@ export default function App() {
       />
       {screenerContent}
       <Toast message="Saved to Tradebook ✓" visible={toastVisible} />
+      {saveError && (
+        <div
+          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
+          className="bg-gray-800 border border-red-700 rounded-lg shadow-xl px-4 py-3 max-w-xs"
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-red-400 text-sm font-semibold flex-1">{saveError}</span>
+            <button onClick={() => setSaveError(null)} className="text-gray-500 hover:text-gray-300 text-xs leading-none mt-0.5">×</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

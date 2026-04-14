@@ -202,13 +202,25 @@ Built with Vite + React + Tailwind CSS. Source in `web/src/`, built output in `w
 
 The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe existing results and resets stale state. Each mode has its own controls and staleness tracking.
 
+### Authentication (Supabase)
+
+Auth is handled via `@supabase/supabase-js`. The client is initialized in `web/src/lib/supabase.js` using `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from `web/.env`.
+
+- **`web/src/lib/supabase.js`** — exports the `supabase` client singleton
+- **`web/src/hooks/useAuth.js`** — exports `useAuth()` hook returning `{ user, session, loading }` via `getSession` + `onAuthStateChange`
+- **`web/src/pages/LoginPage.jsx`** — dark-themed login/signup page at `/login`; redirects to `/` if already logged in; uses `supabase.auth.signInWithPassword` / `supabase.auth.signUp`
+- **`ProtectedRoute`** (in `main.jsx`) — wraps routes requiring auth; redirects to `/login` if `user` is null after loading
+- **Header logout** — "Log out" button in the screener header calls `supabase.auth.signOut()` then navigates to `/login`
+- **`server/app.py`** — loads `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` from `.env` (project root); exports `verify_token(req)` helper that validates JWT from `Authorization: Bearer <token>` header using the Supabase Python client's `auth.get_user(token)`
+
 ### Routing
 
-React Router v7 (`react-router-dom`) with `createBrowserRouter` + `RouterProvider`. All three routes are defined in `main.jsx` — **not** in `App.jsx`. This is the correct v7 pattern; nesting `<Routes>` inside a component that is itself a route element causes a double-router conflict where URL changes but page content never switches.
+React Router v7 (`react-router-dom`) with `createBrowserRouter` + `RouterProvider`. All routes are defined in `main.jsx` — **not** in `App.jsx`. This is the correct v7 pattern; nesting `<Routes>` inside a component that is itself a route element causes a double-router conflict where URL changes but page content never switches.
 
-- `/` → `<App />` — screener page
-- `/trade` → `<TradePage />` — trade editor (navigate here with router state `{ triplet }`)
-- `/tradebook` → `<TradebookPage />` — saved trades
+- `/login` → `<LoginPage />` — public; redirects to `/` if already authenticated
+- `/` → `<ProtectedRoute><App /></ProtectedRoute>` — screener page
+- `/trade` → `<ProtectedRoute><TradePage /></ProtectedRoute>` — trade editor (navigate here with router state `{ triplet }`)
+- `/tradebook` → `<ProtectedRoute><TradebookPage /></ProtectedRoute>` — saved trades
 
 Each page component renders its own `<Header />`. Header detects the current path via `useLocation` and renders the appropriate variant.
 
@@ -241,11 +253,11 @@ Each page component renders its own `<Header />`. Header detects the current pat
   - Fetches call and put chains from `/api/chain` on mount; back-fills volume/OI for initial selected strikes
   - User clicks a chain row to change the selected contract for that leg (highlighted with indigo ring)
   - Summary bar above columns shows Net Premium, Spread Width, Score, P(Profit)% — updates only on Recalculate
-  - Save to Tradebook writes to `localStorage` key `luo_tradebook`; shows Toast for 3s
-- **`pages/TradebookPage.jsx`** — tradebook at `/tradebook`; reads from `localStorage` key `luo_tradebook`; renders its own `<Header />`
+  - Save to Tradebook inserts into Supabase `tradebook` table; shows Toast for 3s
+- **`pages/TradebookPage.jsx`** — tradebook at `/tradebook`; fetches from Supabase on mount, deletes via Supabase; renders its own `<Header />`
   - Table columns: Date Saved, Ticker, Expiration, Leg A/B/C Strike, Net Premium, Score, P(Profit)%
   - Each row has a × delete button; "Clear all" button at top right
-  - Trades sorted most-recently-saved first (saved as prepended array in localStorage)
+  - Trades fetched with `.order('saved_at', { ascending: false })` — most recent first
 - **`useOptionsData.js`** — custom hook managing all API calls and result state
   - `runScan({ tickers, distances, weeks })` — POSTs to `/api/run`, stores in `result`
   - `runV3Scan({ tickers, weeks, minPremium, minPProfit })` — POSTs to `/api/run_v3`, stores in `v3Result`
@@ -254,28 +266,40 @@ Each page component renders its own `<Header />`. Header detects the current pat
   - `marketOpen` and `lastRun` derived from whichever result is available (result → v3Result → status)
   - **Important:** all empty-array fallbacks use a module-level `const EMPTY = []` instead of inline `?? []`. Inline `[]` creates a new reference every render, which causes `useEffect([tickersUsed])` in App to fire every render → infinite setState loop → navigation broken. Never change these back to inline `[]`.
 
-### localStorage — Tradebook
+### Supabase — Tradebook Table
 
-Key: `luo_tradebook` — JSON array of trade objects, most-recently-saved first.
+Tradebook is stored in Supabase table `tradebook`. Required schema (create in Supabase dashboard):
 
-Each trade object:
-```json
-{
-  "id": 1713000000000,
-  "ticker": "MU",
-  "expiration": "2026-07-17",
-  "saved_at": "2026-04-13T12:00:00.000Z",
-  "leg_a": { "strike": 100.0, "premium": 5.50, "delta": 0.50, "volume": 1000, "oi": 5000 },
-  "leg_b": { "strike": 120.0, "premium": 3.20, "delta": 0.25, "volume": 500,  "oi": 2000 },
-  "leg_c": { "strike":  90.0, "premium": 2.80, "delta": 0.20, "volume": 800,  "oi": 3000 },
-  "net_premium": 0.5,
-  "spread_width": 20.0,
-  "score": 0.025,
-  "p_max_profit": 0.60,
-  "fair_value": 115.0
-}
+```sql
+create table tradebook (
+  id            bigserial primary key,
+  user_id       uuid references auth.users not null,
+  ticker        text not null,
+  expiration    date not null,
+  saved_at      timestamptz not null default now(),
+  leg_a_strike  float,
+  leg_a_premium float,
+  leg_a_delta   float,
+  leg_b_strike  float,
+  leg_b_premium float,
+  leg_b_delta   float,
+  leg_c_strike  float,
+  leg_c_premium float,
+  leg_c_delta   float,
+  net_premium   float,
+  spread_width  float,
+  score         float,
+  p_max_profit  float,
+  fair_value    float
+);
+
+alter table tradebook enable row level security;
+
+create policy "Users can only access their own trades" on tradebook
+  for all using (auth.uid() = user_id);
 ```
-Volume/OI are `null` when saved directly from the V3 scan dropdown (data not available in triplet); populated when saved from the Trade Editor after chain data loads.
+
+Leg columns are flat (not JSONB): `leg_a_strike`, `leg_a_premium`, `leg_a_delta` (and same for b/c). The insert payload must match this flat structure exactly.
 
 ---
 

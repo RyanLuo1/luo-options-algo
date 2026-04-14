@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Toast from '../components/Toast'
+import { supabase } from '../lib/supabase'
+import useAuth from '../hooks/useAuth'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -147,6 +149,7 @@ export default function TradePage() {
   const location = useLocation()
   const navigate  = useNavigate()
   const triplet   = location.state?.triplet
+  const { user }  = useAuth()
 
   // Selected contract per leg
   const [selectedA, setSelectedA] = useState(() => triplet ? legFromTriplet(triplet, 'a') : null)
@@ -168,6 +171,7 @@ export default function TradePage() {
   } : null)
 
   const [toastVisible, setToastVisible] = useState(false)
+  const [saveError,    setSaveError]    = useState(null)
 
   // Fetch chains on mount
   useEffect(() => {
@@ -199,24 +203,35 @@ export default function TradePage() {
     setMetrics(calcMetrics(selectedA, selectedB, selectedC))
   }
 
-  function handleSave() {
-    if (!triplet) return
+  async function handleSave() {
+    if (!triplet || !user) return
+    setSaveError(null)
     const trade = {
-      id:          Date.now(),
-      ticker:      triplet.ticker,
-      expiration:  triplet.expiration,
-      saved_at:    new Date().toISOString(),
-      leg_a: { strike: selectedA.strike, premium: selectedA.premium, delta: selectedA.delta, volume: selectedA.volume, oi: selectedA.oi },
-      leg_b: { strike: selectedB.strike, premium: selectedB.premium, delta: selectedB.delta, volume: selectedB.volume, oi: selectedB.oi },
-      leg_c: { strike: selectedC.strike, premium: selectedC.premium, delta: selectedC.delta, volume: selectedC.volume, oi: selectedC.oi },
-      net_premium:  metrics?.net_premium  ?? triplet.net_premium,
-      spread_width: metrics?.spread_width ?? triplet.spread_width,
-      score:        metrics?.score        ?? triplet.score,
-      p_max_profit: metrics?.p_max_profit ?? triplet.p_max_profit,
-      fair_value:   triplet.fair_value,
+      user_id:       user.id,
+      ticker:        triplet.ticker,
+      expiration:    triplet.expiration,
+      saved_at:      new Date().toISOString(),
+      leg_a_strike:  selectedA.strike,
+      leg_a_premium: selectedA.premium,
+      leg_a_delta:   selectedA.delta,
+      leg_b_strike:  selectedB.strike,
+      leg_b_premium: selectedB.premium,
+      leg_b_delta:   selectedB.delta,
+      leg_c_strike:  selectedC.strike,
+      leg_c_premium: selectedC.premium,
+      leg_c_delta:   selectedC.delta,
+      net_premium:   metrics?.net_premium  ?? triplet.net_premium,
+      spread_width:  metrics?.spread_width ?? triplet.spread_width,
+      score:         metrics?.score        ?? triplet.score,
+      p_max_profit:  metrics?.p_max_profit ?? triplet.p_max_profit,
+      fair_value:    triplet.fair_value,
     }
-    const existing = JSON.parse(localStorage.getItem('luo_tradebook') || '[]')
-    localStorage.setItem('luo_tradebook', JSON.stringify([trade, ...existing]))
+    const { error } = await supabase.from('tradebook').insert(trade)
+    if (error) {
+      console.error('Supabase insert error:', error)
+      setSaveError(`Save failed: ${error.message}`)
+      return
+    }
     setToastVisible(true)
     setTimeout(() => setToastVisible(false), 3000)
   }
@@ -312,6 +327,17 @@ export default function TradePage() {
       </div>
 
       <Toast message="Saved to Tradebook ✓" visible={toastVisible} />
+      {saveError && (
+        <div
+          style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
+          className="bg-gray-800 border border-red-700 rounded-lg shadow-xl px-4 py-3 max-w-xs"
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-red-400 text-sm font-semibold flex-1">{saveError}</span>
+            <button onClick={() => setSaveError(null)} className="text-gray-500 hover:text-gray-300 text-xs leading-none mt-0.5">×</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
