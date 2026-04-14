@@ -14,6 +14,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
+import math
 
 import yfinance as yf
 
@@ -422,8 +423,10 @@ def chain():
                 continue
 
             premium = get_midpoint(row)
-            volume  = int(row.get("volume", 0) or 0)
-            oi      = int(row.get("openInterest", 0) or 0)
+            vol_raw = row.get("volume", 0)
+            oi_raw  = row.get("openInterest", 0)
+            volume  = int(vol_raw) if vol_raw is not None and not (isinstance(vol_raw, float) and math.isnan(vol_raw)) else 0
+            oi      = int(oi_raw)  if oi_raw  is not None and not (isinstance(oi_raw,  float) and math.isnan(oi_raw))  else 0
 
             contracts.append({
                 "strike":  round(strike, 2),

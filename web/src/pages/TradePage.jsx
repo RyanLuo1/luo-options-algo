@@ -184,9 +184,31 @@ export default function TradePage() {
       fetch(`/api/chain?ticker=${ticker}&expiration=${expiration}&side=call`).then(r => r.json()),
       fetch(`/api/chain?ticker=${ticker}&expiration=${expiration}&side=put`).then(r => r.json()),
     ])
-      .then(([calls, puts]) => {
-        setCallChain(Array.isArray(calls) ? calls : [])
-        setPutChain(Array.isArray(puts)  ? puts  : [])
+      .then(([rawCalls, rawPuts]) => {
+        console.log('/api/chain calls response:', rawCalls)
+        console.log('/api/chain puts response:', rawPuts)
+
+        // Unwrap if server ever wraps in { data: [...] } or { chain: [...] }
+        const normalize = (r) => {
+          if (Array.isArray(r)) return r
+          if (r && Array.isArray(r.data))  return r.data
+          if (r && Array.isArray(r.chain)) return r.chain
+          console.error('/api/chain unexpected shape:', r)
+          return null  // signals an error response
+        }
+
+        const calls = normalize(rawCalls)
+        const puts  = normalize(rawPuts)
+
+        if (!calls || !puts) {
+          const msg = rawCalls?.error || rawPuts?.error || 'Unexpected response from /api/chain'
+          setChainError(msg)
+          return
+        }
+
+        setCallChain(calls)
+        setPutChain(puts)
+
         // Back-fill volume/OI for initially selected strikes from chain data
         const matchA = calls.find(c => c.strike === triplet.leg_a_strike)
         const matchB = calls.find(c => c.strike === triplet.leg_b_strike)
@@ -195,7 +217,10 @@ export default function TradePage() {
         if (matchB) setSelectedB(prev => ({ ...prev, volume: matchB.volume, oi: matchB.oi }))
         if (matchC) setSelectedC(prev => ({ ...prev, volume: matchC.volume, oi: matchC.oi }))
       })
-      .catch(err => setChainError(`Failed to load chain: ${err.message}`))
+      .catch(err => {
+        console.error('Chain fetch error:', err)
+        setChainError(`Failed to load chain: ${err.message}`)
+      })
       .finally(() => setChainLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
