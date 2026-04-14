@@ -12,12 +12,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-from datetime import datetime, time
+from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
-from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays
+from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays, black_scholes_delta, get_midpoint
 from ratio_ranker import calculate_ratios
 from event_filter import load_events, get_macro_events, get_earnings_flag
 from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value, match_expirations
@@ -27,7 +27,8 @@ WEB_DIST = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
 )
 
-app = Flask(__name__, static_folder=WEB_DIST, static_url_path="")
+app = Flask(__name__, static_folder=None)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 CORS(app)
 
 
@@ -78,7 +79,7 @@ def status():
         "market_open":   is_open,
         "time_et":       et_time,
         "last_run":      _last_run,
-        "events_loaded": _events_loaded,
+        "events_loaded": _events_loaded_weeks is not None,
     })
 
 
@@ -335,17 +336,108 @@ def run_v3():
 
 
 # ─────────────────────────────────────────────────────────────
+# Options chain endpoint
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/chain", methods=["GET"])
+def chain():
+    """
+    Return the full options chain for a ticker/expiration/side, with BS delta computed.
+
+    Query params:
+        ticker     : str  — stock symbol (e.g. MU)
+        expiration : str  — date string YYYY-MM-DD
+        side       : str  — 'call' or 'put'
+
+    Returns JSON array sorted by strike ascending, each entry:
+        strike, premium, delta, volume, oi, iv
+    Only contracts with 0.05 ≤ delta ≤ 0.85 and IV > 0.01 are returned.
+    """
+    import traceback
+    try:
+        ticker     = request.args.get("ticker", "").upper().strip()
+        expiration = request.args.get("expiration", "").strip()
+        side       = request.args.get("side", "call").lower().strip()
+
+        if not ticker or not expiration:
+            return jsonify({"error": "ticker and expiration are required"}), 400
+        if side not in ("call", "put"):
+            return jsonify({"error": "side must be 'call' or 'put'"}), 400
+
+        stock = yf.Ticker(ticker)
+        hist  = stock.history(period="1d")
+        if hist.empty:
+            return jsonify({"error": f"No price data for {ticker}"}), 400
+        price = round(float(hist["Close"].iloc[-1]), 2)
+
+        try:
+            opts = stock.option_chain(expiration)
+        except Exception as e:
+            return jsonify({"error": f"Could not load chain for {ticker} {expiration}: {e}"}), 400
+
+        df = opts.calls if side == "call" else opts.puts
+
+        today    = date.today()
+        exp_date = datetime.strptime(expiration, "%Y-%m-%d").date()
+        T = max((exp_date - today).days / 365.0, 1 / 365.0)
+
+        contracts = []
+        for _, row in df.iterrows():
+            strike = float(row["strike"])
+            iv_raw = row.get("impliedVolatility", None)
+            if iv_raw is None:
+                continue
+            iv = float(iv_raw)
+            if iv <= 0.01:
+                continue
+
+            delta = black_scholes_delta(price, strike, T, iv, side)
+            if delta is None or not (0.05 <= delta <= 0.85):
+                continue
+
+            premium = get_midpoint(row)
+            volume  = int(row.get("volume", 0) or 0)
+            oi      = int(row.get("openInterest", 0) or 0)
+
+            contracts.append({
+                "strike":  round(strike, 2),
+                "premium": round(premium, 4) if premium is not None else None,
+                "delta":   round(delta, 4),
+                "volume":  volume,
+                "oi":      oi,
+                "iv":      round(iv, 4),
+            })
+
+        contracts.sort(key=lambda c: c["strike"])
+        return jsonify(contracts)
+
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+# ─────────────────────────────────────────────────────────────
 # Serve React SPA (must be registered after all /api/* routes)
 # ─────────────────────────────────────────────────────────────
 
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_react(path):
-    """Serve built React app. Falls back to index.html for client-side routing."""
-    target = os.path.join(WEB_DIST, path) if path else None
-    if target and os.path.isfile(target):
-        return send_from_directory(WEB_DIST, path)
-    return send_from_directory(WEB_DIST, "index.html")
+    """
+    Serve built React app for all non-API routes.
+    If the path resolves to a real file in web/dist (e.g. assets/index-*.js),
+    serve it directly. Otherwise fall back to index.html so React Router handles
+    client-side routes like /trade and /tradebook.
+    index.html is served with no-cache headers so rebuilds are picked up immediately.
+    """
+    if path:
+        candidate = os.path.join(WEB_DIST, path)
+        if os.path.isfile(candidate):
+            return send_from_directory(WEB_DIST, path)
+    response = send_from_directory(WEB_DIST, "index.html")
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 # ─────────────────────────────────────────────────────────────
@@ -355,5 +447,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3")
+    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3  /api/chain")
     app.run(host='0.0.0.0', port=5001)

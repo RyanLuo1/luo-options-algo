@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const COLUMNS = [
   { key: 'rank',         label: 'Rank',         align: 'right' },
@@ -18,9 +18,23 @@ const COLUMNS = [
   { key: 'fair_value',   label: 'Fair Value',   align: 'right' },
 ]
 
-export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUsed, minPProfitUsed }) {
-  const [sortKey, setSortKey] = useState('rank')
-  const [sortAsc, setSortAsc] = useState(true)
+function rowKey(row) {
+  return `${row.ticker}-${row.expiration}-${row.leg_a_strike}-${row.leg_b_strike}-${row.leg_c_strike}`
+}
+
+export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook }) {
+  const [sortKey,      setSortKey]      = useState('rank')
+  const [sortAsc,      setSortAsc]      = useState(true)
+  const [openRow,      setOpenRow]      = useState(null)   // row object whose dropdown is open
+  const [dropdownPos,  setDropdownPos]  = useState({ x: 0, y: 0 })
+
+  // Close dropdown on any outside click
+  useEffect(() => {
+    if (!openRow) return
+    function close() { setOpenRow(null) }
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [openRow])
 
   if (!rows || rows.length === 0) {
     return (
@@ -46,6 +60,16 @@ export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUse
     else { setSortKey(key); setSortAsc(true) }
   }
 
+  function handleRowClick(e, row) {
+    e.stopPropagation()
+    if (openRow && rowKey(openRow) === rowKey(row)) {
+      setOpenRow(null)
+      return
+    }
+    setDropdownPos({ x: e.clientX, y: e.clientY + 6 })
+    setOpenRow(row)
+  }
+
   const minPP = minPProfitUsed ?? 0.50
 
   return (
@@ -68,6 +92,7 @@ export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUse
         {totalEvaluated > 0 && (
           <><span>·</span><span className="text-gray-600">{totalEvaluated.toLocaleString()} evaluated</span></>
         )}
+        <span className="ml-auto text-gray-600 italic">Click any row for actions</span>
       </div>
 
       {/* legend */}
@@ -113,34 +138,64 @@ export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUse
           <tbody>
             {sorted.map((row, idx) => (
               <V3Row
-                key={`${row.ticker}-${row.expiration}-${row.leg_a_strike}-${row.leg_b_strike}-${row.leg_c_strike}`}
+                key={rowKey(row)}
                 row={row}
                 idx={idx}
                 minPP={minPP}
+                isDropdownOpen={openRow ? rowKey(openRow) === rowKey(row) : false}
+                onRowClick={handleRowClick}
               />
             ))}
           </tbody>
         </table>
       </div>
 
+      {/* Fixed-position dropdown — escapes overflow-x-auto clip */}
+      {openRow && (
+        <div
+          style={{ position: 'fixed', top: dropdownPos.y, left: dropdownPos.x, zIndex: 1000 }}
+          onClick={e => e.stopPropagation()}
+          className="bg-gray-800 border border-gray-700 rounded shadow-xl w-48 py-1 text-xs"
+        >
+          <button
+            onClick={() => { onSaveToTradebook(openRow); setOpenRow(null) }}
+            className="w-full text-left px-4 py-2.5 text-gray-200 hover:bg-gray-700 transition-colors"
+          >
+            Save to Tradebook
+          </button>
+          <div className="border-t border-gray-700/60" />
+          <button
+            onClick={() => { onEdit(openRow); setOpenRow(null) }}
+            className="w-full text-left px-4 py-2.5 text-gray-200 hover:bg-gray-700 transition-colors"
+          >
+            Edit
+          </button>
+        </div>
+      )}
+
     </div>
   )
 }
 
-function V3Row({ row, idx, minPP }) {
+function V3Row({ row, idx, minPP, isDropdownOpen, onRowClick }) {
   const borderline = row.p_max_profit >= minPP && row.p_max_profit <= minPP + 0.10
   const noFV       = !row.fv_available
 
-  const rowBg = borderline
-    ? 'bg-red-950/30 hover:bg-red-950/50'
-    : noFV
-      ? 'bg-yellow-950/20 hover:bg-yellow-950/30'
-      : idx % 2 === 0
-        ? 'bg-gray-950 hover:bg-gray-900'
-        : 'bg-gray-900/50 hover:bg-gray-900'
+  const rowBg = isDropdownOpen
+    ? 'bg-gray-700/60'
+    : borderline
+      ? 'bg-red-950/30 hover:bg-red-950/50'
+      : noFV
+        ? 'bg-yellow-950/20 hover:bg-yellow-950/30'
+        : idx % 2 === 0
+          ? 'bg-gray-950 hover:bg-gray-900'
+          : 'bg-gray-900/50 hover:bg-gray-900'
 
   return (
-    <tr className={`border-b border-gray-800/60 transition-colors ${rowBg}`}>
+    <tr
+      onClick={e => onRowClick(e, row)}
+      className={`border-b border-gray-800/60 transition-colors cursor-pointer ${rowBg}`}
+    >
 
       {/* Rank */}
       <td className="px-3 py-2 text-right text-gray-500">{row.rank}</td>

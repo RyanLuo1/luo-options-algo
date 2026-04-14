@@ -120,18 +120,22 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `GET /api/holdings` — fetches open stock positions from Robinhood; returns 503 if unavailable
   - `GET /api/events` — returns cached macro events (FOMC, CPI, PPI, NFP, earnings)
   - `POST /api/run` — runs a full scan and returns ranked results
+  - `POST /api/run_v3` — runs a V3 Call Spread Risk Reversal scan and returns ranked triplets
+  - `GET /api/chain` — returns a filtered options chain for a ticker/expiration/side with BS delta computed
 - `/api/run` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
   - `distances`: list of floats in decimal form (e.g. `[0.02, 0.05, 0.10]`); validated 0.01–0.50; defaults to `DISTANCES`
   - `weeks`: integer 1–12; defaults to 4
 - `/api/run` response includes: `ranked`, `macro_events`, `duplicates_removed`, `market_open`, `run_at`, `tickers_used`, `tickers_skipped`, `tickers_source`, `distances_used`, `weeks_used`, `total_ranked`
-  - `POST /api/run_v3` — runs a V3 Call Spread Risk Reversal scan and returns ranked triplets
 - `/api/run_v3` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
   - `weeks`: integer 1–12; defaults to 12
   - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
 - `/api/run_v3` response includes: `ranked`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_used`, `min_premium_used`, `min_p_profit_used`
+- `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
+  - Fetches yfinance option chain, computes BS delta via `black_scholes_delta()`, filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01
+  - Returns JSON array sorted by strike ascending; each entry: `strike`, `premium`, `delta`, `volume`, `oi`, `iv`
 
 ### `server/robinhood.py`
 - Handles Robinhood authentication via `robin_stocks`; credentials loaded from `.env`
@@ -195,6 +199,13 @@ Built with Vite + React + Tailwind CSS. Source in `web/src/`, built output in `w
 
 The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe existing results and resets stale state. Each mode has its own controls and staleness tracking.
 
+### Routing
+
+React Router v6 (`react-router-dom`) is installed. `main.jsx` wraps the app in `<BrowserRouter>`. Routes are declared in `App.jsx`:
+- `/` → main screening page
+- `/trade` → trade editor (navigate here with router state `{ triplet }`)
+- `/tradebook` → saved trades page
+
 ### Key components
 
 - **`App.jsx`** — root component; owns all scan state and control logic
@@ -205,7 +216,11 @@ The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe
   - **Staleness detection (per mode):** Run Scan button turns amber "⚠ Rescan needed" when controls diverge from last scan's params. V2: new dist added, weeks changed, new ticker typed. V3: weeks changed, min premium changed, min P(profit) changed, new ticker typed. Removing pills is NOT stale (client-side handled).
   - `handleModeChange(newMode)` — calls `clearAll()`, switches mode
   - `handleRun()` — dispatches to `runScan` (V2) or `runV3Scan` (V3) based on current mode
-- **`Header.jsx`** — branding, V2/V3 mode toggle (indigo = V2 active, violet = V3 active), market open/closed badge, Run Scan button (indigo = fresh, amber = stale, gray = loading); toggle and run button disabled during loading
+- **`Header.jsx`** — route-aware header (uses `useLocation`):
+  - `/` (screener): branding + V2/V3 toggle + Tradebook nav tab + market badge + Run Scan button + last run
+  - `/tradebook`: branding + Tradebook tab (violet/active) + last run
+  - `/trade`: minimal header with ← Back to Screener button only
+  - V2/V3 toggle and Run Scan button only shown on `/`; Tradebook tab always shown except on `/trade`
 - **`RankedTable.jsx`** — V2 sortable ranked results table with liquidity flags (volume < 10 red, OI < 100 red); metadata bar shows algorithm version, distances used, weeks used, duplicates removed
 - **`V3Table.jsx`** — V3 sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value)
   - Leg A Prem: `text-sky-400` (you pay); Leg B & C Prem: `text-emerald-400` (you collect); Net Prem: white bold; Score: emerald bold
@@ -213,12 +228,45 @@ The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe
   - Metadata bar shows: algorithm, weeks, min premium, min P(profit)%, triplets ranked, total evaluated
 - **`Holdings.jsx`** — dismissible ticker pills shown after a scan; removing a pill instantly filters that ticker from the table
 - **`MacroEvents.jsx`** — displays upcoming FOMC, CPI, PPI, NFP dates
+- **`pages/TradePage.jsx`** — trade editor at `/trade`; receives triplet via router state
+  - Three-column layout: Leg A (long call), Leg B (short call), Leg C (short put)
+  - Fetches call and put chains from `/api/chain` on mount; back-fills volume/OI for initial selected strikes
+  - User clicks a chain row to change the selected contract for that leg (highlighted with indigo ring)
+  - Summary bar above columns shows Net Premium, Spread Width, Score, P(Profit)% — updates only on Recalculate
+  - Save to Tradebook writes to `localStorage` key `luo_tradebook`; shows "Saved ✓" confirmation for 2.5s
+- **`pages/TradebookPage.jsx`** — tradebook at `/tradebook`; reads from `localStorage` key `luo_tradebook`
+  - Table columns: Date Saved, Ticker, Expiration, Leg A/B/C Strike, Net Premium, Score, P(Profit)%
+  - Each row has a × delete button; "Clear all" button at top right
+  - Trades sorted most-recently-saved first (saved as prepended array in localStorage)
 - **`useOptionsData.js`** — custom hook managing all API calls and result state
   - `runScan({ tickers, distances, weeks })` — POSTs to `/api/run`, stores in `result`
   - `runV3Scan({ tickers, weeks, minPremium, minPProfit })` — POSTs to `/api/run_v3`, stores in `v3Result`
   - `clearAll()` — wipes both `result` and `v3Result` and clears any error; called on mode switch
   - Exposes V3 fields: `v3Ranked`, `v3TickersUsed`, `v3TickersSkipped`, `v3WeeksUsed`, `v3MinPremiumUsed`, `v3MinPProfitUsed`, `v3TotalEvaluated`, `v3HasResult`
   - `marketOpen` and `lastRun` derived from whichever result is available (result → v3Result → status)
+
+### localStorage — Tradebook
+
+Key: `luo_tradebook` — JSON array of trade objects, most-recently-saved first.
+
+Each trade object:
+```json
+{
+  "id": 1713000000000,
+  "ticker": "MU",
+  "expiration": "2026-07-17",
+  "saved_at": "2026-04-13T12:00:00.000Z",
+  "leg_a": { "strike": 100.0, "premium": 5.50, "delta": 0.50, "volume": 1000, "oi": 5000 },
+  "leg_b": { "strike": 120.0, "premium": 3.20, "delta": 0.25, "volume": 500,  "oi": 2000 },
+  "leg_c": { "strike":  90.0, "premium": 2.80, "delta": 0.20, "volume": 800,  "oi": 3000 },
+  "net_premium": 0.5,
+  "spread_width": 20.0,
+  "score": 0.025,
+  "p_max_profit": 0.60,
+  "fair_value": 115.0
+}
+```
+Volume/OI are `null` when saved directly from the V3 scan dropdown (data not available in triplet); populated when saved from the Trade Editor after chain data loads.
 
 ---
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import './index.css'
 
 import useOptionsData  from './hooks/useOptionsData'
@@ -8,10 +9,13 @@ import Holdings        from './components/Holdings'
 import RankedTable     from './components/RankedTable'
 import V3Table         from './components/V3Table'
 import LoadingSpinner  from './components/LoadingSpinner'
+import Toast           from './components/Toast'
 
 const DEFAULT_DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
 
 export default function App() {
+  const navigate = useNavigate()
+
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState('v2')  // 'v2' | 'v3'
 
@@ -157,20 +161,42 @@ export default function App() {
     if (!isNaN(val) && val >= 1 && val <= 99) setV3MinPProfit(parseFloat((val / 100).toFixed(4)))
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  const [toastVisible, setToastVisible] = useState(false)
 
-      <Header
-        marketOpen={marketOpen}
-        lastRun={lastRun}
-        onRun={handleRun}
-        loading={loading}
-        isStale={isStale}
-        mode={mode}
-        onModeChange={handleModeChange}
-      />
+  function showToast() {
+    setToastVisible(true)
+    setTimeout(() => setToastVisible(false), 3000)
+  }
 
+  // ── Tradebook helpers ──────────────────────────────────────────────────────
+  function saveToTradebook(row) {
+    const trade = {
+      id:          Date.now(),
+      ticker:      row.ticker,
+      expiration:  row.expiration,
+      saved_at:    new Date().toISOString(),
+      leg_a: { strike: row.leg_a_strike, premium: row.leg_a_prem, delta: row.leg_a_delta, volume: null, oi: null },
+      leg_b: { strike: row.leg_b_strike, premium: row.leg_b_prem, delta: row.leg_b_delta, volume: null, oi: null },
+      leg_c: { strike: row.leg_c_strike, premium: row.leg_c_prem, delta: row.leg_c_delta, volume: null, oi: null },
+      net_premium:  row.net_premium,
+      spread_width: row.spread_width,
+      score:        row.score,
+      p_max_profit: row.p_max_profit,
+      fair_value:   row.fair_value,
+    }
+    const existing = JSON.parse(localStorage.getItem('luo_tradebook') || '[]')
+    localStorage.setItem('luo_tradebook', JSON.stringify([trade, ...existing]))
+    showToast()
+  }
+
+  function handleEdit(row) {
+    navigate('/trade', { state: { triplet: row } })
+  }
+
+  // ── Screener content (inlined so it has closure access to all state) ────────
+  const screenerContent = (
+    <>
       <MacroEvents macroEvents={macroEvents} />
 
       {/* Control bar */}
@@ -366,11 +392,29 @@ export default function App() {
                 weeksUsed={v3WeeksUsed}
                 minPremiumUsed={v3MinPremiumUsed}
                 minPProfitUsed={v3MinPProfitUsed}
+                onEdit={handleEdit}
+                onSaveToTradebook={saveToTradebook}
               />
             : <EmptyState mode="v3" />
         )}
       </main>
+    </>
+  )
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+      <Header
+        marketOpen={marketOpen}
+        lastRun={lastRun}
+        onRun={handleRun}
+        loading={loading}
+        isStale={isStale}
+        mode={mode}
+        onModeChange={handleModeChange}
+      />
+      {screenerContent}
+      <Toast message="Saved to Tradebook ✓" visible={toastVisible} />
     </div>
   )
 }

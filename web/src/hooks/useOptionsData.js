@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 
+// Stable empty array — avoids creating a new reference on every render,
+// which would trigger useEffect dependency checks in App and cause an infinite loop.
+const EMPTY = []
+
 export default function useOptionsData() {
   const [status,   setStatus]   = useState(null)  // from GET /api/status
   const [result,   setResult]   = useState(null)  // from POST /api/run  (V2)
@@ -107,20 +111,20 @@ export default function useOptionsData() {
     lastRun:    result?.run_at       ?? v3Result?.run_at       ?? status?.last_run    ?? null,
 
     // ── V2 ──────────────────────────────────────────────────────────────────
-    ranked:            result?.ranked            ?? [],
+    ranked:            result?.ranked            ?? EMPTY,
     macroEvents:       result?.macro_events ?? v3Result?.macro_events ?? null,
     duplicatesRemoved: result?.duplicates_removed ?? 0,
-    tickersUsed:       result?.tickers_used      ?? [],
-    tickersSkipped:    result?.tickers_skipped   ?? [],
+    tickersUsed:       result?.tickers_used      ?? EMPTY,
+    tickersSkipped:    result?.tickers_skipped   ?? EMPTY,
     tickersSource:     result?.tickers_source    ?? null,
     distancesUsed:     result?.distances_used    ?? null,
     weeksUsed:         result?.weeks_used        ?? null,
     hasResult:         result !== null,
 
     // ── V3 ──────────────────────────────────────────────────────────────────
-    v3Ranked:          v3Result?.ranked           ?? [],
-    v3TickersUsed:     v3Result?.tickers_used     ?? [],
-    v3TickersSkipped:  v3Result?.tickers_skipped  ?? [],
+    v3Ranked:          v3Result?.ranked           ?? EMPTY,
+    v3TickersUsed:     v3Result?.tickers_used     ?? EMPTY,
+    v3TickersSkipped:  v3Result?.tickers_skipped  ?? EMPTY,
     v3WeeksUsed:       v3Result?.weeks_used       ?? null,
     v3MinPremiumUsed:  v3Result?.min_premium_used ?? null,
     v3MinPProfitUsed:  v3Result?.min_p_profit_used ?? null,
