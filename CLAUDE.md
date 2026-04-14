@@ -115,6 +115,9 @@ Ratio = (Premium Collected / Stock Price) / Delta
 ### `server/app.py`
 - Flask API server; run with `python3 server/app.py` from the project root
 - Serves the built React app from `web/dist` (single server for API + frontend)
+- `static_folder=None` — Flask's built-in static serving is disabled; all file serving goes through the catch-all route
+- `app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0` — disables Flask's file cache so rebuilds are picked up immediately
+- `index.html` is served with explicit `no-store, no-cache` headers; JS/CSS assets (content-hashed by Vite) are served without special headers
 - **Routes:**
   - `GET /api/status` — fast health check; returns market open/closed, last run time
   - `GET /api/holdings` — fetches open stock positions from Robinhood; returns 503 if unavailable
@@ -132,7 +135,7 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `weeks`: integer 1–12; defaults to 12
   - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
-- `/api/run_v3` response includes: `ranked`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_used`, `min_premium_used`, `min_p_profit_used`
+- `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_used`, `min_premium_used`, `min_p_profit_used`
 - `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
   - Fetches yfinance option chain, computes BS delta via `black_scholes_delta()`, filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01
   - Returns JSON array sorted by strike ascending; each entry: `strike`, `premium`, `delta`, `volume`, `oi`, `iv`
@@ -201,14 +204,17 @@ The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe
 
 ### Routing
 
-React Router v6 (`react-router-dom`) is installed. `main.jsx` wraps the app in `<BrowserRouter>`. Routes are declared in `App.jsx`:
-- `/` → main screening page
-- `/trade` → trade editor (navigate here with router state `{ triplet }`)
-- `/tradebook` → saved trades page
+React Router v7 (`react-router-dom`) with `createBrowserRouter` + `RouterProvider`. All three routes are defined in `main.jsx` — **not** in `App.jsx`. This is the correct v7 pattern; nesting `<Routes>` inside a component that is itself a route element causes a double-router conflict where URL changes but page content never switches.
+
+- `/` → `<App />` — screener page
+- `/trade` → `<TradePage />` — trade editor (navigate here with router state `{ triplet }`)
+- `/tradebook` → `<TradebookPage />` — saved trades
+
+Each page component renders its own `<Header />`. Header detects the current path via `useLocation` and renders the appropriate variant.
 
 ### Key components
 
-- **`App.jsx`** — root component; owns all scan state and control logic
+- **`App.jsx`** — screener page only (not a router/layout); owns all scan state and control logic
   - **Shared:** ticker text input (comma/space separated; blank = use Robinhood holdings)
   - **V2 mode controls:** Dist % pill input (type a number e.g. `7`, press Enter/comma to add; default pills: 3%, 5%, 7%, 10%, 15%) + Weeks +/− control (1–12, default 4)
   - **V3 mode controls:** Weeks +/− control (1–12, default 12) + Min Premium $ input (default 5.00) + Min P(Profit)% input (default 50)
@@ -216,11 +222,13 @@ React Router v6 (`react-router-dom`) is installed. `main.jsx` wraps the app in `
   - **Staleness detection (per mode):** Run Scan button turns amber "⚠ Rescan needed" when controls diverge from last scan's params. V2: new dist added, weeks changed, new ticker typed. V3: weeks changed, min premium changed, min P(profit) changed, new ticker typed. Removing pills is NOT stale (client-side handled).
   - `handleModeChange(newMode)` — calls `clearAll()`, switches mode
   - `handleRun()` — dispatches to `runScan` (V2) or `runV3Scan` (V3) based on current mode
-- **`Header.jsx`** — route-aware header (uses `useLocation`):
+  - Does not contain any `<Routes>` or `<Route>` — routing is entirely in `main.jsx`
+- **`Header.jsx`** — route-aware header (uses `useLocation`); rendered independently by each page component:
   - `/` (screener): branding + V2/V3 toggle + Tradebook nav tab + market badge + Run Scan button + last run
-  - `/tradebook`: branding + Tradebook tab (violet/active) + last run
-  - `/trade`: minimal header with ← Back to Screener button only
-  - V2/V3 toggle and Run Scan button only shown on `/`; Tradebook tab always shown except on `/trade`
+  - `/tradebook`: minimal header with ← Back to Screener button + "Tradebook" label
+  - `/trade`: minimal header with ← Back to Screener button + "Trade Editor" label
+  - All navigation uses `useNavigate` (no `<Link>` or `<a>` tags)
+- **`Toast.jsx`** — fixed bottom-right toast notification; accepts `message` and `visible` props; fades in/out over 0.3s; used in App (after saving from V3 dropdown) and TradePage (after Save to Tradebook)
 - **`RankedTable.jsx`** — V2 sortable ranked results table with liquidity flags (volume < 10 red, OI < 100 red); metadata bar shows algorithm version, distances used, weeks used, duplicates removed
 - **`V3Table.jsx`** — V3 sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value)
   - Leg A Prem: `text-sky-400` (you pay); Leg B & C Prem: `text-emerald-400` (you collect); Net Prem: white bold; Score: emerald bold
@@ -228,13 +236,13 @@ React Router v6 (`react-router-dom`) is installed. `main.jsx` wraps the app in `
   - Metadata bar shows: algorithm, weeks, min premium, min P(profit)%, triplets ranked, total evaluated
 - **`Holdings.jsx`** — dismissible ticker pills shown after a scan; removing a pill instantly filters that ticker from the table
 - **`MacroEvents.jsx`** — displays upcoming FOMC, CPI, PPI, NFP dates
-- **`pages/TradePage.jsx`** — trade editor at `/trade`; receives triplet via router state
+- **`pages/TradePage.jsx`** — trade editor at `/trade`; receives triplet via router state; renders its own `<Header />`
   - Three-column layout: Leg A (long call), Leg B (short call), Leg C (short put)
   - Fetches call and put chains from `/api/chain` on mount; back-fills volume/OI for initial selected strikes
   - User clicks a chain row to change the selected contract for that leg (highlighted with indigo ring)
   - Summary bar above columns shows Net Premium, Spread Width, Score, P(Profit)% — updates only on Recalculate
-  - Save to Tradebook writes to `localStorage` key `luo_tradebook`; shows "Saved ✓" confirmation for 2.5s
-- **`pages/TradebookPage.jsx`** — tradebook at `/tradebook`; reads from `localStorage` key `luo_tradebook`
+  - Save to Tradebook writes to `localStorage` key `luo_tradebook`; shows Toast for 3s
+- **`pages/TradebookPage.jsx`** — tradebook at `/tradebook`; reads from `localStorage` key `luo_tradebook`; renders its own `<Header />`
   - Table columns: Date Saved, Ticker, Expiration, Leg A/B/C Strike, Net Premium, Score, P(Profit)%
   - Each row has a × delete button; "Clear all" button at top right
   - Trades sorted most-recently-saved first (saved as prepended array in localStorage)
@@ -244,6 +252,7 @@ React Router v6 (`react-router-dom`) is installed. `main.jsx` wraps the app in `
   - `clearAll()` — wipes both `result` and `v3Result` and clears any error; called on mode switch
   - Exposes V3 fields: `v3Ranked`, `v3TickersUsed`, `v3TickersSkipped`, `v3WeeksUsed`, `v3MinPremiumUsed`, `v3MinPProfitUsed`, `v3TotalEvaluated`, `v3HasResult`
   - `marketOpen` and `lastRun` derived from whichever result is available (result → v3Result → status)
+  - **Important:** all empty-array fallbacks use a module-level `const EMPTY = []` instead of inline `?? []`. Inline `[]` creates a new reference every render, which causes `useEffect([tickersUsed])` in App to fire every render → infinite setState loop → navigation broken. Never change these back to inline `[]`.
 
 ### localStorage — Tradebook
 
