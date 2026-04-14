@@ -318,6 +318,48 @@ Leg columns are flat (not JSONB): `leg_a_strike`, `leg_a_premium`, `leg_a_delta`
 
 ---
 
+## Production Deployment
+
+- **Host:** AWS EC2 t3.small, Ubuntu 24.04, us-east-2 (Ohio)
+- **Server IP:** 3.131.232.204 (Elastic IP — permanent)
+- **Domain:** https://luo-capital.com (registered via Namecheap, DNS A records pointing to Elastic IP)
+- **SSL:** Let's Encrypt via Certbot, auto-renews, expires 2026-07-13
+
+### Stack
+- **Nginx** reverse proxy on port 80/443 → forwards to Gunicorn on port 5001
+- **Gunicorn** with 2 workers, 120s timeout, runs `server.app:app`
+- **systemd service:** `luocapital.service` — auto-starts on boot, auto-restarts on crash
+- **Python venv:** `/home/ubuntu/luo-options-algo/venv`
+
+### Environment files on server
+- `/home/ubuntu/luo-options-algo/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ROBINHOOD_USERNAME`, `ROBINHOOD_PASSWORD`
+- `/home/ubuntu/luo-options-algo/web/.env` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+
+### Deployment workflow
+```bash
+# On your Mac — push to GitHub
+git commit -m 'your message' && git push
+
+# SSH into server
+ssh -i ~/Downloads/luo-capital-key.pem ubuntu@3.131.232.204
+
+# Pull latest code
+cd ~/luo-options-algo
+git pull
+
+# If frontend changed — rebuild React
+cd web && npm run build && cd ..
+
+# If Python dependencies changed
+source venv/bin/activate
+pip install -r server/requirements.txt
+
+# Restart the app
+sudo systemctl restart luocapital
+```
+
+---
+
 ## Development Rules
 - Never commit or push to git unless explicitly instructed to do so
 
