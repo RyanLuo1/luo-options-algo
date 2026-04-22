@@ -1,11 +1,15 @@
+import os
 import yfinance as yf
 from datetime import datetime, timedelta
-import pandas as pd
-import math
-from scipy.stats import norm
+from dotenv import load_dotenv
+from massive import RESTClient
+
+load_dotenv()
 
 TICKERS = ["GEV", "PLTR", "APP", "AVGO", "META", "MU", "NVDA", "TSLA", "AMD", "TSM"]
 DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
+
+massive_client = RESTClient(os.getenv('MASSIVE_API_KEY'))
 
 
 def get_next_fridays(n=4):
@@ -17,23 +21,6 @@ def get_next_fridays(n=4):
             fridays.append(d.date())
         d += timedelta(days=1)
     return fridays
-
-
-RISK_FREE_RATE = 0.045  # approximate current risk-free rate
-
-
-def black_scholes_delta(S, K, T, sigma, side):
-    """Returns BS delta for a call or put. Returns None if inputs are invalid."""
-    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
-        return None
-    try:
-        d1 = (math.log(S / K) + (RISK_FREE_RATE + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-        if side == "call":
-            return norm.cdf(d1)
-        else:
-            return abs(norm.cdf(d1) - 1)  # abs of put delta
-    except Exception:
-        return None
 
 
 def find_closest_strike(strikes, target):
@@ -57,87 +44,105 @@ def fetch_ticker_data(ticker, weeks=4):
         return None, None
 
     price = round(hist["Close"].iloc[-1], 2)
-    expirations = stock.options  # all available expiration strings
-
     target_fridays = get_next_fridays(weeks)
+    expirations = [f.strftime("%Y-%m-%d") for f in target_fridays]
+    return price, expirations
 
-    # Match each target Friday to the nearest available expiration
-    matched_expirations = []
-    for friday in target_fridays:
-        best = None
-        best_delta = timedelta(days=999)
-        for exp_str in expirations:
-            exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
-            delta = abs(exp_date - friday)
-            if delta < best_delta:
-                best_delta = delta
-                best = exp_str
-        if best and best not in matched_expirations:
-            matched_expirations.append(best)
 
-    return price, matched_expirations
+def _log_massive_error(ticker, exp, side, err):
+    msg = str(err)
+    if any(x in msg for x in ('401', '403', 'Unauthorized', 'Forbidden')):
+        print(f"  [!] Massive auth error ({ticker} {exp} {side}) — check MASSIVE_API_KEY: {msg}")
+    else:
+        print(f"  [!] Massive error ({ticker} {exp} {side}): {msg}")
+
+
+def _build_strike_dict(contracts):
+    """Build a strike → contract mapping, keeping only contracts with valid Greeks, IV, and price."""
+    d = {}
+    for o in contracts:
+        if o.greeks is None or o.greeks.delta is None:
+            continue
+        if o.implied_volatility is None or float(o.implied_volatility) <= 0.01:
+            continue
+        if o.day is None or o.day.close is None:
+            continue
+        d[float(o.details.strike_price)] = o
+    return d
 
 
 def build_rows(ticker, price, expirations, distances=None):
     if distances is None:
         distances = DISTANCES
-    stock = yf.Ticker(ticker)
+
     rows = []
+    strike_low  = round(price * 0.80, 2)
+    strike_high = round(price * 1.20, 2)
 
     for i, exp in enumerate(expirations):
         week_label = f"Week {i + 1}"
+
         try:
-            chain = stock.option_chain(exp)
+            raw_calls = list(massive_client.list_snapshot_options_chain(
+                ticker,
+                params={
+                    'expiration_date':  exp,
+                    'strike_price.gte': strike_low,
+                    'strike_price.lte': strike_high,
+                    'contract_type':    'call',
+                    'limit':            250,
+                }
+            ))
         except Exception as e:
-            print(f"  [!] Could not fetch chain for {ticker} {exp}: {e}")
+            _log_massive_error(ticker, exp, 'call', e)
+            raw_calls = []
+
+        try:
+            raw_puts = list(massive_client.list_snapshot_options_chain(
+                ticker,
+                params={
+                    'expiration_date':  exp,
+                    'strike_price.gte': strike_low,
+                    'strike_price.lte': strike_high,
+                    'contract_type':    'put',
+                    'limit':            250,
+                }
+            ))
+        except Exception as e:
+            _log_massive_error(ticker, exp, 'put', e)
+            raw_puts = []
+
+        if not raw_calls and not raw_puts:
+            print(f"  [!] No chain data from Massive for {ticker} {exp}")
             continue
 
-        calls_df = chain.calls.set_index("strike") if not chain.calls.empty else None
-        puts_df = chain.puts.set_index("strike") if not chain.puts.empty else None
-
-        exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-        T = (exp_date - datetime.today().date()).days / 365.0
+        calls_dict = _build_strike_dict(raw_calls)
+        puts_dict  = _build_strike_dict(raw_puts)
 
         for dist in distances:
             dist_pct = dist * 100
 
             # --- CALL ---
             call_target = round(price * (1 + dist), 2)
-            call_actual = None
-            call_premium = None
-            call_delta = None
-            call_volume = None
-            call_oi = None
-            if calls_df is not None and not calls_df.empty:
-                call_actual = find_closest_strike(list(calls_df.index), call_target)
-                call_row = calls_df.loc[call_actual]
-                call_premium = get_midpoint(call_row)
-                iv = call_row.get("impliedVolatility", None)
-                if iv and iv == iv and iv > 0.01:
-                    call_delta = black_scholes_delta(price, call_actual, T, float(iv), "call")
-                raw_vol = call_row.get("volume", None)
-                raw_oi  = call_row.get("openInterest", None)
-                call_volume = int(raw_vol) if raw_vol is not None and raw_vol == raw_vol else None
-                call_oi     = int(raw_oi)  if raw_oi  is not None and raw_oi  == raw_oi  else None
+            call_actual = call_premium = call_delta = call_volume = call_oi = None
+            if calls_dict:
+                call_actual  = find_closest_strike(list(calls_dict.keys()), call_target)
+                o            = calls_dict[call_actual]
+                call_premium = round(float(o.day.close), 4)
+                call_delta   = round(abs(float(o.greeks.delta)), 6)
+                call_volume  = int(o.day.volume)    if o.day.volume    is not None else None
+                call_oi      = int(o.open_interest) if o.open_interest is not None else None
 
             # --- PUT ---
             put_target = round(price * (1 - dist), 2)
-            put_actual = None
-            put_premium = None
-            put_delta = None
-            put_volume = None
-            put_oi = None
-            if puts_df is not None and not puts_df.empty:
-                put_actual = find_closest_strike(list(puts_df.index), put_target)
-                put_row = puts_df.loc[put_actual]
-                put_premium = get_midpoint(put_row)
-                iv = put_row.get("impliedVolatility", None)
-                if iv and iv == iv and iv > 0.01:
-                    put_delta = black_scholes_delta(price, put_actual, T, float(iv), "put")
-                raw_vol = put_row.get("volume", None)
-                raw_oi  = put_row.get("openInterest", None)
-                put_volume = int(raw_vol) if raw_vol is not None and raw_vol == raw_vol else None
-                put_oi     = int(raw_oi)  if raw_oi  is not None and raw_oi  == raw_oi  else None
+            put_actual = put_premium = put_delta = put_volume = put_oi = None
+            if puts_dict:
+                put_actual  = find_closest_strike(list(puts_dict.keys()), put_target)
+                o           = puts_dict[put_actual]
+                put_premium = round(float(o.day.close), 4)
+                put_delta   = round(abs(float(o.greeks.delta)), 6)
+                put_volume  = int(o.day.volume)    if o.day.volume    is not None else None
+                put_oi      = int(o.open_interest) if o.open_interest is not None else None
 
             rows.append({
                 "Ticker":       ticker,

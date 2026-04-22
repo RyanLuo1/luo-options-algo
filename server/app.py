@@ -14,14 +14,13 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
-import math
 
 import yfinance as yf
 
-from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays, black_scholes_delta, get_midpoint
+from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays, massive_client
 from ratio_ranker import calculate_ratios
 from event_filter import load_events, get_macro_events, get_earnings_flag
-from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value, match_expirations
+from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value
 import robinhood
 
 WEB_DIST = os.path.join(
@@ -305,10 +304,11 @@ def run_v3():
         total_evaluated = 0
         tickers_scanned = []
 
+        week_exps = [(i + 1, f.strftime("%Y-%m-%d")) for i, f in enumerate(target_fridays)]
+
         for ticker in tickers:
             try:
-                stock = yf.Ticker(ticker)
-                hist  = stock.history(period="1d")
+                hist = yf.Ticker(ticker).history(period="1d")
                 if hist.empty:
                     continue
                 price = round(float(hist["Close"].iloc[-1]), 2)
@@ -316,15 +316,6 @@ def run_v3():
                 continue
 
             fair_value = get_fair_value(ticker)
-
-            try:
-                available = stock.options
-            except Exception:
-                available = ()
-
-            week_exps = match_expirations(available, target_fridays)
-            if not week_exps:
-                continue
 
             tickers_scanned.append(ticker)
             triplets, evaluated = v3_scan_ticker(
@@ -369,7 +360,7 @@ def run_v3():
 @app.route("/api/chain", methods=["GET"])
 def chain():
     """
-    Return the full options chain for a ticker/expiration/side, with BS delta computed.
+    Return the full options chain for a ticker/expiration/side via Massive.
 
     Query params:
         ticker     : str  — stock symbol (e.g. MU)
@@ -391,50 +382,42 @@ def chain():
         if side not in ("call", "put"):
             return jsonify({"error": "side must be 'call' or 'put'"}), 400
 
-        stock = yf.Ticker(ticker)
-        hist  = stock.history(period="1d")
-        if hist.empty:
-            return jsonify({"error": f"No price data for {ticker}"}), 400
-        price = round(float(hist["Close"].iloc[-1]), 2)
-
         try:
-            opts = stock.option_chain(expiration)
+            raw = list(massive_client.list_snapshot_options_chain(
+                ticker,
+                params={
+                    'expiration_date': expiration,
+                    'contract_type':   side,
+                    'limit':           250,
+                }
+            ))
         except Exception as e:
             return jsonify({"error": f"Could not load chain for {ticker} {expiration}: {e}"}), 400
 
-        df = opts.calls if side == "call" else opts.puts
-
-        today    = date.today()
-        exp_date = datetime.strptime(expiration, "%Y-%m-%d").date()
-        T = max((exp_date - today).days / 365.0, 1 / 365.0)
-
         contracts = []
-        for _, row in df.iterrows():
-            strike = float(row["strike"])
-            iv_raw = row.get("impliedVolatility", None)
-            if iv_raw is None:
+        for o in raw:
+            if o.greeks is None or o.greeks.delta is None:
                 continue
-            iv = float(iv_raw)
-            if iv <= 0.01:
+            iv_raw = o.implied_volatility
+            if iv_raw is None or float(iv_raw) <= 0.01:
                 continue
-
-            delta = black_scholes_delta(price, strike, T, iv, side)
-            if delta is None or not (0.05 <= delta <= 0.85):
+            if o.day is None or o.day.close is None:
                 continue
 
-            premium = get_midpoint(row)
-            vol_raw = row.get("volume", 0)
-            oi_raw  = row.get("openInterest", 0)
-            volume  = int(vol_raw) if vol_raw is not None and not (isinstance(vol_raw, float) and math.isnan(vol_raw)) else 0
-            oi      = int(oi_raw)  if oi_raw  is not None and not (isinstance(oi_raw,  float) and math.isnan(oi_raw))  else 0
+            delta = round(abs(float(o.greeks.delta)), 4)
+            if not (0.05 <= delta <= 0.85):
+                continue
+
+            volume = int(o.day.volume)    if o.day.volume    is not None else 0
+            oi     = int(o.open_interest) if o.open_interest is not None else 0
 
             contracts.append({
-                "strike":  round(strike, 2),
-                "premium": round(premium, 4) if premium is not None else None,
-                "delta":   round(delta, 4),
+                "strike":  round(float(o.details.strike_price), 2),
+                "premium": round(float(o.day.close), 4),
+                "delta":   delta,
                 "volume":  volume,
                 "oi":      oi,
-                "iv":      round(iv, 4),
+                "iv":      round(float(iv_raw), 4),
             })
 
         contracts.sort(key=lambda c: c["strike"])

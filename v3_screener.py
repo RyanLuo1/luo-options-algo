@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
-from options_screener import get_next_fridays, black_scholes_delta, get_midpoint
+from options_screener import get_next_fridays, massive_client
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -31,12 +31,12 @@ DEFAULT_WEEKS       = 12
 MIN_IV              = 0.01
 MIN_VOLUME          = 20
 
-LEG_A_DELTA_LOW     = 0.45
-LEG_A_DELTA_HIGH    = 0.55
+LEG_A_DELTA_LOW     = 0.40
+LEG_A_DELTA_HIGH    = 0.60
 LEG_B_DELTA_LOW     = 0.20
-LEG_B_DELTA_HIGH    = 0.35
+LEG_B_DELTA_HIGH    = 0.40
 LEG_C_DELTA_LOW     = 0.15
-LEG_C_DELTA_HIGH    = 0.25
+LEG_C_DELTA_HIGH    = 0.30
 MIN_P_MAX_PROFIT    = 0.50
 
 # ANSI
@@ -109,33 +109,26 @@ def match_expirations(available_exps, target_fridays):
     return matched
 
 
-def enrich_contracts(df, price, T, side):
-    """
-    Given a calls or puts DataFrame indexed by strike, compute BS delta for each
-    contract and return a list of dicts for contracts that pass IV and volume filters.
-    """
-    contracts = []
-    for strike, row in df.iterrows():
-        iv = row.get("impliedVolatility", None)
-        if not iv or iv != iv or iv <= MIN_IV:
+def _parse_massive_contracts(raw):
+    """Filter and normalize a list of Massive option snapshot objects."""
+    result = []
+    for o in raw:
+        if o.greeks is None or o.greeks.delta is None:
             continue
-
-        vol_raw = row.get("volume", None)
-        vol = int(vol_raw) if vol_raw is not None and vol_raw == vol_raw else 0
+        if o.implied_volatility is None or float(o.implied_volatility) <= MIN_IV:
+            continue
+        if o.day is None or o.day.close is None:
+            continue
+        vol = int(o.day.volume) if o.day.volume is not None else 0
         if vol < MIN_VOLUME:
             continue
-
-        delta = black_scholes_delta(price, float(strike), T, float(iv), side)
-        if delta is None:
-            continue
-
-        contracts.append({
-            "strike":  float(strike),
-            "premium": get_midpoint(row),
-            "delta":   delta,
+        result.append({
+            "strike":  float(o.details.strike_price),
+            "premium": round(float(o.day.close), 4),
+            "delta":   round(abs(float(o.greeks.delta)), 6),
             "volume":  vol,
         })
-    return contracts
+    return result
 
 
 # ── Core scan ──────────────────────────────────────────────────────────────────
@@ -147,7 +140,7 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
     Args:
         ticker        : str
         price         : float — current stock price
-        week_exps     : list of (week_num, exp_str) from match_expirations()
+        week_exps     : list of (week_num, exp_str)
         fair_value    : float or None
         min_premium   : float — minimum net credit required
         min_p_profit  : float or None — minimum P(max profit); defaults to MIN_P_MAX_PROFIT
@@ -157,28 +150,51 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
     """
     if min_p_profit is None:
         min_p_profit = MIN_P_MAX_PROFIT
-    stock = yf.Ticker(ticker)
+
     triplets        = []
     total_evaluated = 0
-    today           = datetime.today().date()
+
+    strike_low  = round(price * 0.70, 2)
+    strike_high = round(price * 1.30, 2)
 
     for week_num, exp in week_exps:
         exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-        T = (exp_date - today).days / 365.0
+        T = (exp_date - datetime.today().date()).days / 365.0
         if T <= 0:
             continue
 
         try:
-            chain = stock.option_chain(exp)
+            raw_calls = list(massive_client.list_snapshot_options_chain(
+                ticker,
+                params={
+                    'expiration_date':  exp,
+                    'strike_price.gte': strike_low,
+                    'strike_price.lte': strike_high,
+                    'contract_type':    'call',
+                    'limit':            250,
+                }
+            ))
         except Exception as e:
-            print(f"    [!] {exp}: could not fetch chain — {e}")
+            print(f"\n    [!] {exp}: call chain error — {e}")
             continue
 
-        if chain.calls.empty or chain.puts.empty:
+        try:
+            raw_puts = list(massive_client.list_snapshot_options_chain(
+                ticker,
+                params={
+                    'expiration_date':  exp,
+                    'strike_price.gte': strike_low,
+                    'strike_price.lte': strike_high,
+                    'contract_type':    'put',
+                    'limit':            250,
+                }
+            ))
+        except Exception as e:
+            print(f"\n    [!] {exp}: put chain error — {e}")
             continue
 
-        calls = enrich_contracts(chain.calls.set_index("strike"), price, T, "call")
-        puts  = enrich_contracts(chain.puts.set_index("strike"),  price, T, "put")
+        calls = _parse_massive_contracts(raw_calls)
+        puts  = _parse_massive_contracts(raw_puts)
 
         # Segment by role
         leg_a_cands = [c for c in calls
@@ -195,12 +211,10 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
             continue
 
         for leg_a in leg_a_cands:
-            # Leg B strike must exceed Leg A strike
             leg_b_cands = [c for c in leg_b_pool if c["strike"] > leg_a["strike"]]
             if not leg_b_cands:
                 continue
 
-            # Prefer Leg B strike nearest to fair value when available
             if fair_value is not None:
                 leg_b_cands.sort(key=lambda c: abs(c["strike"] - fair_value))
 
@@ -210,7 +224,7 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
 
                     net_premium = leg_b["premium"] + leg_c["premium"] - leg_a["premium"]
                     if net_premium < min_premium:
-                        continue  # debit or insufficient credit — skip early
+                        continue
 
                     spread_width = leg_b["strike"] - leg_a["strike"]
                     if spread_width <= 0:
@@ -373,7 +387,8 @@ def main():
     print(f"Weeks       : W1–W{weeks}  |  Min net premium: ${min_premium:.2f}")
     print()
 
-    target_fridays = get_next_fridays(weeks)  # list of date objects
+    target_fridays = get_next_fridays(weeks)
+    week_exps_template = [(i + 1, f.strftime("%Y-%m-%d")) for i, f in enumerate(target_fridays)]
 
     all_triplets     = []
     total_evaluated  = 0
@@ -382,10 +397,9 @@ def main():
     for ticker in tickers:
         print(f"Scanning {ticker}...", end="", flush=True)
 
-        # ── Price ──────────────────────────────────────────────
+        # ── Price (yfinance — only remaining yfinance call in v3) ──
         try:
-            stock = yf.Ticker(ticker)
-            hist  = stock.history(period="1d")
+            hist = yf.Ticker(ticker).history(period="1d")
             if hist.empty:
                 print(f"  [!] no price data — skipping")
                 tickers_no_trips.append(ticker)
@@ -396,26 +410,13 @@ def main():
             tickers_no_trips.append(ticker)
             continue
 
-        # ── Fair value ─────────────────────────────────────────
+        # ── Fair value ─────────────────────────────────────────────
         fair_value = get_fair_value(ticker)
         fv_str     = f"${fair_value:.2f}" if fair_value is not None else "N/A"
 
-        # ── Match expirations ──────────────────────────────────
-        try:
-            available = stock.options
-        except Exception:
-            available = ()
-
-        week_exps = match_expirations(available, target_fridays)
-
-        if not week_exps:
-            print(f"  [!] no expirations available — skipping")
-            tickers_no_trips.append(ticker)
-            continue
-
-        # ── Scan ───────────────────────────────────────────────
+        # ── Scan ───────────────────────────────────────────────────
         triplets, evaluated = scan_ticker(
-            ticker, price, week_exps, fair_value, min_premium
+            ticker, price, week_exps_template, fair_value, min_premium
         )
         total_evaluated += evaluated
         all_triplets.extend(triplets)
@@ -429,7 +430,7 @@ def main():
             print(f"  no valid triplets  (price=${price:.2f}, FV={fv_str})")
             tickers_no_trips.append(ticker)
 
-    # ── Rank and display ───────────────────────────────────────
+    # ── Rank and display ───────────────────────────────────────────
     ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
     print_results(ranked, tickers_no_trips, total_evaluated, min_premium)
 

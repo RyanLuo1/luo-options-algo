@@ -50,13 +50,13 @@ Ratio = (Premium Collected / Stock Price) / % Strike Distance
 Ratio = (Premium Collected / Stock Price) / Delta
 ```
 
-- **Delta** = absolute value of the option's delta, computed via Black-Scholes using implied volatility from the options chain
+- **Delta** = absolute value of the option's delta, provided pre-calculated by Massive (options data source)
 - **Why delta instead of % strike distance**: Delta is a superior risk denominator because it incorporates implied volatility, time to expiration, and the probability of the option expiring worthless — all factors that % strike distance ignores. A higher ratio under V2 means more premium collected per unit of actual directional risk.
-- **Black-Scholes inputs**: stock price (S), strike (K), time to expiration in years (T), implied volatility (sigma), risk-free rate (4.5%)
-- **IV filter**: data points with IV ≤ 0.01 are excluded — yfinance returns placeholder values (e.g. 0.00001) when the market is closed; these are rejected
+- **IV filter**: data points with IV ≤ 0.01 are excluded — Massive returns None or near-zero IV when the market is closed; these are rejected
 - **Delta threshold**: data points with delta < 0.05 are excluded entirely
 - **Deduplication**: when multiple % distances snap to the same actual strike for the same ticker, side, and expiration, only the lowest Dist % is kept as the most accurate representation of that contract
 - Requires live market data during market hours to produce valid IV and delta values
+- Data source: Massive (formerly Polygon.io) with ~15-minute delay; stock price still fetched via yfinance
 
 ---
 
@@ -79,12 +79,14 @@ Ratio = (Premium Collected / Stock Price) / Delta
 
 ### `options_screener.py`
 - Defines the watchlist (`TICKERS`) and default strike distances (`DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]`)
+- `massive_client` — module-level Massive `RESTClient` initialized from `MASSIVE_API_KEY` env var; imported by `server/app.py`
 - `get_next_fridays(n)` — finds the next N Friday expiration targets
-- `black_scholes_delta(S, K, T, sigma, side)` — computes call or put delta using Black-Scholes and scipy
 - `find_closest_strike(strikes, target)` — snaps a target price to the nearest available chain strike
-- `get_midpoint(row)` — returns bid/ask midpoint, falls back to last price
-- `fetch_ticker_data(ticker, weeks=4)` — fetches current price and matches N weekly expirations
-- `build_rows(ticker, price, expirations, distances=None)` — builds a row for every ticker/expiration/distance combination; distances defaults to `DISTANCES` if None
+- `get_midpoint(row)` — retained for backward compatibility; not used in the Massive data path
+- `fetch_ticker_data(ticker, weeks=4)` — fetches current price via yfinance (only remaining yfinance call); returns `(price, expirations)` where expirations are the next N target Fridays as `YYYY-MM-DD` strings
+- `build_rows(ticker, price, expirations, distances=None)` — calls Massive `list_snapshot_options_chain` for calls and puts per expiration (±20% strike range); delta and IV come from Massive; premium from `o.day.close`; distances defaults to `DISTANCES` if None
+- `_build_strike_dict(contracts)` — filters Massive contracts missing Greeks, IV ≤ 0.01, or no day.close; returns strike → contract dict
+- `_log_massive_error(ticker, exp, side, err)` — logs Massive errors; distinguishes auth failures (401/403) from other errors
 - `print_ticker_table(ticker, rows)` — prints per-ticker matrix showing target strike, actual strike, and premium for calls and puts
 - `fetch_all_rows(verbose, tickers=None, distances=None, weeks=4)` — iterates all tickers, returns full list of rows; all params are fully customizable
 
@@ -137,7 +139,8 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
 - `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_used`, `min_premium_used`, `min_p_profit_used`
 - `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
-  - Fetches yfinance option chain, computes BS delta via `black_scholes_delta()`, filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01
+  - Fetches chain via Massive `list_snapshot_options_chain`; delta and IV are pre-calculated by Massive
+  - Filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01; premium from `o.day.close`
   - Returns JSON array sorted by strike ascending; each entry: `strike`, `premium`, `delta`, `volume`, `oi`, `iv`
 
 ### `server/robinhood.py`
@@ -149,13 +152,15 @@ Ratio = (Premium Collected / Stock Price) / Delta
 ### `v3_screener.py`
 - V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run_v3`)
 - Run with `python3 v3_screener.py` or with optional arguments (see below)
-- Imports `get_next_fridays`, `black_scholes_delta`, and `get_midpoint` from `options_screener.py` — no duplication
-- `scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None)` — accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None)
+- Imports `get_next_fridays` and `massive_client` from `options_screener.py` — no duplicate client initialization
+- `scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None)` — uses Massive for options chains; delta comes pre-calculated; accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None)
+- `_parse_massive_contracts(raw)` — filters and normalizes Massive snapshot objects; applies IV ≤ 0.01 and volume < 20 exclusions; returns list of `{strike, premium, delta, volume}` dicts
+- `week_exps` is built directly from `get_next_fridays()` target Fridays as `(week_num, YYYY-MM-DD)` tuples — no yfinance expiration matching needed
 
 **Strategy (3 legs):**
-- **Leg A**: Buy ATM call (delta 0.45–0.55) — pay premium
-- **Leg B**: Sell OTM call (delta 0.20–0.35, strike > Leg A) — collect premium; strike targeted near fair value when available
-- **Leg C**: Sell OTM put (delta 0.15–0.25, strike < current price) — collect premium
+- **Leg A**: Buy ATM call (delta 0.40–0.60) — pay premium
+- **Leg B**: Sell OTM call (delta 0.20–0.40, strike > Leg A) — collect premium; strike targeted near fair value when available
+- **Leg C**: Sell OTM put (delta 0.15–0.30, strike < current price) — collect premium
 - **Goal**: Net Premium = (Leg B + Leg C) − Leg A ≥ $5.00 (credit only)
 
 **Fair value fallback chain** (for Leg B targeting):
@@ -332,7 +337,7 @@ Leg columns are flat (not JSONB): `leg_a_strike`, `leg_a_premium`, `leg_a_delta`
 - **Python venv:** `/home/ubuntu/luo-options-algo/venv`
 
 ### Environment files on server
-- `/home/ubuntu/luo-options-algo/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ROBINHOOD_USERNAME`, `ROBINHOOD_PASSWORD`
+- `/home/ubuntu/luo-options-algo/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ROBINHOOD_USERNAME`, `ROBINHOOD_PASSWORD`, `MASSIVE_API_KEY`
 - `/home/ubuntu/luo-options-algo/web/.env` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 
 ### Deployment workflow

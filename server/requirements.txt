@@ -6,6 +6,9 @@ requests
 beautifulsoup4
 reportlab
 
+# Options data
+massive
+
 # Web server
 flask
 flask-cors
