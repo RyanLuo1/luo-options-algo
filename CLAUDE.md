@@ -134,10 +134,11 @@ Ratio = (Premium Collected / Stock Price) / Delta
 - `/api/run` response includes: `ranked`, `macro_events`, `duplicates_removed`, `market_open`, `run_at`, `tickers_used`, `tickers_skipped`, `tickers_source`, `distances_used`, `weeks_used`, `total_ranked`
 - `/api/run_v3` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
-  - `weeks`: integer 1–12; defaults to 12
+  - `weeks_min`: integer 1–12; defaults to 1; must be ≤ `weeks_max`
+  - `weeks_max`: integer 1–12; defaults to 12
   - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
-- `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_used`, `min_premium_used`, `min_p_profit_used`
+- `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_min_used`, `weeks_max_used`, `min_premium_used`, `min_p_profit_used`
 - `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
   - Fetches chain via Massive `list_snapshot_options_chain`; delta and IV are pre-calculated by Massive
   - Filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01; premium from `o.day.close`
@@ -186,7 +187,8 @@ Ratio = (Premium Collected / Stock Price) / Delta
 
 **CLI arguments:**
 - `--tickers NVDA META` — override default watchlist
-- `--weeks 6` — scan W1–W6 only (default: 12, max: 12)
+- `--weeks 6` — maximum weekly expiration (default: 12, max: 12)
+- `--weeks-min 3` — minimum weekly expiration (default: 1)
 - `--min-premium 3.00` — override the $5.00 minimum net credit
 
 ### `test_v2.py`
@@ -234,9 +236,11 @@ Each page component renders its own `<Header />`. Header detects the current pat
 - **`App.jsx`** — screener page only (not a router/layout); owns all scan state and control logic
   - **Shared:** ticker text input (comma/space separated; blank = use Robinhood holdings)
   - **V2 mode controls:** Dist % pill input (type a number e.g. `7`, press Enter/comma to add; default pills: 3%, 5%, 7%, 10%, 15%) + Weeks +/− control (1–12, default 4)
-  - **V3 mode controls:** Weeks +/− control (1–12, default 12) + Min Premium $ input (default 5.00) + Min P(Profit)% input (default 50)
+  - **V3 mode controls:** Weeks range slider (dual-handle, 1–12, default min=1, max=12) + Min Premium $ input (default 5.00) + Min P(Profit)% input (default 50)
+    - **Weeks slider** (`components/WeeksRangeSlider.jsx`): two stacked native `<input type="range">` elements, each capturing one thumb. Track + active fill drawn as divs underneath. Thumb appearance is styled in `index.css` under `input[type="range"].dual-thumb` (cross-browser webkit/moz). Display shows `Weeks {min} – {max}` below.
+    - **Min Premium $ / Min P(Profit) %** are **free-text** inputs (`type="text"` with `inputMode="decimal"`/`numeric`). The user can clear and type any value (incl. partial decimals like `4.`). Each has a paired raw-string state (`v3MinPremiumStr`, `v3MinPProfitStr`) and a numeric state (`v3MinPremium`, `v3MinPProfit`). On every keystroke the string updates; the numeric value updates only when the input parses as valid (premium: any non-negative number; P(profit): integer 1–99). Invalid input shows a **red border** but does NOT block typing. On blur, P(profit) is clamped into [1, 99] and premium reverts to the last valid value if invalid. The `+` / `−` buttons next to each input bump the numeric value (premium by ±0.50, P(profit) by ±1) and re-sync the string.
   - **Client-side filtering:** removing a distance or ticker pill instantly hides matching rows without a new API call; same for V3 ticker pills
-  - **Staleness detection (per mode):** Run Scan button turns amber "⚠ Rescan needed" when controls diverge from last scan's params. V2: new dist added, weeks changed, new ticker typed. V3: weeks changed, min premium changed, min P(profit) changed, new ticker typed. Removing pills is NOT stale (client-side handled).
+  - **Staleness detection (per mode):** Run Scan button turns amber "⚠ Rescan needed" when controls diverge from last scan's params. V2: new dist added, weeks changed, new ticker typed. V3: weeks_min changed, weeks_max changed, min premium changed, min P(profit) changed, new ticker typed. Removing pills is NOT stale (client-side handled).
   - `handleModeChange(newMode)` — calls `clearAll()`, switches mode
   - `handleRun()` — dispatches to `runScan` (V2) or `runV3Scan` (V3) based on current mode
   - Does not contain any `<Routes>` or `<Route>` — routing is entirely in `main.jsx`
@@ -250,7 +254,7 @@ Each page component renders its own `<Header />`. Header detects the current pat
 - **`V3Table.jsx`** — V3 sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value)
   - Leg A Prem: `text-sky-400` (you pay); Leg B & C Prem: `text-emerald-400` (you collect); Net Prem: white bold; Score: emerald bold
   - Row colors: red bg when P(profit) is between minPP and minPP+10% (borderline); yellow bg when fair value unavailable; alternating gray otherwise
-  - Metadata bar shows: algorithm, weeks, min premium, min P(profit)%, triplets ranked, total evaluated
+  - Metadata bar shows: algorithm, weeks range (`W{min} – W{max}` or `W{n}` if equal), min premium, min P(profit)%, triplets ranked, total evaluated
 - **`Holdings.jsx`** — dismissible ticker pills shown after a scan; removing a pill instantly filters that ticker from the table
 - **`MacroEvents.jsx`** — displays upcoming FOMC, CPI, PPI, NFP dates
 - **`pages/TradePage.jsx`** — trade editor at `/trade`; receives triplet via router state; renders its own `<Header />`
@@ -265,9 +269,9 @@ Each page component renders its own `<Header />`. Header detects the current pat
   - Trades fetched with `.order('saved_at', { ascending: false })` — most recent first
 - **`useOptionsData.js`** — custom hook managing all API calls and result state
   - `runScan({ tickers, distances, weeks })` — POSTs to `/api/run`, stores in `result`
-  - `runV3Scan({ tickers, weeks, minPremium, minPProfit })` — POSTs to `/api/run_v3`, stores in `v3Result`
+  - `runV3Scan({ tickers, weeksMin, weeksMax, minPremium, minPProfit })` — POSTs to `/api/run_v3`, stores in `v3Result`
   - `clearAll()` — wipes both `result` and `v3Result` and clears any error; called on mode switch
-  - Exposes V3 fields: `v3Ranked`, `v3TickersUsed`, `v3TickersSkipped`, `v3WeeksUsed`, `v3MinPremiumUsed`, `v3MinPProfitUsed`, `v3TotalEvaluated`, `v3HasResult`
+  - Exposes V3 fields: `v3Ranked`, `v3TickersUsed`, `v3TickersSkipped`, `v3WeeksMinUsed`, `v3WeeksMaxUsed`, `v3MinPremiumUsed`, `v3MinPProfitUsed`, `v3TotalEvaluated`, `v3HasResult`
   - `marketOpen` and `lastRun` derived from whichever result is available (result → v3Result → status)
   - **Important:** all empty-array fallbacks use a module-level `const EMPTY = []` instead of inline `?? []`. Inline `[]` creates a new reference every render, which causes `useEffect([tickersUsed])` in App to fire every render → infinite setState loop → navigation broken. Never change these back to inline `[]`.
 

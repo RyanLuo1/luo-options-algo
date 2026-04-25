@@ -22,7 +22,7 @@ function rowKey(row) {
   return `${row.ticker}-${row.expiration}-${row.leg_a_strike}-${row.leg_b_strike}-${row.leg_c_strike}`
 }
 
-export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook }) {
+export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook }) {
   const [sortKey,      setSortKey]      = useState('rank')
   const [sortAsc,      setSortAsc]      = useState(true)
   const [openRow,      setOpenRow]      = useState(null)   // row object whose dropdown is open
@@ -78,8 +78,10 @@ export default function V3Table({ rows, totalEvaluated, weeksUsed, minPremiumUse
       {/* metadata bar */}
       <div className="px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
         <span>Algorithm: <span className="text-gray-400">V3 — Call Spread Risk Reversal</span></span>
-        {weeksUsed != null && (
-          <><span>·</span><span>Weeks: <span className="text-gray-400">{weeksUsed}</span></span></>
+        {weeksMinUsed != null && weeksMaxUsed != null && (
+          <><span>·</span><span>Weeks: <span className="text-gray-400">
+            {weeksMinUsed === weeksMaxUsed ? `W${weeksMinUsed}` : `W${weeksMinUsed} – W${weeksMaxUsed}`}
+          </span></span></>
         )}
         {minPremiumUsed != null && (
           <><span>·</span><span>Min Premium: <span className="text-gray-400">${minPremiumUsed.toFixed(2)}</span></span></>

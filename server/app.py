@@ -254,7 +254,8 @@ def run_v3():
 
     Body (JSON, all optional):
         tickers       : list[str]  — ticker universe; omit to use Robinhood holdings
-        weeks         : int 1–12  — expirations to scan (default 12)
+        weeks_min     : int 1–12  — minimum expiration week (default 1)
+        weeks_max     : int 1–12  — maximum expiration week (default 12)
         min_premium   : float     — minimum net credit in dollars (default 5.00)
         min_p_profit  : float 0–1 — minimum P(max profit) (default 0.50)
     """
@@ -264,13 +265,18 @@ def run_v3():
     try:
         body = request.get_json(silent=True) or {}
         requested_tickers   = body.get("tickers")
-        requested_weeks     = body.get("weeks", 12)
+        requested_weeks_min = body.get("weeks_min", 1)
+        requested_weeks_max = body.get("weeks_max", 12)
         requested_min_prem  = body.get("min_premium", 5.00)
         requested_min_pp    = body.get("min_p_profit", 0.50)
 
         # ── Validate ─────────────────────────────────────────────
-        if not isinstance(requested_weeks, int) or not (1 <= requested_weeks <= 12):
-            return jsonify({"error": "weeks must be an integer between 1 and 12"}), 400
+        if not isinstance(requested_weeks_min, int) or not (1 <= requested_weeks_min <= 12):
+            return jsonify({"error": "weeks_min must be an integer between 1 and 12"}), 400
+        if not isinstance(requested_weeks_max, int) or not (1 <= requested_weeks_max <= 12):
+            return jsonify({"error": "weeks_max must be an integer between 1 and 12"}), 400
+        if requested_weeks_min > requested_weeks_max:
+            return jsonify({"error": "weeks_min must be ≤ weeks_max"}), 400
         if not isinstance(requested_min_prem, (int, float)) or requested_min_prem < 0:
             return jsonify({"error": "min_premium must be a non-negative number"}), 400
         if not isinstance(requested_min_pp, (int, float)) or not (0 <= requested_min_pp <= 1):
@@ -292,19 +298,22 @@ def run_v3():
             return jsonify({"error": "No tickers to scan. Enter tickers manually and click Run Scan."}), 400
 
         # ── Load events ──────────────────────────────────────────
-        err = _ensure_events(weeks=requested_weeks)
+        err = _ensure_events(weeks=requested_weeks_max)
         if err:
             return jsonify({"error": f"Failed to load events: {err}"}), 500
 
-        # ── Target expirations ───────────────────────────────────
-        target_fridays = get_next_fridays(requested_weeks)
+        # ── Target expirations (filtered to [weeks_min, weeks_max]) ──
+        target_fridays = get_next_fridays(requested_weeks_max)
+        week_exps = [
+            (i + 1, f.strftime("%Y-%m-%d"))
+            for i, f in enumerate(target_fridays)
+            if requested_weeks_min <= (i + 1) <= requested_weeks_max
+        ]
 
         # ── Scan each ticker ─────────────────────────────────────
         all_triplets    = []
         total_evaluated = 0
         tickers_scanned = []
-
-        week_exps = [(i + 1, f.strftime("%Y-%m-%d")) for i, f in enumerate(target_fridays)]
 
         for ticker in tickers:
             try:
@@ -344,7 +353,8 @@ def run_v3():
             "market_open":       is_open,
             "time_et":           et_time,
             "run_at":            run_at,
-            "weeks_used":        requested_weeks,
+            "weeks_min_used":    requested_weeks_min,
+            "weeks_max_used":    requested_weeks_max,
             "min_premium_used":  float(requested_min_prem),
             "min_p_profit_used": float(requested_min_pp),
         })

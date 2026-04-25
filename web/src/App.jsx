@@ -4,14 +4,15 @@ import './index.css'
 import { supabase } from './lib/supabase'
 import useAuth from './hooks/useAuth'
 
-import useOptionsData  from './hooks/useOptionsData'
-import Header          from './components/Header'
-import MacroEvents     from './components/MacroEvents'
-import Holdings        from './components/Holdings'
-import RankedTable     from './components/RankedTable'
-import V3Table         from './components/V3Table'
-import LoadingSpinner  from './components/LoadingSpinner'
-import Toast           from './components/Toast'
+import useOptionsData    from './hooks/useOptionsData'
+import Header            from './components/Header'
+import MacroEvents       from './components/MacroEvents'
+import Holdings          from './components/Holdings'
+import RankedTable       from './components/RankedTable'
+import V3Table           from './components/V3Table'
+import LoadingSpinner    from './components/LoadingSpinner'
+import Toast             from './components/Toast'
+import WeeksRangeSlider  from './components/WeeksRangeSlider'
 
 const DEFAULT_DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
 
@@ -32,10 +33,14 @@ export default function App() {
   const [weeks,         setWeeks]         = useState(4)
 
   // ── V3 controls ────────────────────────────────────────────────────────────
-  const [v3ActiveTickers, setV3ActiveTickers] = useState([])
-  const [v3Weeks,         setV3Weeks]         = useState(12)
-  const [v3MinPremium,    setV3MinPremium]    = useState(5.00)
-  const [v3MinPProfit,    setV3MinPProfit]    = useState(0.50)
+  const [v3ActiveTickers, setV3ActiveTickers]   = useState([])
+  const [v3WeeksMin,      setV3WeeksMin]        = useState(1)
+  const [v3WeeksMax,      setV3WeeksMax]        = useState(12)
+  const [v3MinPremium,    setV3MinPremium]      = useState(5.00)
+  const [v3MinPProfit,    setV3MinPProfit]      = useState(0.50)
+  // Raw input strings — let the user type freely (incl. empty, partial decimals)
+  const [v3MinPremiumStr, setV3MinPremiumStr]   = useState('5.00')
+  const [v3MinPProfitStr, setV3MinPProfitStr]   = useState('50')
 
   const {
     marketOpen, lastRun,
@@ -45,7 +50,8 @@ export default function App() {
     distancesUsed, weeksUsed, hasResult,
     // V3
     v3Ranked, v3TickersUsed, v3TickersSkipped,
-    v3WeeksUsed, v3MinPremiumUsed, v3MinPProfitUsed,
+    v3WeeksMinUsed, v3WeeksMaxUsed,
+    v3MinPremiumUsed, v3MinPProfitUsed,
     v3TotalEvaluated, v3HasResult,
     // shared
     loading, error,
@@ -65,7 +71,7 @@ export default function App() {
   function parseTickers(raw) {
     return raw
       .split(/[,\s]+/)
-      .map(t => t.trim().toUpperCase())
+      .map(t => t.trim().toUpperCase().replace(/^\$/, ''))
       .filter(Boolean)
   }
 
@@ -90,7 +96,8 @@ export default function App() {
   )
 
   const v3IsStale = v3HasResult && (
-    (v3WeeksUsed    !== null && v3Weeks      !== v3WeeksUsed)    ||
+    (v3WeeksMinUsed   !== null && v3WeeksMin   !== v3WeeksMinUsed)   ||
+    (v3WeeksMaxUsed   !== null && v3WeeksMax   !== v3WeeksMaxUsed)   ||
     (v3MinPremiumUsed !== null && v3MinPremium !== v3MinPremiumUsed) ||
     (v3MinPProfitUsed !== null && v3MinPProfit !== v3MinPProfitUsed) ||
     parseTickers(tickerInput).some(t => !v3TickersUsed.includes(t))
@@ -117,7 +124,8 @@ export default function App() {
     } else {
       runV3Scan({
         tickers:    tickers.length > 0 ? tickers : undefined,
-        weeks:      v3Weeks,
+        weeksMin:   v3WeeksMin,
+        weeksMax:   v3WeeksMax,
         minPremium: v3MinPremium,
         minPProfit: v3MinPProfit,
       })
@@ -154,14 +162,69 @@ export default function App() {
     setV3ActiveTickers(prev => prev.filter(t => t !== ticker))
   }
 
+  // Validation helpers
+  const v3MinPremiumValid = (() => {
+    const s = v3MinPremiumStr.trim()
+    if (s === '') return false
+    const n = Number(s)
+    return Number.isFinite(n) && n >= 0
+  })()
+
+  const v3MinPProfitValid = (() => {
+    const s = v3MinPProfitStr.trim()
+    if (s === '') return false
+    const n = Number(s)
+    return Number.isInteger(n) && n >= 1 && n <= 99
+  })()
+
+  // Free-text typing — always update string; sync numeric only when valid
   function handleV3MinPremiumChange(e) {
-    const val = parseFloat(e.target.value)
-    if (!isNaN(val) && val >= 0) setV3MinPremium(val)
+    const raw = e.target.value
+    setV3MinPremiumStr(raw)
+    const n = Number(raw)
+    if (raw.trim() !== '' && Number.isFinite(n) && n >= 0) {
+      setV3MinPremium(n)
+    }
   }
 
   function handleV3MinPProfitChange(e) {
-    const val = parseFloat(e.target.value)
-    if (!isNaN(val) && val >= 1 && val <= 99) setV3MinPProfit(parseFloat((val / 100).toFixed(4)))
+    const raw = e.target.value
+    setV3MinPProfitStr(raw)
+    const n = Number(raw)
+    if (raw.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 99) {
+      setV3MinPProfit(parseFloat((n / 100).toFixed(4)))
+    }
+  }
+
+  // Clamp to valid range on blur if invalid
+  function handleV3MinPProfitBlur() {
+    const n = Number(v3MinPProfitStr)
+    let clamped
+    if (!Number.isFinite(n)) clamped = Math.round(v3MinPProfit * 100)
+    else clamped = Math.min(99, Math.max(1, Math.round(n)))
+    setV3MinPProfitStr(String(clamped))
+    setV3MinPProfit(parseFloat((clamped / 100).toFixed(4)))
+  }
+
+  function handleV3MinPremiumBlur() {
+    const n = Number(v3MinPremiumStr)
+    if (!Number.isFinite(n) || n < 0) {
+      setV3MinPremiumStr(v3MinPremium.toFixed(2))
+    }
+  }
+
+  // +/- bumpers — operate on the numeric state, then sync the string
+  function bumpV3MinPremium(delta) {
+    const next = Math.max(0, parseFloat((v3MinPremium + delta).toFixed(2)))
+    setV3MinPremium(next)
+    setV3MinPremiumStr(next.toFixed(2))
+  }
+
+  function bumpV3MinPProfit(delta) {
+    const cur = Math.round(v3MinPProfit * 100)
+    const next = Math.min(99, Math.max(1, cur + delta))
+    setV3MinPProfit(parseFloat((next / 100).toFixed(4)))
+    setV3MinPProfitStr(String(next))
   }
 
   // ── Toast ──────────────────────────────────────────────────────────────────
@@ -303,63 +366,93 @@ export default function App() {
         {/* ── V3-only controls ──────────────────────────────────── */}
         {mode === 'v3' && (
           <>
-            {/* V3 Weeks */}
+            {/* V3 Weeks range slider */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500 font-medium">Weeks out</label>
-              <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500 font-medium">Weeks range</label>
+              <div className="flex items-center h-7">
+                <WeeksRangeSlider
+                  min={1}
+                  max={12}
+                  valueMin={v3WeeksMin}
+                  valueMax={v3WeeksMax}
+                  onChange={(mn, mx) => { setV3WeeksMin(mn); setV3WeeksMax(mx) }}
+                  disabled={loading}
+                />
+              </div>
+              <span className="text-gray-600 text-xs">
+                Weeks {v3WeeksMin} – {v3WeeksMax}
+              </span>
+            </div>
+
+            {/* Min Net Premium — free text + bumpers */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500 font-medium">Min Net Premium $</label>
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setV3Weeks(w => Math.max(1, w - 1))}
-                  disabled={loading || v3Weeks <= 1}
+                  onClick={() => bumpV3MinPremium(-0.50)}
+                  disabled={loading || v3MinPremium <= 0}
                   className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
                              text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
                 >−</button>
-                <span className="w-6 text-center text-sm font-mono text-gray-200">{v3Weeks}</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={v3MinPremiumStr}
+                  onChange={handleV3MinPremiumChange}
+                  onBlur={handleV3MinPremiumBlur}
+                  onKeyDown={e => e.key === 'Enter' && !loading && v3MinPremiumValid && handleRun()}
+                  disabled={loading}
+                  placeholder="e.g. 4.25"
+                  className={`w-20 bg-gray-800 text-gray-100 border rounded px-2 py-1.5
+                             text-sm font-mono placeholder-gray-600 text-right
+                             focus:outline-none disabled:opacity-50
+                             ${v3MinPremiumValid
+                               ? 'border-gray-700 focus:border-violet-500'
+                               : 'border-red-500 focus:border-red-400'}`}
+                />
                 <button
-                  onClick={() => setV3Weeks(w => Math.min(12, w + 1))}
-                  disabled={loading || v3Weeks >= 12}
+                  onClick={() => bumpV3MinPremium(+0.50)}
+                  disabled={loading}
                   className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
                              text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
                 >+</button>
               </div>
-              <span className="text-gray-600 text-xs">1 – 12 weeks</span>
-            </div>
-
-            {/* Min Net Premium */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500 font-medium">Min Net Premium $</label>
-              <input
-                type="number"
-                value={v3MinPremium}
-                onChange={handleV3MinPremiumChange}
-                onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
-                min="0"
-                step="0.50"
-                disabled={loading}
-                className="w-24 bg-gray-800 text-gray-100 border border-gray-700 rounded px-3 py-1.5
-                           text-sm font-mono
-                           focus:outline-none focus:border-violet-500
-                           disabled:opacity-50"
-              />
               <span className="text-gray-600 text-xs">Net credit required</span>
             </div>
 
-            {/* Min P(Profit) */}
+            {/* Min P(Profit) — free text + bumpers */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-gray-500 font-medium">Min P(Profit) %</label>
-              <input
-                type="number"
-                value={Math.round(v3MinPProfit * 100)}
-                onChange={handleV3MinPProfitChange}
-                onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
-                min="1"
-                max="99"
-                step="1"
-                disabled={loading}
-                className="w-24 bg-gray-800 text-gray-100 border border-gray-700 rounded px-3 py-1.5
-                           text-sm font-mono
-                           focus:outline-none focus:border-violet-500
-                           disabled:opacity-50"
-              />
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => bumpV3MinPProfit(-1)}
+                  disabled={loading || Math.round(v3MinPProfit * 100) <= 1}
+                  className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
+                             text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
+                >−</button>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={v3MinPProfitStr}
+                  onChange={handleV3MinPProfitChange}
+                  onBlur={handleV3MinPProfitBlur}
+                  onKeyDown={e => e.key === 'Enter' && !loading && v3MinPProfitValid && handleRun()}
+                  disabled={loading}
+                  placeholder="1–99"
+                  className={`w-20 bg-gray-800 text-gray-100 border rounded px-2 py-1.5
+                             text-sm font-mono placeholder-gray-600 text-right
+                             focus:outline-none disabled:opacity-50
+                             ${v3MinPProfitValid
+                               ? 'border-gray-700 focus:border-violet-500'
+                               : 'border-red-500 focus:border-red-400'}`}
+                />
+                <button
+                  onClick={() => bumpV3MinPProfit(+1)}
+                  disabled={loading || Math.round(v3MinPProfit * 100) >= 99}
+                  className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
+                             text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
+                >+</button>
+              </div>
               <span className="text-gray-600 text-xs">P(max profit) threshold</span>
             </div>
           </>
@@ -406,7 +499,8 @@ export default function App() {
             ? <V3Table
                 rows={v3FilteredRanked}
                 totalEvaluated={v3TotalEvaluated}
-                weeksUsed={v3WeeksUsed}
+                weeksMinUsed={v3WeeksMinUsed}
+                weeksMaxUsed={v3WeeksMaxUsed}
                 minPremiumUsed={v3MinPremiumUsed}
                 minPProfitUsed={v3MinPProfitUsed}
                 onEdit={handleEdit}

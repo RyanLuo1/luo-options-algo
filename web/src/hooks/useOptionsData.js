@@ -59,14 +59,15 @@ export default function useOptionsData() {
   }, [])
 
   // ── V3 scan ────────────────────────────────────────────────────────────────
-  const runV3Scan = useCallback(async ({ tickers, weeks, minPremium, minPProfit } = {}) => {
+  const runV3Scan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit } = {}) => {
     setLoading(true)
     setError(null)
 
     try {
       const body = {}
       if (tickers    && tickers.length > 0) body.tickers      = tickers
-      if (weeks      !== undefined)          body.weeks        = weeks
+      if (weeksMin   !== undefined)          body.weeks_min    = weeksMin
+      if (weeksMax   !== undefined)          body.weeks_max    = weeksMax
       if (minPremium !== undefined)          body.min_premium  = minPremium
       if (minPProfit !== undefined)          body.min_p_profit = minPProfit
 
@@ -125,7 +126,8 @@ export default function useOptionsData() {
     v3Ranked:          v3Result?.ranked           ?? EMPTY,
     v3TickersUsed:     v3Result?.tickers_used     ?? EMPTY,
     v3TickersSkipped:  v3Result?.tickers_skipped  ?? EMPTY,
-    v3WeeksUsed:       v3Result?.weeks_used       ?? null,
+    v3WeeksMinUsed:    v3Result?.weeks_min_used   ?? null,
+    v3WeeksMaxUsed:    v3Result?.weeks_max_used   ?? null,
     v3MinPremiumUsed:  v3Result?.min_premium_used ?? null,
     v3MinPProfitUsed:  v3Result?.min_p_profit_used ?? null,
     v3TotalEvaluated:  v3Result?.total_evaluated  ?? 0,

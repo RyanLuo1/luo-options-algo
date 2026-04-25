@@ -369,7 +369,11 @@ def main():
     )
     parser.add_argument(
         "--weeks", type=int, default=DEFAULT_WEEKS, metavar="N",
-        help=f"Number of weekly expirations W1–WN (default: {DEFAULT_WEEKS}, max: 12)",
+        help=f"Maximum weekly expiration to scan, W1–WN (default: {DEFAULT_WEEKS}, max: 12)",
+    )
+    parser.add_argument(
+        "--weeks-min", type=int, default=1, metavar="N",
+        help="Minimum weekly expiration to scan (default: 1)",
     )
     parser.add_argument(
         "--min-premium", type=float, default=DEFAULT_MIN_PREMIUM, metavar="DOLLARS",
@@ -378,17 +382,23 @@ def main():
     args = parser.parse_args()
 
     tickers     = [t.lstrip("$").upper() for t in (args.tickers or DEFAULT_TICKERS)]
-    weeks       = max(1, min(12, args.weeks))
+    weeks_max   = max(1, min(12, args.weeks))
+    weeks_min   = max(1, min(weeks_max, args.weeks_min))
     min_premium = args.min_premium
 
     print(f"\nLuo Capital — V3 Call Spread Risk Reversal Screener")
     print(f"Run date    : {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Tickers     : {', '.join(tickers)}")
-    print(f"Weeks       : W1–W{weeks}  |  Min net premium: ${min_premium:.2f}")
+    print(f"Weeks       : W{weeks_min}–W{weeks_max}  |  Min net premium: ${min_premium:.2f}")
     print()
 
-    target_fridays = get_next_fridays(weeks)
-    week_exps_template = [(i + 1, f.strftime("%Y-%m-%d")) for i, f in enumerate(target_fridays)]
+    target_fridays = get_next_fridays(weeks_max)
+    # Filter to [weeks_min, weeks_max] inclusive (week numbers are 1-indexed)
+    week_exps_template = [
+        (i + 1, f.strftime("%Y-%m-%d"))
+        for i, f in enumerate(target_fridays)
+        if weeks_min <= (i + 1) <= weeks_max
+    ]
 
     all_triplets     = []
     total_evaluated  = 0
