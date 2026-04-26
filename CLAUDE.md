@@ -144,6 +144,33 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - Filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01; premium from `o.day.close`
   - Returns JSON array sorted by strike ascending; each entry: `strike`, `premium`, `delta`, `volume`, `oi`, `iv`
 
+### `/api/chart` endpoint (added in `server/app.py`)
+
+`GET /api/chart?ticker=MU&timeframe=1M` — returns OHLCV bars + RSI series for the stock chart in the screener. Timeframes map to Massive `list_aggs` params:
+
+| Timeframe | multiplier | timespan | days_back |
+|-----------|------------|----------|-----------|
+| `1D`      | 5          | minute   | 1         |
+| `5D`      | 1          | hour     | 7         |
+| `1M`      | 1          | day      | 35        |
+| `3M`      | 1          | day      | 95        |
+| `6M`      | 1          | day      | 190       |
+| `1Y`      | 1          | day      | 370       |
+
+RSI is fetched via `massive_client.get_rsi(ticker, timespan=…, window=14)` with `series_type="close"`. RSI is **best-effort** — if the call fails, the endpoint still returns bars with `rsi: []` rather than failing. Bars without `close` or `timestamp` are filtered out.
+
+Response:
+```json
+{
+  "ticker": "MU", "timeframe": "1M",
+  "current_price": 487.92, "prev_close": 480.15, "change_pct": 1.62,
+  "bars": [{"timestamp": 1234567890000, "open": …, "high": …, "low": …, "close": …, "volume": …}, …],
+  "rsi":  [{"timestamp": 1234567890000, "value": 65.4}, …]
+}
+```
+
+`current_price` / `prev_close` come from the last two bars; if there's only one bar, `change_pct` is 0. Returns 404 if no bars are returned for the ticker/timeframe.
+
 ### `server/robinhood.py`
 - Handles Robinhood authentication via `robin_stocks`; credentials loaded from `.env`
 - `get_holdings()` — returns sorted list of uppercase ticker symbols for all open positions
@@ -242,6 +269,7 @@ Screener state survives in-session navigation (e.g. screener → `/trade` → ba
   - `distPills`, `weeks` (V2 controls)
   - `v3WeeksMin`, `v3WeeksMax`, `v3MinPremium`, `v3MinPProfit` (V3 numeric controls)
   - `v3MinPremiumStr`, `v3MinPProfitStr` (raw input strings — preserve partial typing like `4.`)
+  - `selectedChartTicker`, `chartTimeframe`, `chartExpanded` (StockChart selection / view state)
 - **`luo-capital-screener-results`** — `{ result, v3Result }` from `useOptionsData`, written when either changes. Preserves the full ranked tables, `tickers_used`, `weeks_min_used`/`weeks_max_used`, etc.
 
 Hydration uses lazy `useState` init via `useMemo(loadScreenerState, [])`. **Do not** read sessionStorage outside `useMemo` / lazy init or you'll re-read on every render.
@@ -280,7 +308,10 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
 
 ### Key components
 
-- **`App.jsx`** — screener page only (not a router/layout); owns all scan state and control logic
+- **`App.jsx`** — screener page only (not a router/layout); owns all scan state, chart state, and control logic
+  - Owns `selectedChartTicker`, `chartTimeframe`, `chartExpanded`. A `useEffect` auto-selects the rank-1 ticker when a new scan completes (or when the current selection is no longer in the results); depends on `[mode, ranked, v3Ranked, selectedChartTicker]` — the **raw** scan arrays (stable refs from `useOptionsData`), never the derived/filtered arrays which change identity every render.
+  - Calls `useChartData(selectedChartTicker, chartTimeframe)` and passes the result to both StockChart slots so toggling expand doesn't refetch.
+  - Renders the compact StockChart inside the control bar (right side, `flex-1 min-w-[320px]`); when `chartExpanded` is true, the table area in `<main>` is replaced by the expanded StockChart.
   - **Shared:** ticker text input (comma/space separated; blank = use Robinhood holdings)
   - **V2 mode controls:** Dist % pill input (type a number e.g. `7`, press Enter/comma to add; default pills: 3%, 5%, 7%, 10%, 15%) + Weeks +/− control (1–12, default 4)
   - **V3 mode controls:** Weeks range slider (dual-handle, 1–12, default min=1, max=12) + Min Premium $ input (default 5.00) + Min P(Profit)% input (default 50)
@@ -292,13 +323,14 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
   - `handleRun()` — dispatches to `runScan` (V2) or `runV3Scan` (V3) based on current mode
   - Does not contain any `<Routes>` or `<Route>` — routing is entirely in `main.jsx`
 - **`Header.jsx`** — route-aware header (uses `useLocation`); rendered independently by each page component:
-  - `/` (screener): branding + V2/V3 toggle + Tradebook nav tab + market badge + Run Scan button + last run
+  - `/` (screener): branding + V2/V3 toggle + Tradebook nav tab + market badge + Clear button + Run Scan button + last run
+  - **Clear button** (subtle gray-outline, sits immediately left of Run Scan) calls `onClear` from props. App.jsx's `handleClear` resets every persisted control to its default (`tickerInput=''`, `activeTickers=[]`, `distPills=DEFAULT_DISTANCES`, `weeks=4`, V3 controls back to `1/12/5.00/0.50`, chart back to `null/'1M'/false`), calls `clearAll()` to wipe scan results, and calls `clearScreenerSession()` to flush sessionStorage. The persist effects then immediately re-write the defaults back, so sessionStorage ends up containing the default-state snapshot rather than being empty.
   - `/tradebook`: minimal header with ← Back to Screener button + "Tradebook" label
   - `/trade`: minimal header with ← Back to Screener button + "Trade Editor" label
   - All navigation uses `useNavigate` (no `<Link>` or `<a>` tags)
 - **`Toast.jsx`** — fixed bottom-right toast notification; accepts `message` and `visible` props; fades in/out over 0.3s; used in App (after saving from V3 dropdown) and TradePage (after Save to Tradebook)
-- **`RankedTable.jsx`** — V2 sortable ranked results table with liquidity flags (volume < 10 red, OI < 100 red); metadata bar shows algorithm version, distances used, weeks used, duplicates removed
-- **`V3Table.jsx`** — V3 sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value)
+- **`RankedTable.jsx`** — V2 sortable ranked results table with liquidity flags (volume < 10 red, OI < 100 red); metadata bar shows algorithm version, distances used, weeks used, duplicates removed. Row click calls `onRowSelect(row)` to update the chart ticker.
+- **`V3Table.jsx`** — V3 sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value). Row click both opens the Save/Edit dropdown **and** calls `onRowSelect(row)` so App can update the chart ticker — same click does both.
   - Leg A Prem: `text-sky-400` (you pay); Leg B & C Prem: `text-emerald-400` (you collect); Net Prem: white bold; Score: emerald bold
   - Row colors: red bg when P(profit) is between minPP and minPP+10% (borderline); yellow bg when fair value unavailable; alternating gray otherwise
   - Metadata bar shows: algorithm, weeks range (`W{min} – W{max}` or `W{n}` if equal), min premium, min P(profit)%, triplets ranked, total evaluated
@@ -314,6 +346,14 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
   - Table columns: Date Saved, Ticker, Expiration, Leg A/B/C Strike, Net Premium, Score, P(Profit)%
   - Each row has a × delete button; "Clear all" button at top right
   - Trades fetched with `.order('saved_at', { ascending: false })` — most recent first
+- **`StockChart.jsx`** — three stacked Recharts `ComposedChart` panels (price line, volume bars, RSI line with 30/70 reference lines). Two variants:
+  - **Compact** (default): fixed `h-[200px]`, lives in the screener control bar to the right of the inputs cluster (control bar grows to ~200px tall to fit it).
+  - **Expanded**: `flex-1`, takes over the table area in `<main>` until the user clicks the close button (`×`). The table is hidden while expanded.
+
+  All three charts share `syncId="luo-chart"` so the cursor lines up across panels in expanded mode. Color palette: price `indigo-400` (#818cf8), volume `gray-700` (#374151), RSI `violet-400` (#a78bfa), RSI 30/70 references `red-500` at 35% opacity (dashed). Header shows ticker, current price, % change vs prior close, a timeframe `<select>` (`1D`/`5D`/`1M`/`3M`/`6M`/`1Y`), and the expand/close toggle.
+
+- **`useChartData.js`** — fetches `/api/chart` for `(ticker, timeframe)`. **Lifted to App.jsx** (not used inside StockChart) so the same data feeds both the compact and expanded variants without re-fetching when the user toggles expand. Caches by `ticker|timeframe` key in a `useRef(new Map())` and ignores out-of-order responses with a `latestKeyRef`.
+
 - **`useOptionsData.js`** — custom hook managing all API calls and result state
   - `runScan({ tickers, distances, weeks })` — POSTs to `/api/run`, stores in `result`
   - `runV3Scan({ tickers, weeksMin, weeksMax, minPremium, minPProfit })` — POSTs to `/api/run_v3`, stores in `v3Result`

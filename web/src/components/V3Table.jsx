@@ -22,7 +22,7 @@ function rowKey(row) {
   return `${row.ticker}-${row.expiration}-${row.leg_a_strike}-${row.leg_b_strike}-${row.leg_c_strike}`
 }
 
-export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook }) {
+export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook, onRowSelect }) {
   const [sortKey,      setSortKey]      = useState('rank')
   const [sortAsc,      setSortAsc]      = useState(true)
   const [openRow,      setOpenRow]      = useState(null)   // row object whose dropdown is open
@@ -62,6 +62,9 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
 
   function handleRowClick(e, row) {
     e.stopPropagation()
+    // Always notify parent — keeps the chart in sync with the most recently
+    // clicked row, even when the user is just toggling the dropdown closed.
+    if (onRowSelect) onRowSelect(row)
     if (openRow && rowKey(openRow) === rowKey(row)) {
       setOpenRow(null)
       return

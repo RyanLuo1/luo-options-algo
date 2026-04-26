@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import './index.css'
 import { supabase } from './lib/supabase'
 import useAuth from './hooks/useAuth'
-import { loadScreenerState, saveScreenerState } from './lib/sessionState'
+import { loadScreenerState, saveScreenerState, clearScreenerSession } from './lib/sessionState'
 
 import useOptionsData    from './hooks/useOptionsData'
+import useChartData      from './hooks/useChartData'
 import Header            from './components/Header'
 import MacroEvents       from './components/MacroEvents'
 import Holdings          from './components/Holdings'
@@ -14,6 +15,7 @@ import V3Table           from './components/V3Table'
 import LoadingSpinner    from './components/LoadingSpinner'
 import Toast             from './components/Toast'
 import WeeksRangeSlider  from './components/WeeksRangeSlider'
+import StockChart        from './components/StockChart'
 
 const DEFAULT_DISTANCES = [0.03, 0.05, 0.07, 0.10, 0.15]
 
@@ -47,6 +49,11 @@ export default function App() {
   // Raw input strings — let the user type freely (incl. empty, partial decimals)
   const [v3MinPremiumStr, setV3MinPremiumStr]   = useState(persisted.v3MinPremiumStr ?? '5.00')
   const [v3MinPProfitStr, setV3MinPProfitStr]   = useState(persisted.v3MinPProfitStr ?? '50')
+
+  // ── Stock chart ────────────────────────────────────────────────────────────
+  const [selectedChartTicker, setSelectedChartTicker] = useState(persisted.selectedChartTicker ?? null)
+  const [chartTimeframe,      setChartTimeframe]      = useState(persisted.chartTimeframe      ?? '1M')
+  const [chartExpanded,       setChartExpanded]       = useState(persisted.chartExpanded       ?? false)
 
   const {
     marketOpen, lastRun,
@@ -92,6 +99,7 @@ export default function App() {
       v3ActiveTickers, v3WeeksMin, v3WeeksMax,
       v3MinPremium, v3MinPProfit,
       v3MinPremiumStr, v3MinPProfitStr,
+      selectedChartTicker, chartTimeframe, chartExpanded,
     })
   }, [
     mode, tickerInput,
@@ -99,7 +107,25 @@ export default function App() {
     v3ActiveTickers, v3WeeksMin, v3WeeksMax,
     v3MinPremium, v3MinPProfit,
     v3MinPremiumStr, v3MinPProfitStr,
+    selectedChartTicker, chartTimeframe, chartExpanded,
   ])
+
+  // Auto-select rank-1 ticker when a new scan completes (or current selection
+  // is no longer in results). Depends on raw scan arrays (stable refs from
+  // useOptionsData) — derived/filtered arrays would re-fire every render.
+  useEffect(() => {
+    const list = mode === 'v3' ? v3Ranked : ranked
+    if (list.length === 0) return
+    const exists = list.some(r => r.ticker === selectedChartTicker)
+    if (!selectedChartTicker || !exists) {
+      setSelectedChartTicker(list[0].ticker)
+    }
+  }, [mode, ranked, v3Ranked, selectedChartTicker])
+
+  // ── Chart data — fetched once at App level so the same data feeds both
+  //    the compact and expanded chart variants without re-fetch on toggle.
+  const { data: chartData, loading: chartLoading, error: chartError } =
+    useChartData(selectedChartTicker, chartTimeframe)
 
   // ── Utility functions ──────────────────────────────────────────────────────
   function fmtDist(d) {
@@ -149,6 +175,31 @@ export default function App() {
     if (newMode === mode || loading) return
     setMode(newMode)
     clearAll()
+  }
+
+  // ── Clear screener ─────────────────────────────────────────────────────────
+  // Resets every persisted control to its default, wipes scan results, and
+  // clears the chart. Persist effects will immediately re-write the defaults
+  // to sessionStorage; clearScreenerSession() is called as a defensive flush
+  // so any cruft outside the persisted state shape is wiped too.
+  function handleClear() {
+    if (loading) return
+    setTickerInput('')
+    setActiveTickers([])
+    setV3ActiveTickers([])
+    setDistPills(DEFAULT_DISTANCES)
+    setWeeks(4)
+    setV3WeeksMin(1)
+    setV3WeeksMax(12)
+    setV3MinPremium(5.00)
+    setV3MinPremiumStr('5.00')
+    setV3MinPProfit(0.50)
+    setV3MinPProfitStr('50')
+    setSelectedChartTicker(null)
+    setChartTimeframe('1M')
+    setChartExpanded(false)
+    clearAll()
+    clearScreenerSession()
   }
 
   // ── Run scan ───────────────────────────────────────────────────────────────
@@ -318,8 +369,11 @@ export default function App() {
     <>
       <MacroEvents macroEvents={macroEvents} />
 
-      {/* Control bar */}
-      <div className="px-6 py-3 border-b border-gray-800 flex items-start gap-8 flex-wrap">
+      {/* Control bar — inputs cluster on the left, stock chart fills the right */}
+      <div className="px-6 py-3 border-b border-gray-800 flex items-start gap-6 flex-wrap">
+
+        {/* Inputs cluster */}
+        <div className="flex items-start gap-8 flex-wrap shrink-0">
 
         {/* Tickers — shared between V2 and V3 */}
         <div className="flex flex-col gap-1">
@@ -497,6 +551,27 @@ export default function App() {
           </>
         )}
 
+        </div>
+        {/* End inputs cluster */}
+
+        {/* Stock chart — compact variant. Takes the remaining horizontal space.
+            With flex-wrap the chart drops to its own full-width row on narrow
+            viewports. Hidden when the chart is expanded (rendered in <main> instead). */}
+        {!chartExpanded && (
+          <div className="flex-1 min-w-[320px]">
+            <StockChart
+              ticker={selectedChartTicker}
+              timeframe={chartTimeframe}
+              expanded={false}
+              data={chartData}
+              loading={chartLoading}
+              error={chartError}
+              onTimeframeChange={setChartTimeframe}
+              onToggleExpanded={() => setChartExpanded(true)}
+            />
+          </div>
+        )}
+
       </div>
 
       {/* Holdings filter bar — mode-aware */}
@@ -518,34 +593,54 @@ export default function App() {
       )}
 
       <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        {loading && <LoadingSpinner />}
+        {/* Expanded chart takes over the whole table area until closed. */}
+        {chartExpanded ? (
+          <div className="flex-1 min-h-0 flex flex-col p-3">
+            <StockChart
+              ticker={selectedChartTicker}
+              timeframe={chartTimeframe}
+              expanded
+              data={chartData}
+              loading={chartLoading}
+              error={chartError}
+              onTimeframeChange={setChartTimeframe}
+              onToggleExpanded={() => setChartExpanded(false)}
+            />
+          </div>
+        ) : (
+          <>
+            {loading && <LoadingSpinner />}
 
-        {!loading && error && <ErrorBanner error={error} />}
+            {!loading && error && <ErrorBanner error={error} />}
 
-        {!loading && !error && mode === 'v2' && (
-          hasResult
-            ? <RankedTable
-                rows={rerankedFiltered}
-                duplicatesRemoved={duplicatesRemoved}
-                distancesUsed={distancesUsed}
-                weeksUsed={weeksUsed}
-              />
-            : <EmptyState mode="v2" />
-        )}
+            {!loading && !error && mode === 'v2' && (
+              hasResult
+                ? <RankedTable
+                    rows={rerankedFiltered}
+                    duplicatesRemoved={duplicatesRemoved}
+                    distancesUsed={distancesUsed}
+                    weeksUsed={weeksUsed}
+                    onRowSelect={row => setSelectedChartTicker(row.ticker)}
+                  />
+                : <EmptyState mode="v2" />
+            )}
 
-        {!loading && !error && mode === 'v3' && (
-          v3HasResult
-            ? <V3Table
-                rows={v3FilteredRanked}
-                totalEvaluated={v3TotalEvaluated}
-                weeksMinUsed={v3WeeksMinUsed}
-                weeksMaxUsed={v3WeeksMaxUsed}
-                minPremiumUsed={v3MinPremiumUsed}
-                minPProfitUsed={v3MinPProfitUsed}
-                onEdit={handleEdit}
-                onSaveToTradebook={saveToTradebook}
-              />
-            : <EmptyState mode="v3" />
+            {!loading && !error && mode === 'v3' && (
+              v3HasResult
+                ? <V3Table
+                    rows={v3FilteredRanked}
+                    totalEvaluated={v3TotalEvaluated}
+                    weeksMinUsed={v3WeeksMinUsed}
+                    weeksMaxUsed={v3WeeksMaxUsed}
+                    minPremiumUsed={v3MinPremiumUsed}
+                    minPProfitUsed={v3MinPProfitUsed}
+                    onEdit={handleEdit}
+                    onSaveToTradebook={saveToTradebook}
+                    onRowSelect={row => setSelectedChartTicker(row.ticker)}
+                  />
+                : <EmptyState mode="v3" />
+            )}
+          </>
         )}
       </main>
     </>
@@ -560,6 +655,7 @@ export default function App() {
         marketOpen={marketOpen}
         lastRun={lastRun}
         onRun={handleRun}
+        onClear={handleClear}
         loading={loading}
         isStale={isStale}
         mode={mode}

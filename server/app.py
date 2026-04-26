@@ -438,6 +438,124 @@ def chain():
 
 
 # ─────────────────────────────────────────────────────────────
+# Stock chart endpoint (price + volume + RSI)
+# ─────────────────────────────────────────────────────────────
+
+# Timeframe → (multiplier, timespan, days_back) for Massive list_aggs
+_CHART_TIMEFRAMES = {
+    "1D": (5,  "minute",   1),
+    "5D": (1,  "hour",     7),
+    "1M": (1,  "day",     35),   # ~1 month of trading days
+    "3M": (1,  "day",     95),
+    "6M": (1,  "day",    190),
+    "1Y": (1,  "day",    370),
+}
+
+
+@app.route("/api/chart", methods=["GET"])
+def chart():
+    """
+    Return OHLCV bars + RSI series for a ticker over a chosen timeframe.
+
+    Query params:
+        ticker    : str  — stock symbol
+        timeframe : str  — one of 1D, 5D, 1M, 3M, 6M, 1Y (default 1M)
+
+    Returns:
+        {
+          ticker, timeframe,
+          current_price, prev_close, change_pct,
+          bars: [{timestamp, open, high, low, close, volume}, ...],
+          rsi:  [{timestamp, value}, ...]
+        }
+    """
+    import traceback
+    try:
+        ticker    = request.args.get("ticker", "").upper().strip()
+        timeframe = request.args.get("timeframe", "1M").upper().strip()
+
+        if not ticker:
+            return jsonify({"error": "ticker is required"}), 400
+        if timeframe not in _CHART_TIMEFRAMES:
+            return jsonify({"error": f"unknown timeframe: {timeframe}"}), 400
+
+        multiplier, timespan, days_back = _CHART_TIMEFRAMES[timeframe]
+        today      = date.today()
+        from_date  = (today - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        to_date    = today.strftime("%Y-%m-%d")
+
+        # ── OHLCV bars ──────────────────────────────────────────
+        try:
+            aggs = list(massive_client.list_aggs(
+                ticker,
+                multiplier,
+                timespan,
+                from_date,
+                to_date,
+                limit=50000,
+            ))
+        except Exception as e:
+            return jsonify({"error": f"chart fetch failed: {e}"}), 502
+
+        bars = []
+        for a in aggs:
+            if a.close is None or a.timestamp is None:
+                continue
+            bars.append({
+                "timestamp": int(a.timestamp),
+                "open":      float(a.open)   if a.open   is not None else None,
+                "high":      float(a.high)   if a.high   is not None else None,
+                "low":       float(a.low)    if a.low    is not None else None,
+                "close":     float(a.close),
+                "volume":    int(a.volume)   if a.volume is not None else 0,
+            })
+
+        if not bars:
+            return jsonify({"error": f"No bar data for {ticker} ({timeframe})"}), 404
+
+        bars.sort(key=lambda b: b["timestamp"])
+
+        # ── RSI (best-effort — return [] if endpoint unavailable) ──
+        rsi_values = []
+        try:
+            rsi_resp = massive_client.get_rsi(
+                ticker,
+                timespan=timespan,
+                window=14,
+                limit=5000,
+                series_type="close",
+            )
+            raw_values = getattr(rsi_resp, "values", None) or []
+            for v in raw_values:
+                ts  = getattr(v, "timestamp", None)
+                val = getattr(v, "value",     None)
+                if ts is None or val is None:
+                    continue
+                rsi_values.append({"timestamp": int(ts), "value": round(float(val), 2)})
+            rsi_values.sort(key=lambda r: r["timestamp"])
+        except Exception:
+            rsi_values = []  # RSI is optional — don't fail the chart request
+
+        # ── Summary ─────────────────────────────────────────────
+        current_price = bars[-1]["close"]
+        prev_close    = bars[-2]["close"] if len(bars) >= 2 else current_price
+        change_pct    = round(((current_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
+
+        return jsonify({
+            "ticker":         ticker,
+            "timeframe":      timeframe,
+            "current_price":  round(current_price, 2),
+            "prev_close":     round(prev_close,    2),
+            "change_pct":     change_pct,
+            "bars":           bars,
+            "rsi":            rsi_values,
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+# ─────────────────────────────────────────────────────────────
 # Serve React SPA (must be registered after all /api/* routes)
 # ─────────────────────────────────────────────────────────────
 
@@ -469,5 +587,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3  /api/chain")
+    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3  /api/chain  /api/chart")
     app.run(host='0.0.0.0', port=5001)

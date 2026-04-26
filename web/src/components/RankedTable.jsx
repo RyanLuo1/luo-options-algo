@@ -22,7 +22,7 @@ function fmtDist(d) {
   return `${parseFloat(pct.toPrecision(4))}%`
 }
 
-export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, weeksUsed }) {
+export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, weeksUsed, onRowSelect }) {
   const [sortKey, setSortKey]   = useState('rank')
   const [sortAsc, setSortAsc]   = useState(true)
 
@@ -113,7 +113,12 @@ export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, we
           </thead>
           <tbody>
             {sorted.map((row, idx) => (
-              <TableRow key={`${row.ticker}-${row.side}-${row.expiration}-${row.dist_pct}`} row={row} idx={idx} />
+              <TableRow
+                key={`${row.ticker}-${row.side}-${row.expiration}-${row.dist_pct}`}
+                row={row}
+                idx={idx}
+                onRowSelect={onRowSelect}
+              />
             ))}
           </tbody>
         </table>
@@ -122,7 +127,7 @@ export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, we
   )
 }
 
-function TableRow({ row, idx }) {
+function TableRow({ row, idx, onRowSelect }) {
   const isTopFive   = row.rank <= 5
   const isCall      = row.side === 'Call'
   const isPut       = row.side === 'Put'
@@ -139,7 +144,10 @@ function TableRow({ row, idx }) {
   const wk = row.week ? row.week.replace('Week ', 'W') : '—'
 
   return (
-    <tr className={`border-b border-gray-800/60 transition-colors ${rowBg}`}>
+    <tr
+      onClick={() => onRowSelect && onRowSelect(row)}
+      className={`border-b border-gray-800/60 transition-colors ${rowBg} ${onRowSelect ? 'cursor-pointer' : ''}`}
+    >
 
       {/* Rank */}
       <td className="px-3 py-2 text-right text-gray-500">

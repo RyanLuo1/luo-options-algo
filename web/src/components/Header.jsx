@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { clearScreenerSession } from '../lib/sessionState'
 
-export default function Header({ marketOpen, lastRun, onRun, loading, isStale, mode, onModeChange }) {
+export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale, mode, onModeChange }) {
   const location = useLocation()
   const navigate  = useNavigate()
   const path      = location.pathname
@@ -105,10 +105,24 @@ export default function Header({ marketOpen, lastRun, onRun, loading, isStale, m
           </button>
         </div>
 
-        {/* Market status + run button — screener only */}
+        {/* Market status + clear/run buttons — screener only */}
         {isScreener && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <MarketBadge open={marketOpen} />
+            <button
+              onClick={onClear}
+              disabled={loading}
+              title="Reset all controls and clear results"
+              className={`
+                px-5 py-2 rounded text-sm font-semibold transition-colors whitespace-nowrap
+                border border-gray-700 bg-gray-800/40
+                ${loading
+                  ? 'text-gray-500 cursor-not-allowed opacity-60'
+                  : 'text-gray-300 hover:text-gray-100 hover:border-gray-600 hover:bg-gray-800 cursor-pointer'}
+              `}
+            >
+              Clear
+            </button>
             <button
               onClick={onRun}
               disabled={loading}
