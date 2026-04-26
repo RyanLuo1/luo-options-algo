@@ -231,6 +231,35 @@ React Router v7 (`react-router-dom`) with `createBrowserRouter` + `RouterProvide
 
 Each page component renders its own `<Header />`. Header detects the current path via `useLocation` and renders the appropriate variant.
 
+### State persistence (sessionStorage)
+
+Screener state survives in-session navigation (e.g. screener → `/trade` → back) so users don't lose their work when editing a triplet. Two `sessionStorage` keys, both managed via `web/src/lib/sessionState.js`:
+
+- **`luo-capital-screener-state`** — App.jsx control state, written via a single `useEffect` whose deps include every persisted field. Persisted fields:
+  - `mode` (`v2` | `v3`)
+  - `tickerInput` (raw text in the Tickers input)
+  - `activeTickers`, `v3ActiveTickers` (post-filter ticker pills)
+  - `distPills`, `weeks` (V2 controls)
+  - `v3WeeksMin`, `v3WeeksMax`, `v3MinPremium`, `v3MinPProfit` (V3 numeric controls)
+  - `v3MinPremiumStr`, `v3MinPProfitStr` (raw input strings — preserve partial typing like `4.`)
+- **`luo-capital-screener-results`** — `{ result, v3Result }` from `useOptionsData`, written when either changes. Preserves the full ranked tables, `tickers_used`, `weeks_min_used`/`weeks_max_used`, etc.
+
+Hydration uses lazy `useState` init via `useMemo(loadScreenerState, [])`. **Do not** read sessionStorage outside `useMemo` / lazy init or you'll re-read on every render.
+
+**Important — the activeTickers sync useEffects in App.jsx:**
+```js
+const lastTickersUsedRef = useRef(tickersUsed)  // primed with initial value
+useEffect(() => {
+  if (tickersUsed !== lastTickersUsedRef.current) {
+    setActiveTickers(tickersUsed)
+    lastTickersUsedRef.current = tickersUsed
+  }
+}, [tickersUsed])
+```
+The naive `useEffect(() => setActiveTickers(tickersUsed), [tickersUsed])` would overwrite the persisted `activeTickers` on mount because the hydrated `result` produces a fresh `tickers_used` array reference. Priming the ref with `tickersUsed`'s initial value makes the first post-mount effect a no-op (refs match). New scans still sync correctly because `setResult` produces a new object and a new array reference.
+
+**Logout** clears both keys via `clearScreenerSession()` (called in `Header.handleLogout` before `supabase.auth.signOut()`). Closing the tab clears them automatically (sessionStorage default).
+
 ### Key components
 
 - **`App.jsx`** — screener page only (not a router/layout); owns all scan state and control logic

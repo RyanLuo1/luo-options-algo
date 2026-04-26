@@ -1,15 +1,25 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { loadScreenerResults, saveScreenerResults } from '../lib/sessionState'
 
 // Stable empty array — avoids creating a new reference on every render,
 // which would trigger useEffect dependency checks in App and cause an infinite loop.
 const EMPTY = []
 
 export default function useOptionsData() {
-  const [status,   setStatus]   = useState(null)  // from GET /api/status
-  const [result,   setResult]   = useState(null)  // from POST /api/run  (V2)
-  const [v3Result, setV3Result] = useState(null)  // from POST /api/run_v3 (V3)
+  // Hydrate persisted scan results from sessionStorage (single read on mount).
+  const initial = useMemo(() => loadScreenerResults() ?? {}, [])
+
+  const [status,   setStatus]   = useState(null)              // from GET /api/status
+  const [result,   setResult]   = useState(initial.result   ?? null)  // V2 scan
+  const [v3Result, setV3Result] = useState(initial.v3Result ?? null)  // V3 scan
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState(null)  // string or null
+
+  // Persist scan results so they survive in-session navigation (/, /trade, /tradebook).
+  // Cleared when the tab closes (sessionStorage default) or on logout (Header).
+  useEffect(() => {
+    saveScreenerResults({ result, v3Result })
+  }, [result, v3Result])
 
   // Fetch market status on mount (fast, no external calls)
   useEffect(() => {

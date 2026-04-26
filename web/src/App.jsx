@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './index.css'
 import { supabase } from './lib/supabase'
 import useAuth from './hooks/useAuth'
+import { loadScreenerState, saveScreenerState } from './lib/sessionState'
 
 import useOptionsData    from './hooks/useOptionsData'
 import Header            from './components/Header'
@@ -20,27 +21,32 @@ export default function App() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
+  // Hydrate all controls from sessionStorage (single read on mount). Survives
+  // in-session navigation (e.g. screener → /trade → back); cleared on logout
+  // or tab close. See web/src/lib/sessionState.js.
+  const persisted = useMemo(() => loadScreenerState() ?? {}, [])
+
   // ── Mode ──────────────────────────────────────────────────────────────────
-  const [mode, setMode] = useState('v2')  // 'v2' | 'v3'
+  const [mode, setMode] = useState(persisted.mode ?? 'v2')  // 'v2' | 'v3'
 
   // ── Shared controls ────────────────────────────────────────────────────────
-  const [tickerInput, setTickerInput] = useState('')
+  const [tickerInput, setTickerInput] = useState(persisted.tickerInput ?? '')
 
   // ── V2 controls ────────────────────────────────────────────────────────────
-  const [activeTickers, setActiveTickers] = useState([])
+  const [activeTickers, setActiveTickers] = useState(persisted.activeTickers ?? [])
   const [distInput,     setDistInput]     = useState('')
-  const [distPills,     setDistPills]     = useState(DEFAULT_DISTANCES)
-  const [weeks,         setWeeks]         = useState(4)
+  const [distPills,     setDistPills]     = useState(persisted.distPills ?? DEFAULT_DISTANCES)
+  const [weeks,         setWeeks]         = useState(persisted.weeks ?? 4)
 
   // ── V3 controls ────────────────────────────────────────────────────────────
-  const [v3ActiveTickers, setV3ActiveTickers]   = useState([])
-  const [v3WeeksMin,      setV3WeeksMin]        = useState(1)
-  const [v3WeeksMax,      setV3WeeksMax]        = useState(12)
-  const [v3MinPremium,    setV3MinPremium]      = useState(5.00)
-  const [v3MinPProfit,    setV3MinPProfit]      = useState(0.50)
+  const [v3ActiveTickers, setV3ActiveTickers]   = useState(persisted.v3ActiveTickers ?? [])
+  const [v3WeeksMin,      setV3WeeksMin]        = useState(persisted.v3WeeksMin ?? 1)
+  const [v3WeeksMax,      setV3WeeksMax]        = useState(persisted.v3WeeksMax ?? 12)
+  const [v3MinPremium,    setV3MinPremium]      = useState(persisted.v3MinPremium ?? 5.00)
+  const [v3MinPProfit,    setV3MinPProfit]      = useState(persisted.v3MinPProfit ?? 0.50)
   // Raw input strings — let the user type freely (incl. empty, partial decimals)
-  const [v3MinPremiumStr, setV3MinPremiumStr]   = useState('5.00')
-  const [v3MinPProfitStr, setV3MinPProfitStr]   = useState('50')
+  const [v3MinPremiumStr, setV3MinPremiumStr]   = useState(persisted.v3MinPremiumStr ?? '5.00')
+  const [v3MinPProfitStr, setV3MinPProfitStr]   = useState(persisted.v3MinPProfitStr ?? '50')
 
   const {
     marketOpen, lastRun,
@@ -58,9 +64,42 @@ export default function App() {
     runScan, runV3Scan, clearAll,
   } = useOptionsData()
 
-  // Sync active ticker pills with scan results
-  useEffect(() => { setActiveTickers(tickersUsed) },   [tickersUsed])
-  useEffect(() => { setV3ActiveTickers(v3TickersUsed) }, [v3TickersUsed])
+  // Sync active ticker pills with scan results — only when the underlying
+  // result reference changes (i.e. a NEW scan completes). Refs are primed with
+  // the initial values so the first useEffect run after hydration is a no-op,
+  // preserving any persisted client-side ticker filter.
+  const lastTickersUsedRef   = useRef(tickersUsed)
+  const lastV3TickersUsedRef = useRef(v3TickersUsed)
+  useEffect(() => {
+    if (tickersUsed !== lastTickersUsedRef.current) {
+      setActiveTickers(tickersUsed)
+      lastTickersUsedRef.current = tickersUsed
+    }
+  }, [tickersUsed])
+  useEffect(() => {
+    if (v3TickersUsed !== lastV3TickersUsedRef.current) {
+      setV3ActiveTickers(v3TickersUsed)
+      lastV3TickersUsedRef.current = v3TickersUsed
+    }
+  }, [v3TickersUsed])
+
+  // Persist control state on every change. Cheap — sessionStorage write of a
+  // small JSON blob. Cleared on logout (Header) or tab close.
+  useEffect(() => {
+    saveScreenerState({
+      mode, tickerInput,
+      activeTickers, distPills, weeks,
+      v3ActiveTickers, v3WeeksMin, v3WeeksMax,
+      v3MinPremium, v3MinPProfit,
+      v3MinPremiumStr, v3MinPProfitStr,
+    })
+  }, [
+    mode, tickerInput,
+    activeTickers, distPills, weeks,
+    v3ActiveTickers, v3WeeksMin, v3WeeksMax,
+    v3MinPremium, v3MinPProfit,
+    v3MinPremiumStr, v3MinPProfitStr,
+  ])
 
   // ── Utility functions ──────────────────────────────────────────────────────
   function fmtDist(d) {

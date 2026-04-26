@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { clearScreenerSession } from '../lib/sessionState'
 
 export default function Header({ marketOpen, lastRun, onRun, loading, isStale, mode, onModeChange }) {
   const location = useLocation()
@@ -7,6 +8,7 @@ export default function Header({ marketOpen, lastRun, onRun, loading, isStale, m
   const path      = location.pathname
 
   async function handleLogout() {
+    clearScreenerSession()
     await supabase.auth.signOut()
     navigate('/login')
   }
