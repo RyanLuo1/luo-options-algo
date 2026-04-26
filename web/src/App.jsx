@@ -517,7 +517,7 @@ export default function App() {
         />
       )}
 
-      <main className="flex-1">
+      <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {loading && <LoadingSpinner />}
 
         {!loading && error && <ErrorBanner error={error} />}
@@ -552,8 +552,10 @@ export default function App() {
   )
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  // h-screen + overflow-hidden locks the page to viewport height so only the
+  // table body scrolls (see internal scroll in RankedTable / V3Table).
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+    <div className="h-screen overflow-hidden bg-gray-950 text-gray-100 flex flex-col">
       <Header
         marketOpen={marketOpen}
         lastRun={lastRun}

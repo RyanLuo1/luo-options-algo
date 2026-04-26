@@ -28,7 +28,7 @@ export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, we
 
   if (!rows || rows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center py-24 gap-3">
         <p className="text-gray-500 text-sm">No data yet.</p>
         <p className="text-gray-600 text-xs">Enter tickers and click Run Scan.</p>
       </div>
@@ -49,10 +49,12 @@ export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, we
   }
 
   return (
-    <div className="flex flex-col">
+    // Fills the parent <main>, owns its own internal scroll. The metadata
+    // bar and legend stay fixed; only the table wrapper below scrolls.
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
       {/* metadata bar */}
-      <div className="px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
+      <div className="shrink-0 px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
         <span>Algorithm: <span className="text-gray-400">V2 — Delta Adjusted</span></span>
         <span>·</span>
         <span>Min delta: <span className="text-gray-400">0.05</span></span>
@@ -75,23 +77,26 @@ export default function RankedTable({ rows, duplicatesRemoved, distancesUsed, we
       </div>
 
       {/* liquidity legend */}
-      <div className="px-6 py-1.5 flex items-center gap-4 text-xs border-b border-gray-800 bg-gray-900/50">
+      <div className="shrink-0 px-6 py-1.5 flex items-center gap-4 text-xs border-b border-gray-800 bg-gray-900/50">
         <span className="text-gray-500">Liquidity:</span>
         <span className="text-red-400">Volume &lt; 10 flagged red</span>
         <span className="text-gray-600">·</span>
         <span className="text-red-400">OI &lt; 100 flagged red</span>
       </div>
 
-      {/* table */}
-      <div className="overflow-x-auto">
+      {/* Scrollable table body. flex-1 + min-h-0 lets it consume remaining
+          height. overflow-auto handles both axes (sticky header below covers
+          vertical scroll; horizontal scroll still works for wide tables). */}
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full text-xs font-mono border-collapse">
           <thead>
-            <tr className="border-b border-gray-700 bg-gray-900">
+            <tr>
               {COLUMNS.map(col => (
                 <th
                   key={col.key}
                   onClick={() => toggleSort(col.key)}
                   className={`
+                    sticky top-0 z-10 bg-gray-900 border-b border-gray-700
                     px-3 py-2.5 font-semibold text-gray-400 cursor-pointer select-none
                     hover:text-gray-200 whitespace-nowrap
                     ${col.align === 'right' ? 'text-right' : 'text-left'}

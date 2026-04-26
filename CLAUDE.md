@@ -260,6 +260,24 @@ The naive `useEffect(() => setActiveTickers(tickersUsed), [tickersUsed])` would 
 
 **Logout** clears both keys via `clearScreenerSession()` (called in `Header.handleLogout` before `supabase.auth.signOut()`). Closing the tab clears them automatically (sessionStorage default).
 
+### Layout — viewport-locked screener with internal table scroll
+
+The screener page (`App.jsx` route `/`) is locked to viewport height so the Header, MacroEvents, control bar, Holdings pills, and the table's metadata + legend bars always stay in view. Only the table body scrolls.
+
+The chain that makes this work:
+
+1. **`App.jsx` outer div** — `h-screen overflow-hidden flex flex-col`. Locks the page to 100vh; nothing escapes vertically.
+2. **`<main>`** — `flex-1 min-h-0 overflow-hidden flex flex-col`. Takes the remaining vertical space and is itself a flex column so its child can flex-grow.
+3. **`RankedTable.jsx` / `V3Table.jsx` outer div** — `flex-1 min-h-0 flex flex-col overflow-hidden`. Fills `<main>` and contains the metadata bar (with `shrink-0`), legend (with `shrink-0`), and the scroll wrapper.
+4. **Scroll wrapper inside the table component** — `flex-1 min-h-0 overflow-auto`. Both axes scroll: vertical for long row lists, horizontal for wide tables.
+5. **Sticky column headers** — `<th>` elements (not `<thead>` or `<tr>`) carry `sticky top-0 z-10 bg-gray-900 border-b border-gray-700`. Sticky must be on the cell, not the row, because `border-collapse: collapse` prevents `<tr>`-level sticky from working reliably across browsers. `bg-gray-900` is required so scrolled rows don't show through; the border-bottom on each `<th>` forms the divider line beneath the sticky header.
+
+**`min-h-0` is load-bearing** — without it on flex children, the default `min-height: auto` makes them refuse to shrink below their content size, defeating the overflow chain. Add it on every flex child in this stack.
+
+Empty / loading states (`EmptyState`, `LoadingSpinner`, `RankedTable.jsx` no-data branch, `V3Table.jsx` no-data branch) all use `flex-1 min-h-0` so they fill the available space and center properly instead of hugging the top of `<main>`.
+
+This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook`, `/login`) use natural document flow.
+
 ### Key components
 
 - **`App.jsx`** — screener page only (not a router/layout); owns all scan state and control logic

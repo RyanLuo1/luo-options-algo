@@ -38,7 +38,7 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
 
   if (!rows || rows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center py-24 gap-3">
         <p className="text-gray-500 text-sm">No valid triplets found.</p>
         <p className="text-gray-600 text-xs">
           Try lowering min premium, reducing min P(profit), or adding more weeks.
@@ -73,10 +73,12 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
   const minPP = minPProfitUsed ?? 0.50
 
   return (
-    <div className="flex flex-col">
+    // Fills the parent <main>, owns its own internal scroll. Metadata + legend
+    // stay fixed; only the table wrapper below scrolls.
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
       {/* metadata bar */}
-      <div className="px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
+      <div className="shrink-0 px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
         <span>Algorithm: <span className="text-gray-400">V3 — Call Spread Risk Reversal</span></span>
         {weeksMinUsed != null && weeksMaxUsed != null && (
           <><span>·</span><span>Weeks: <span className="text-gray-400">
@@ -98,7 +100,7 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
       </div>
 
       {/* legend */}
-      <div className="px-6 py-1.5 flex items-center gap-4 text-xs border-b border-gray-800 bg-gray-900/50">
+      <div className="shrink-0 px-6 py-1.5 flex items-center gap-4 text-xs border-b border-gray-800 bg-gray-900/50">
         <span className="text-gray-500">Legend:</span>
         <span className="text-sky-400">Leg A Prem</span>
         <span className="text-gray-600">=</span>
@@ -113,16 +115,19 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
         <span className="text-yellow-400">Yellow = no fair value</span>
       </div>
 
-      {/* table */}
-      <div className="overflow-x-auto">
+      {/* Scrollable table body. flex-1 + min-h-0 so it consumes remaining
+          height. overflow-auto handles both axes (sticky <th> below covers
+          vertical scroll; horizontal scroll still works for wide tables). */}
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full text-xs font-mono border-collapse">
           <thead>
-            <tr className="border-b border-gray-700 bg-gray-900">
+            <tr>
               {COLUMNS.map(col => (
                 <th
                   key={col.key}
                   onClick={() => toggleSort(col.key)}
                   className={`
+                    sticky top-0 z-10 bg-gray-900 border-b border-gray-700
                     px-3 py-2.5 font-semibold text-gray-400 cursor-pointer select-none
                     hover:text-gray-200 whitespace-nowrap
                     ${col.align === 'right' ? 'text-right' : 'text-left'}
