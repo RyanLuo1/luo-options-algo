@@ -441,7 +441,9 @@ def chain():
 # Stock chart endpoint (price + volume + RSI)
 # ─────────────────────────────────────────────────────────────
 
-import time
+# `time as _time` to avoid shadowing `from datetime import time` above —
+# that import is used by _market_status() for the 9:30 / 16:00 ET checks.
+import time as _time
 
 # Timeframe → (multiplier, timespan, days_back) for Massive list_aggs.
 # 1D uses 1-hour bars (not 5-minute) because the Massive Options plan does
@@ -478,13 +480,13 @@ def _get_cached_chart(ticker, timeframe):
     entry = _chart_cache.get((ticker, timeframe))
     if entry is None:
         return None
-    if time.time() - entry["timestamp"] >= _CACHE_TTL.get(timeframe, 300):
+    if _time.time() - entry["timestamp"] >= _CACHE_TTL.get(timeframe, 300):
         return None
     return entry["data"]
 
 
 def _set_cached_chart(ticker, timeframe, data):
-    _chart_cache[(ticker, timeframe)] = {"data": data, "timestamp": time.time()}
+    _chart_cache[(ticker, timeframe)] = {"data": data, "timestamp": _time.time()}
 
 
 @app.route("/api/chart", methods=["GET"])
@@ -647,7 +649,7 @@ def chart():
 def chart_cache_stats():
     """Per-process cache stats — useful when verifying that the cache is
     actually serving repeat requests instead of going to Massive each time."""
-    now = time.time()
+    now = _time.time()
     keys = []
     for (ticker, tf), entry in _chart_cache.items():
         ttl = _CACHE_TTL.get(tf, 300)
