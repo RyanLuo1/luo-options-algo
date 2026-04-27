@@ -1,7 +1,11 @@
+import { useMemo } from 'react'
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid,
   ResponsiveContainer, Tooltip, ReferenceLine,
 } from 'recharts'
+
+const BULLISH = '#22c55e'  // green-500
+const BEARISH = '#ef4444'  // red-500
 
 const TIMEFRAMES = ['1D', '5D', '1M', '3M', '6M', '1Y']
 
@@ -20,6 +24,15 @@ function fmtVolume(v) {
   if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`
   if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`
   return `${v}`
+}
+
+// Parse a "YYYY-MM-DD" string as a calendar date in the user's locale (no UTC
+// shift) and format as "Mon DD" — used for the stale-session label on 1D.
+function formatSessionDate(yyyyMmDd) {
+  if (!yyyyMmDd) return ''
+  const [y, m, d] = yyyyMmDd.split('-').map(Number)
+  if (!y || !m || !d) return yyyyMmDd
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 /**
@@ -69,6 +82,11 @@ function ChartHeader({ ticker, timeframe, expanded, data, onTimeframeChange, onT
     : changePct >= 0 ? 'text-emerald-400' : 'text-red-400'
   const changeSign = changePct >= 0 ? '+' : ''
 
+  // 1D fallback: backend walks back to the most recent session when "today"
+  // has no intraday bars (weekend, holiday, pre-open). Show the session date
+  // so the user knows the chart isn't real-time.
+  const showStaleSession = data?.session_is_today === false && data?.session_date
+
   return (
     <div className={`shrink-0 flex items-center justify-between gap-3 px-3 ${expanded ? 'py-2' : 'py-1.5'} border-b border-gray-800`}>
       <div className="flex items-baseline gap-3 min-w-0">
@@ -83,6 +101,11 @@ function ChartHeader({ ticker, timeframe, expanded, data, onTimeframeChange, onT
         {changePct != null && (
           <span className={`font-mono ${expanded ? 'text-sm' : 'text-xs'} ${changeColor}`}>
             {changeSign}{changePct.toFixed(2)}%
+          </span>
+        )}
+        {showStaleSession && (
+          <span className={`font-mono italic ${expanded ? 'text-xs' : 'text-[10px]'} text-amber-400/80`}>
+            Showing {formatSessionDate(data.session_date)}
           </span>
         )}
       </div>
@@ -122,14 +145,35 @@ function ChartBody({ data, timeframe, expanded }) {
     ? [bars[0].timestamp, bars[bars.length - 1].timestamp]
     : ['auto', 'auto']
 
+  // Pre-process bars for candlestick rendering. `candleRange: [low, high]`
+  // turns the Bar into a range bar so the shape callback receives a y-extent
+  // spanning the full wick (low → high). Open/close are interpolated within.
+  const candleData = useMemo(
+    () => bars.map(b => ({ ...b, candleRange: [b.low, b.high] })),
+    [bars]
+  )
+
+  // YAxis must span min(low) → max(high), not just close prices, so wicks
+  // never get clipped. ~3% padding above and below for breathing room.
+  const priceYDomain = useMemo(() => {
+    let min = Infinity, max = -Infinity
+    for (const b of bars) {
+      if (b.low  != null && b.low  < min) min = b.low
+      if (b.high != null && b.high > max) max = b.high
+    }
+    if (!isFinite(min) || !isFinite(max) || min === max) return ['auto', 'auto']
+    const pad = (max - min) * 0.03
+    return [min - pad, max + pad]
+  }, [bars])
+
   // Per spec: price 60%, volume 20%, RSI 20% — flex weights match.
   return (
     <div className="flex-1 min-h-0 flex flex-col">
 
-      {/* Price */}
+      {/* Price (candlesticks) */}
       <div className="flex-[6] min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart syncId="luo-chart" data={bars} margin={{ top: 4, right: 8, left: showAxis ? 4 : 4, bottom: 0 }}>
+          <ComposedChart syncId="luo-chart" data={candleData} margin={{ top: 4, right: 8, left: showAxis ? 4 : 4, bottom: 0 }}>
             <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="timestamp" type="number" domain={xDomain} scale="time"
@@ -138,7 +182,7 @@ function ChartBody({ data, timeframe, expanded }) {
               tick={{ fill: '#9ca3af', fontSize: 10 }} stroke="#374151"
             />
             <YAxis
-              domain={['auto', 'auto']}
+              domain={priceYDomain}
               hide={!showAxis}
               tick={{ fill: '#9ca3af', fontSize: 10 }} stroke="#374151"
               width={showAxis ? 56 : 0}
@@ -146,7 +190,7 @@ function ChartBody({ data, timeframe, expanded }) {
               orientation="right"
             />
             <Tooltip content={<ChartTooltip kind="price" timeframe={timeframe} />} cursor={{ stroke: '#4b5563', strokeWidth: 1 }} />
-            <Line type="monotone" dataKey="close" stroke="#818cf8" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Bar dataKey="candleRange" shape={Candlestick} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -213,7 +257,14 @@ function ChartTooltip({ active, payload, label, kind, timeframe }) {
           {p.open != null && <div>O <span className="text-gray-400">${p.open.toFixed(2)}</span></div>}
           {p.high != null && <div>H <span className="text-gray-400">${p.high.toFixed(2)}</span></div>}
           {p.low  != null && <div>L <span className="text-gray-400">${p.low.toFixed(2)}</span></div>}
-          <div>C <span className="text-indigo-400 font-semibold">${p.close.toFixed(2)}</span></div>
+          <div>
+            C <span className={`font-semibold ${p.close >= (p.open ?? p.close) ? 'text-emerald-400' : 'text-red-400'}`}>
+              ${p.close.toFixed(2)}
+            </span>
+          </div>
+          {p.volume != null && (
+            <div>Vol <span className="text-gray-300">{fmtVolume(p.volume)}</span></div>
+          )}
         </>
       )}
       {kind === 'volume' && p.volume != null && (
@@ -223,5 +274,46 @@ function ChartTooltip({ active, payload, label, kind, timeframe }) {
         <div>RSI <span className="text-violet-400 font-semibold">{p.value.toFixed(2)}</span></div>
       )}
     </div>
+  )
+}
+
+/**
+ * Custom candlestick shape rendered inside a Recharts <Bar dataKey="candleRange">.
+ *
+ * Recharts treats the bar as a range from `low` to `high`, so the (x, y, width,
+ * height) it passes us spans the full wick: y → high pixel, y+height → low pixel.
+ * Open and close pixels are interpolated within that range.
+ *
+ * Color: green if close ≥ open (bullish), red otherwise. A doji (open == close)
+ * gets a 1-pixel horizontal line in place of a body so it's still visible.
+ */
+function Candlestick(props) {
+  const { x, y, width, height, payload } = props
+  if (!payload) return null
+  const { open, high, low, close } = payload
+  if (open == null || high == null || low == null || close == null) return null
+  if (high === low) return null  // can't compute a scale; skip frame
+
+  const isUp  = close >= open
+  const color = isUp ? BULLISH : BEARISH
+
+  // Map any price within [low, high] to its pixel y inside [y, y+height].
+  const priceToY = v => y + height * (high - v) / (high - low)
+  const openY    = priceToY(open)
+  const closeY   = priceToY(close)
+
+  const bodyTop    = Math.min(openY, closeY)
+  const bodyHeight = Math.max(1, Math.abs(openY - closeY))   // doji → 1px
+  const bodyWidth  = Math.max(1, width * 0.7)
+  const bodyX      = x + (width - bodyWidth) / 2
+  const wickX      = x + width / 2
+
+  return (
+    <g>
+      {/* Wick — center vertical line spanning low to high */}
+      <line x1={wickX} y1={y} x2={wickX} y2={y + height} stroke={color} strokeWidth={1} />
+      {/* Body — open → close rectangle (or 1px line for doji) */}
+      <rect x={bodyX} y={bodyTop} width={bodyWidth} height={bodyHeight} fill={color} />
+    </g>
   )
 }

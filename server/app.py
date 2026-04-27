@@ -441,9 +441,13 @@ def chain():
 # Stock chart endpoint (price + volume + RSI)
 # ─────────────────────────────────────────────────────────────
 
-# Timeframe → (multiplier, timespan, days_back) for Massive list_aggs
+# Timeframe → (multiplier, timespan, days_back) for Massive list_aggs.
+# 1D uses 1-hour bars (not 5-minute) because the Massive Options plan does
+# not include sub-hourly stock aggregates — 5/15/30-min requests return 401
+# NOT_AUTHORIZED. Hourly is included; ~7 bars per trading session is enough
+# resolution for an at-a-glance intraday view.
 _CHART_TIMEFRAMES = {
-    "1D": (5,  "minute",   1),
+    "1D": (1,  "hour",     1),
     "5D": (1,  "hour",     7),
     "1M": (1,  "day",     35),   # ~1 month of trading days
     "3M": (1,  "day",     95),
@@ -480,22 +484,53 @@ def chart():
             return jsonify({"error": f"unknown timeframe: {timeframe}"}), 400
 
         multiplier, timespan, days_back = _CHART_TIMEFRAMES[timeframe]
-        today      = date.today()
-        from_date  = (today - timedelta(days=days_back)).strftime("%Y-%m-%d")
-        to_date    = today.strftime("%Y-%m-%d")
+        eastern  = ZoneInfo("America/New_York")
+        today_et = datetime.now(eastern).date()
 
         # ── OHLCV bars ──────────────────────────────────────────
-        try:
-            aggs = list(massive_client.list_aggs(
-                ticker,
-                multiplier,
-                timespan,
-                from_date,
-                to_date,
-                limit=50000,
-            ))
-        except Exception as e:
-            return jsonify({"error": f"chart fetch failed: {e}"}), 502
+        # 1D needs special handling: when the market is closed (weekend, holiday,
+        # pre-open) "today" has no bars, so we want the most recent trading
+        # session's intraday data. Implementation: one 7-day-window hourly
+        # request, then bucket bars by ET calendar date and pick the latest.
+        # (An earlier walk-back loop that made up to 7 day-by-day calls tripped
+        # Massive's weekend rate limit, which returns auth-flavored 429s.)
+        # Other timeframes use a rolling window that already absorbs closed days.
+        aggs             = []
+        session_date_str = None  # only set for 1D — see frontend "Showing …" label
+
+        if timeframe == "1D":
+            from_date = (today_et - timedelta(days=7)).strftime("%Y-%m-%d")
+            to_date   = today_et.strftime("%Y-%m-%d")
+            try:
+                all_aggs = list(massive_client.list_aggs(
+                    ticker, multiplier, timespan, from_date, to_date, limit=50000,
+                ))
+            except Exception as e:
+                return jsonify({"error": f"chart fetch failed: {e}"}), 502
+
+            # Group bars by ET calendar date, pick the most recent session.
+            by_date = {}
+            for a in all_aggs:
+                if a.timestamp is None:
+                    continue
+                ts_et = datetime.fromtimestamp(a.timestamp / 1000, tz=eastern)
+                key   = ts_et.strftime("%Y-%m-%d")
+                by_date.setdefault(key, []).append(a)
+
+            if not by_date:
+                return jsonify({"error": f"No recent intraday data for {ticker}"}), 404
+
+            session_date_str = max(by_date.keys())
+            aggs             = by_date[session_date_str]
+        else:
+            from_date = (today_et - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            to_date   = today_et.strftime("%Y-%m-%d")
+            try:
+                aggs = list(massive_client.list_aggs(
+                    ticker, multiplier, timespan, from_date, to_date, limit=50000,
+                ))
+            except Exception as e:
+                return jsonify({"error": f"chart fetch failed: {e}"}), 502
 
         bars = []
         for a in aggs:
@@ -514,6 +549,13 @@ def chart():
             return jsonify({"error": f"No bar data for {ticker} ({timeframe})"}), 404
 
         bars.sort(key=lambda b: b["timestamp"])
+
+        # Truthy only for 1D — non-1D timeframes use rolling windows where the
+        # concept of "the session date" doesn't apply.
+        session_is_today = (
+            session_date_str == today_et.strftime("%Y-%m-%d")
+            if session_date_str is not None else None
+        )
 
         # ── RSI (best-effort — return [] if endpoint unavailable) ──
         rsi_values = []
@@ -542,13 +584,15 @@ def chart():
         change_pct    = round(((current_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
 
         return jsonify({
-            "ticker":         ticker,
-            "timeframe":      timeframe,
-            "current_price":  round(current_price, 2),
-            "prev_close":     round(prev_close,    2),
-            "change_pct":     change_pct,
-            "bars":           bars,
-            "rsi":            rsi_values,
+            "ticker":           ticker,
+            "timeframe":        timeframe,
+            "current_price":    round(current_price, 2),
+            "prev_close":       round(prev_close,    2),
+            "change_pct":       change_pct,
+            "session_date":     session_date_str,    # 1D only — null otherwise
+            "session_is_today": session_is_today,    # bool for 1D, null otherwise
+            "bars":             bars,
+            "rsi":              rsi_values,
         })
 
     except Exception as e:

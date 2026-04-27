@@ -150,20 +150,31 @@ Ratio = (Premium Collected / Stock Price) / Delta
 
 | Timeframe | multiplier | timespan | days_back |
 |-----------|------------|----------|-----------|
-| `1D`      | 5          | minute   | 1         |
+| `1D`      | 1          | hour     | 1         |
 | `5D`      | 1          | hour     | 7         |
 | `1M`      | 1          | day      | 35        |
 | `3M`      | 1          | day      | 95        |
 | `6M`      | 1          | day      | 190       |
 | `1Y`      | 1          | day      | 370       |
 
+**1D uses 1-hour bars, not 5-minute** — the Massive Options plan does not include sub-hourly stock aggregates (5/15/30-min requests return 401 `NOT_AUTHORIZED`). Hourly aggregates are included and yield ~7 bars per trading session, which is enough resolution for an at-a-glance intraday view.
+
 RSI is fetched via `massive_client.get_rsi(ticker, timespan=…, window=14)` with `series_type="close"`. RSI is **best-effort** — if the call fails, the endpoint still returns bars with `rsi: []` rather than failing. Bars without `close` or `timestamp` are filtered out.
+
+**1D — most recent session** — when timeframe is `1D`, the endpoint queries hourly bars for the last 7 calendar days in **one** API call, then buckets the returned bars by ET calendar date (`datetime.fromtimestamp(ts/1000, tz=ET).strftime("%Y-%m-%d")`) and keeps only the most recent date's bars. This handles weekends, holidays, and pre-market hours uniformly without doing day-by-day walk-back queries — an earlier walk-back implementation tripped Massive's weekend rate limit (which returns auth-flavored 429s, easy to misread as a permission error). Returns 404 only if the 7-day query returns zero bars total. The `today` reference is `datetime.now(ZoneInfo("America/New_York")).date()` so the server's local timezone doesn't affect what counts as "today". Other timeframes use a rolling window that already absorbs closed days.
+
+The response carries two extra fields **only for 1D**:
+- `session_date` — `YYYY-MM-DD` of the session actually returned (or `null` for non-1D)
+- `session_is_today` — `true` if `session_date` matches today's ET date, `false` if the fallback fired (or `null` for non-1D)
+
+The frontend (`StockChart.jsx` `ChartHeader`) shows a small italic amber "Showing {Mon DD}" label next to the change percentage when `session_is_today === false`, so users know the chart isn't real-time. Date parsing uses `new Date(y, m-1, d)` rather than `new Date('YYYY-MM-DD')` to avoid the UTC midnight shift bug.
 
 Response:
 ```json
 {
   "ticker": "MU", "timeframe": "1M",
   "current_price": 487.92, "prev_close": 480.15, "change_pct": 1.62,
+  "session_date": null, "session_is_today": null,
   "bars": [{"timestamp": 1234567890000, "open": …, "high": …, "low": …, "close": …, "volume": …}, …],
   "rsi":  [{"timestamp": 1234567890000, "value": 65.4}, …]
 }
@@ -346,11 +357,13 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
   - Table columns: Date Saved, Ticker, Expiration, Leg A/B/C Strike, Net Premium, Score, P(Profit)%
   - Each row has a × delete button; "Clear all" button at top right
   - Trades fetched with `.order('saved_at', { ascending: false })` — most recent first
-- **`StockChart.jsx`** — three stacked Recharts `ComposedChart` panels (price line, volume bars, RSI line with 30/70 reference lines). Two variants:
+- **`StockChart.jsx`** — three stacked Recharts `ComposedChart` panels (price candlesticks, volume bars, RSI line with 30/70 reference lines). Two variants:
   - **Compact** (default): fixed `h-[200px]`, lives in the screener control bar to the right of the inputs cluster (control bar grows to ~200px tall to fit it).
   - **Expanded**: `flex-1`, takes over the table area in `<main>` until the user clicks the close button (`×`). The table is hidden while expanded.
 
-  All three charts share `syncId="luo-chart"` so the cursor lines up across panels in expanded mode. Color palette: price `indigo-400` (#818cf8), volume `gray-700` (#374151), RSI `violet-400` (#a78bfa), RSI 30/70 references `red-500` at 35% opacity (dashed). Header shows ticker, current price, % change vs prior close, a timeframe `<select>` (`1D`/`5D`/`1M`/`3M`/`6M`/`1Y`), and the expand/close toggle.
+  All three charts share `syncId="luo-chart"` so the cursor lines up across panels in expanded mode. Color palette: bullish candles `green-500` (#22c55e), bearish candles `red-500` (#ef4444), volume `gray-700` (#374151), RSI `violet-400` (#a78bfa), RSI 30/70 references `red-500` at 35% opacity (dashed). Header shows ticker, current price, % change vs prior close, a timeframe `<select>` (`1D`/`5D`/`1M`/`3M`/`6M`/`1Y`), and the expand/close toggle.
+
+  **Candlestick implementation** — Recharts has no native candlestick, so the price panel uses `<Bar dataKey="candleRange" shape={Candlestick}>` where each data point is preprocessed with `candleRange: [low, high]`. Recharts treats a 2-element array dataKey as a range bar, so the shape callback receives `(x, y, width, height)` spanning the full wick: `y` = high pixel, `y + height` = low pixel. Open and close pixels are interpolated within that range via `y + height * (high - v) / (high - low)`. The body is a `<rect>` between openY and closeY, ~70% of the bar width and centered; the wick is a `<line>` at the bar's horizontal center spanning low → high. Color: green if `close >= open`, red otherwise. Doji (open == close) gets a 1px-tall body so it stays visible. The price `<YAxis>` uses an explicit domain of `[min(low), max(high)]` (~3% padding) computed via `useMemo` so wicks never get clipped — `'auto'` would only consider the dataKey values and clip the range bars.
 
 - **`useChartData.js`** — fetches `/api/chart` for `(ticker, timeframe)`. **Lifted to App.jsx** (not used inside StockChart) so the same data feeds both the compact and expanded variants without re-fetching when the user toggles expand. Caches by `ticker|timeframe` key in a `useRef(new Map())` and ignores out-of-order responses with a `latestKeyRef`.
 
