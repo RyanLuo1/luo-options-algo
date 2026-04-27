@@ -256,7 +256,7 @@ Built with Vite + React + Tailwind CSS. Source in `web/src/`, built output in `w
 
 ### Mode toggle
 
-The header contains a V2 / V3 toggle. Switching modes calls `clearAll()` to wipe existing results and resets stale state. Each mode has its own controls and staleness tracking.
+The header contains a V2 / V3 toggle. Switching modes **preserves** both modes' scan results and controls — only the displayed mode changes. Each mode owns independent state (`ranked` / `v3Ranked`, its own control inputs, its own staleness check) that is already persisted to sessionStorage, so the user can flip back and forth without losing data. The **Clear** button (in the Header) is the only explicit reset path; mode toggling itself never destroys data.
 
 ### Authentication (Supabase)
 
@@ -341,7 +341,7 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
     - **Min Premium $ / Min P(Profit) %** are **free-text** inputs (`type="text"` with `inputMode="decimal"`/`numeric`). The user can clear and type any value (incl. partial decimals like `4.`). Each has a paired raw-string state (`v3MinPremiumStr`, `v3MinPProfitStr`) and a numeric state (`v3MinPremium`, `v3MinPProfit`). On every keystroke the string updates; the numeric value updates only when the input parses as valid (premium: any non-negative number; P(profit): integer 1–99). Invalid input shows a **red border** but does NOT block typing. On blur, P(profit) is clamped into [1, 99] and premium reverts to the last valid value if invalid. The `+` / `−` buttons next to each input bump the numeric value (premium by ±0.50, P(profit) by ±1) and re-sync the string.
   - **Client-side filtering:** removing a distance or ticker pill instantly hides matching rows without a new API call; same for V3 ticker pills
   - **Staleness detection (per mode):** Run Scan button turns amber "⚠ Rescan needed" when controls diverge from last scan's params. V2: new dist added, weeks changed, new ticker typed. V3: weeks_min changed, weeks_max changed, min premium changed, min P(profit) changed, new ticker typed. Removing pills is NOT stale (client-side handled).
-  - `handleModeChange(newMode)` — calls `clearAll()`, switches mode
+  - `handleModeChange(newMode)` — switches mode only; both V2 and V3 results are preserved across the toggle
   - `handleRun()` — dispatches to `runScan` (V2) or `runV3Scan` (V3) based on current mode
   - Does not contain any `<Routes>` or `<Route>` — routing is entirely in `main.jsx`
 - **`Header.jsx`** — route-aware header (uses `useLocation`); rendered independently by each page component:

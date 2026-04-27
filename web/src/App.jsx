@@ -171,10 +171,13 @@ export default function App() {
   const isStale = mode === 'v2' ? v2IsStale : v3IsStale
 
   // ── Mode switch ────────────────────────────────────────────────────────────
+  // Preserve both V2 and V3 results — only the displayed mode changes. Each
+  // mode owns independent state (ranked / v3Ranked, control inputs) that is
+  // already persisted to sessionStorage. The Clear button is the explicit
+  // reset path; mode toggling should never destroy data.
   function handleModeChange(newMode) {
     if (newMode === mode || loading) return
     setMode(newMode)
-    clearAll()
   }
 
   // ── Clear screener ─────────────────────────────────────────────────────────
