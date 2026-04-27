@@ -13,8 +13,5 @@ massive
 flask
 flask-cors
 
-# Robinhood
-robin-stocks
-
 # Env
 python-dotenv

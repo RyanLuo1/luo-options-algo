@@ -59,7 +59,7 @@ export default function App() {
     marketOpen, lastRun,
     // V2
     ranked, macroEvents, duplicatesRemoved,
-    tickersUsed, tickersSkipped, tickersSource,
+    tickersUsed, tickersSkipped,
     distancesUsed, weeksUsed, hasResult,
     // V3
     v3Ranked, v3TickersUsed, v3TickersSkipped,
@@ -393,7 +393,7 @@ export default function App() {
                        focus:outline-none focus:border-indigo-500
                        disabled:opacity-50"
           />
-          <span className="text-gray-600 text-xs">Comma or space · blank = Robinhood</span>
+          <span className="text-gray-600 text-xs">Comma or space · blank = default watchlist</span>
         </div>
 
         {/* ── V2-only controls ──────────────────────────────────── */}
@@ -582,7 +582,6 @@ export default function App() {
         <Holdings
           tickers={activeTickers}
           skipped={tickersSkipped}
-          source={tickersSource}
           onRemove={handleRemoveTicker}
         />
       )}
@@ -590,7 +589,6 @@ export default function App() {
         <Holdings
           tickers={v3ActiveTickers}
           skipped={v3TickersSkipped}
-          source="manual"
           onRemove={handleRemoveV3Ticker}
         />
       )}
@@ -684,7 +682,7 @@ export default function App() {
 function EmptyState({ mode }) {
   const desc = mode === 'v3'
     ? 'Enter tickers and click Run Scan to find call spread risk reversal opportunities.'
-    : 'Enter tickers above (or leave blank for Robinhood holdings) and click Run Scan.'
+    : 'Enter tickers above (or leave blank for the default watchlist) and click Run Scan.'
 
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-3 text-center px-6">
@@ -698,23 +696,10 @@ function EmptyState({ mode }) {
 }
 
 function ErrorBanner({ error }) {
-  const isRobinhoodError = error === 'robinhood_unavailable'
-
   return (
     <div className="mx-6 mt-6 p-4 rounded border border-red-800/60 bg-red-950/30">
-      {isRobinhoodError ? (
-        <>
-          <p className="text-red-400 font-semibold text-sm mb-1">Robinhood login unavailable</p>
-          <p className="text-gray-400 text-xs">
-            Enter tickers manually in the input above and click Run Scan.
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="text-red-400 font-semibold text-sm mb-1">Error</p>
-          <p className="text-gray-400 text-xs font-mono break-all">{error}</p>
-        </>
-      )}
+      <p className="text-red-400 font-semibold text-sm mb-1">Error</p>
+      <p className="text-gray-400 text-xs font-mono break-all">{error}</p>
     </div>
   )
 }

@@ -1,11 +1,9 @@
-export default function Holdings({ tickers, skipped, source, onRemove }) {
+export default function Holdings({ tickers, skipped, onRemove }) {
   if (!tickers || tickers.length === 0) return null
 
   return (
     <div className="px-6 py-3 flex items-center gap-2 flex-wrap border-b border-gray-800">
-      <span className="text-gray-500 text-xs">
-        {source === 'robinhood' ? 'Holdings:' : 'Scanning:'}
-      </span>
+      <span className="text-gray-500 text-xs">Scanning:</span>
       {tickers.map(t => (
         <span
           key={t}

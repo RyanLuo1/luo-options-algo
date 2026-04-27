@@ -48,11 +48,7 @@ export default function useOptionsData() {
       const data = await res.json()
 
       if (!res.ok) {
-        if (data.robinhood_unavailable) {
-          setError('robinhood_unavailable')
-        } else {
-          setError(data.error || `Server error (${res.status})`)
-        }
+        setError(data.error || `Server error (${res.status})`)
       } else {
         setResult(data)
         setStatus(prev => ({
@@ -89,11 +85,7 @@ export default function useOptionsData() {
       const data = await res.json()
 
       if (!res.ok) {
-        if (data.robinhood_unavailable) {
-          setError('robinhood_unavailable')
-        } else {
-          setError(data.error || `Server error (${res.status})`)
-        }
+        setError(data.error || `Server error (${res.status})`)
       } else {
         setV3Result(data)
         setStatus(prev => ({
@@ -127,7 +119,6 @@ export default function useOptionsData() {
     duplicatesRemoved: result?.duplicates_removed ?? 0,
     tickersUsed:       result?.tickers_used      ?? EMPTY,
     tickersSkipped:    result?.tickers_skipped   ?? EMPTY,
-    tickersSource:     result?.tickers_source    ?? null,
     distancesUsed:     result?.distances_used    ?? null,
     weeksUsed:         result?.weeks_used        ?? null,
     hasResult:         result !== null,

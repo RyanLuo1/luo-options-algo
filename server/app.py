@@ -17,11 +17,10 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
-from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays, massive_client
+from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays, massive_client, TICKERS as DEFAULT_TICKERS
 from ratio_ranker import calculate_ratios
 from event_filter import load_events, get_macro_events, get_earnings_flag
 from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value
-import robinhood
 
 WEB_DIST = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
@@ -109,22 +108,6 @@ def status():
     })
 
 
-@app.route("/api/holdings")
-def holdings():
-    """Fetch open stock positions from Robinhood. Returns 503 if unavailable."""
-    try:
-        detail = robinhood.get_holdings_detail()
-        return jsonify({
-            "tickers":   [p["ticker"] for p in detail],
-            "positions": detail,
-        })
-    except Exception:
-        return jsonify({
-            "error": "Robinhood login unavailable. Use manual ticker input.",
-            "robinhood_unavailable": True,
-        }), 503
-
-
 @app.route("/api/events")
 def events():
     """Return cached macro events. Loads them on first call."""
@@ -140,7 +123,8 @@ def run():
     Run a full options scan and return ranked results.
 
     Body (JSON, all optional):
-        tickers: list[str]  — override ticker universe; omit to use Robinhood holdings
+        tickers: list[str]  — override ticker universe; omit to use the
+                              default watchlist (options_screener.TICKERS)
     """
     import traceback
     global _last_run
@@ -172,21 +156,8 @@ def run():
         # ── Resolve ticker universe ──────────────────────────────
         if requested_tickers:
             tickers = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
-            tickers_source = "manual"
         else:
-            try:
-                tickers = robinhood.get_holdings()
-                tickers_source = "robinhood"
-            except Exception:
-                return jsonify({
-                    "error": "Robinhood login unavailable. Use manual ticker input.",
-                    "robinhood_unavailable": True,
-                }), 503
-
-        if not tickers:
-            return jsonify({
-                "error": "No tickers to scan. Enter tickers manually and click Run Scan."
-            }), 400
+            tickers = list(DEFAULT_TICKERS)
 
         # ── Load events ──────────────────────────────────────────
         err = _ensure_events(weeks=weeks)
@@ -237,7 +208,6 @@ def run():
             "run_at":             run_at,
             "tickers_used":       tickers_with_data,
             "tickers_skipped":    tickers_skipped,
-            "tickers_source":     tickers_source,
             "total_ranked":       len(output),
             "distances_used":     effective_distances,
             "weeks_used":         weeks,
@@ -253,7 +223,7 @@ def run_v3():
     Run a V3 Call Spread Risk Reversal scan and return ranked triplets.
 
     Body (JSON, all optional):
-        tickers       : list[str]  — ticker universe; omit to use Robinhood holdings
+        tickers       : list[str]  — ticker universe; omit for the default watchlist
         weeks_min     : int 1–12  — minimum expiration week (default 1)
         weeks_max     : int 1–12  — maximum expiration week (default 12)
         min_premium   : float     — minimum net credit in dollars (default 5.00)
@@ -286,16 +256,7 @@ def run_v3():
         if requested_tickers:
             tickers = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
         else:
-            try:
-                tickers = robinhood.get_holdings()
-            except Exception:
-                return jsonify({
-                    "error": "Robinhood login unavailable. Use manual ticker input.",
-                    "robinhood_unavailable": True,
-                }), 503
-
-        if not tickers:
-            return jsonify({"error": "No tickers to scan. Enter tickers manually and click Run Scan."}), 400
+            tickers = list(DEFAULT_TICKERS)
 
         # ── Load events ──────────────────────────────────────────
         err = _ensure_events(weeks=requested_weeks_max)
@@ -703,5 +664,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3  /api/chain  /api/chart  /api/chart_cache_stats")
+    print("Endpoints: /api/status  /api/events  /api/run  /api/run_v3  /api/chain  /api/chart  /api/chart_cache_stats")
     app.run(host='0.0.0.0', port=5001)

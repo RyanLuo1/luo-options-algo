@@ -10,7 +10,7 @@ The project has two interfaces: a Python CLI for terminal output and PDF export,
 ## Watchlist (Default 10 Stocks)
 $GEV, $PLTR, $APP, $AVGO, $META, $MU, $NVDA, $TSLA, $AMD, $TSM
 
-The ticker universe is fully customizable — the web UI accepts manual input or pulls live holdings from Robinhood.
+The ticker universe is fully customizable — the web UI accepts manual input, and an empty input falls back to the default watchlist above.
 
 ---
 
@@ -122,7 +122,6 @@ Ratio = (Premium Collected / Stock Price) / Delta
 - `index.html` is served with explicit `no-store, no-cache` headers; JS/CSS assets (content-hashed by Vite) are served without special headers
 - **Routes:**
   - `GET /api/status` — fast health check; returns market open/closed, last run time
-  - `GET /api/holdings` — fetches open stock positions from Robinhood; returns 503 if unavailable
   - `GET /api/events` — returns cached macro events (FOMC, CPI, PPI, NFP, earnings)
   - `POST /api/run` — runs a full scan and returns ranked results
   - `POST /api/run_v3` — runs a V3 Call Spread Risk Reversal scan and returns ranked triplets
@@ -131,7 +130,7 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `tickers`: list of strings — leading `$` is stripped automatically
   - `distances`: list of floats in decimal form (e.g. `[0.02, 0.05, 0.10]`); validated 0.01–0.50; defaults to `DISTANCES`
   - `weeks`: integer 1–12; defaults to 4
-- `/api/run` response includes: `ranked`, `macro_events`, `duplicates_removed`, `market_open`, `run_at`, `tickers_used`, `tickers_skipped`, `tickers_source`, `distances_used`, `weeks_used`, `total_ranked`
+- `/api/run` response includes: `ranked`, `macro_events`, `duplicates_removed`, `market_open`, `run_at`, `tickers_used`, `tickers_skipped`, `distances_used`, `weeks_used`, `total_ranked`
 - `/api/run_v3` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
   - `weeks_min`: integer 1–12; defaults to 1; must be ≤ `weeks_max`
@@ -192,12 +191,6 @@ Response:
 ```
 
 `current_price` / `prev_close` come from the last two bars; if there's only one bar, `change_pct` is 0. Returns 404 if no bars are returned for the ticker/timeframe.
-
-### `server/robinhood.py`
-- Handles Robinhood authentication via `robin_stocks`; credentials loaded from `.env`
-- `get_holdings()` — returns sorted list of uppercase ticker symbols for all open positions
-- `get_holdings_detail()` — returns list of dicts with ticker, shares, and average cost
-- Login is cached per process (MFA only required on first run with `store_session=True`)
 
 ### `v3_screener.py`
 - V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run_v3`)
@@ -334,7 +327,7 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
   - Owns `selectedChartTicker`, `chartTimeframe`, `chartExpanded`. A `useEffect` auto-selects the rank-1 ticker when a new scan completes (or when the current selection is no longer in the results); depends on `[mode, ranked, v3Ranked, selectedChartTicker]` — the **raw** scan arrays (stable refs from `useOptionsData`), never the derived/filtered arrays which change identity every render.
   - Calls `useChartData(selectedChartTicker, chartTimeframe)` and passes the result to both StockChart slots so toggling expand doesn't refetch.
   - Renders the compact StockChart inside the control bar (right side, `flex-1 min-w-[320px]`); when `chartExpanded` is true, the table area in `<main>` is replaced by the expanded StockChart.
-  - **Shared:** ticker text input (comma/space separated; blank = use Robinhood holdings)
+  - **Shared:** ticker text input (comma/space separated; blank = default watchlist `options_screener.TICKERS`)
   - **V2 mode controls:** Dist % pill input (type a number e.g. `7`, press Enter/comma to add; default pills: 3%, 5%, 7%, 10%, 15%) + Weeks +/− control (1–12, default 4)
   - **V3 mode controls:** Weeks range slider (dual-handle, 1–12, default min=1, max=12) + Min Premium $ input (default 5.00) + Min P(Profit)% input (default 50)
     - **Weeks slider** (`components/WeeksRangeSlider.jsx`): two stacked native `<input type="range">` elements, each capturing one thumb. Track + active fill drawn as divs underneath. Thumb appearance is styled in `index.css` under `input[type="range"].dual-thumb` (cross-browser webkit/moz). Display shows `Weeks {min} – {max}` below.
@@ -452,7 +445,7 @@ Leg columns are flat (not JSONB): `leg_a_strike`, `leg_a_premium`, `leg_a_delta`
 - **Python venv:** `/home/ubuntu/luo-options-algo/venv`
 
 ### Environment files on server
-- `/home/ubuntu/luo-options-algo/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ROBINHOOD_USERNAME`, `ROBINHOOD_PASSWORD`, `MASSIVE_API_KEY`
+- `/home/ubuntu/luo-options-algo/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `MASSIVE_API_KEY`
 - `/home/ubuntu/luo-options-algo/web/.env` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 
 ### Deployment workflow
@@ -490,3 +483,4 @@ sudo systemctl restart luocapital
 - Expirations snap to the nearest available Friday expiration for each target week
 - Algorithm versions: V1 = baseline (% strike distance), V2 = delta-adjusted ratio, V3 = call spread risk reversal; both V2 and V3 are available in the web UI via mode toggle
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)
+- **Removed (2026-04):** Robinhood holdings integration. The unofficial `robin-stocks` API was blocked and the integration had been non-functional since deployment. `server/robinhood.py`, the `/api/holdings` endpoint, the `robin-stocks` dependency, and all `ROBINHOOD_*` env vars were deleted. An empty Tickers input now falls back to the default watchlist (`options_screener.TICKERS`) instead.
