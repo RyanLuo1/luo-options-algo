@@ -441,6 +441,8 @@ def chain():
 # Stock chart endpoint (price + volume + RSI)
 # ─────────────────────────────────────────────────────────────
 
+import time
+
 # Timeframe → (multiplier, timespan, days_back) for Massive list_aggs.
 # 1D uses 1-hour bars (not 5-minute) because the Massive Options plan does
 # not include sub-hourly stock aggregates — 5/15/30-min requests return 401
@@ -454,6 +456,35 @@ _CHART_TIMEFRAMES = {
     "6M": (1,  "day",    190),
     "1Y": (1,  "day",    370),
 }
+
+# Per-process in-memory cache for /api/chart responses. Keyed by (ticker, tf).
+# Per-worker scope under gunicorn — fine since chart data only changes slowly.
+# Bars + RSI are both fetched from Massive on every cache miss; caching the
+# whole response means we hit Massive at most once per (ticker, tf) per TTL.
+_chart_cache = {}
+_CACHE_TTL = {  # seconds
+    "1D":  60,   # intraday — refresh-friendly
+    "5D":  60,
+    "1M": 300,   # daily bars — barely change minute-to-minute
+    "3M": 300,
+    "6M": 300,
+    "1Y": 300,
+}
+_chart_cache_hits   = 0
+_chart_cache_misses = 0
+
+
+def _get_cached_chart(ticker, timeframe):
+    entry = _chart_cache.get((ticker, timeframe))
+    if entry is None:
+        return None
+    if time.time() - entry["timestamp"] >= _CACHE_TTL.get(timeframe, 300):
+        return None
+    return entry["data"]
+
+
+def _set_cached_chart(ticker, timeframe, data):
+    _chart_cache[(ticker, timeframe)] = {"data": data, "timestamp": time.time()}
 
 
 @app.route("/api/chart", methods=["GET"])
@@ -474,6 +505,7 @@ def chart():
         }
     """
     import traceback
+    global _chart_cache_hits, _chart_cache_misses
     try:
         ticker    = request.args.get("ticker", "").upper().strip()
         timeframe = request.args.get("timeframe", "1M").upper().strip()
@@ -482,6 +514,13 @@ def chart():
             return jsonify({"error": "ticker is required"}), 400
         if timeframe not in _CHART_TIMEFRAMES:
             return jsonify({"error": f"unknown timeframe: {timeframe}"}), 400
+
+        # Cache check — avoid hitting Massive if a fresh response is on hand.
+        cached = _get_cached_chart(ticker, timeframe)
+        if cached is not None:
+            _chart_cache_hits += 1
+            return jsonify(cached)
+        _chart_cache_misses += 1
 
         multiplier, timespan, days_back = _CHART_TIMEFRAMES[timeframe]
         eastern  = ZoneInfo("America/New_York")
@@ -575,15 +614,18 @@ def chart():
                     continue
                 rsi_values.append({"timestamp": int(ts), "value": round(float(val), 2)})
             rsi_values.sort(key=lambda r: r["timestamp"])
-        except Exception:
-            rsi_values = []  # RSI is optional — don't fail the chart request
+        except Exception as rsi_err:
+            # RSI is optional — log and return [] rather than failing the
+            # whole chart request. Common cause: weekend rate-limit 429s.
+            print(f"[chart] RSI fetch failed for {ticker} {timeframe}: {rsi_err}", flush=True)
+            rsi_values = []
 
         # ── Summary ─────────────────────────────────────────────
         current_price = bars[-1]["close"]
         prev_close    = bars[-2]["close"] if len(bars) >= 2 else current_price
         change_pct    = round(((current_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
 
-        return jsonify({
+        payload = {
             "ticker":           ticker,
             "timeframe":        timeframe,
             "current_price":    round(current_price, 2),
@@ -593,10 +635,38 @@ def chart():
             "session_is_today": session_is_today,    # bool for 1D, null otherwise
             "bars":             bars,
             "rsi":              rsi_values,
-        })
+        }
+        _set_cached_chart(ticker, timeframe, payload)
+        return jsonify(payload)
 
     except Exception as e:
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/chart_cache_stats", methods=["GET"])
+def chart_cache_stats():
+    """Per-process cache stats — useful when verifying that the cache is
+    actually serving repeat requests instead of going to Massive each time."""
+    now = time.time()
+    keys = []
+    for (ticker, tf), entry in _chart_cache.items():
+        ttl = _CACHE_TTL.get(tf, 300)
+        age = now - entry["timestamp"]
+        keys.append({
+            "ticker":         ticker,
+            "timeframe":      tf,
+            "age_seconds":    round(age, 1),
+            "ttl_seconds":    ttl,
+            "expires_in":     round(max(0, ttl - age), 1),
+        })
+    keys.sort(key=lambda k: (k["ticker"], k["timeframe"]))
+    return jsonify({
+        "entries": len(_chart_cache),
+        "hits":    _chart_cache_hits,
+        "misses":  _chart_cache_misses,
+        "ttl":     _CACHE_TTL,
+        "keys":    keys,
+    })
 
 
 # ─────────────────────────────────────────────────────────────
@@ -631,5 +701,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3  /api/chain  /api/chart")
+    print("Endpoints: /api/status  /api/holdings  /api/events  /api/run  /api/run_v3  /api/chain  /api/chart  /api/chart_cache_stats")
     app.run(host='0.0.0.0', port=5001)

@@ -161,6 +161,17 @@ Ratio = (Premium Collected / Stock Price) / Delta
 
 RSI is fetched via `massive_client.get_rsi(ticker, timespan=…, window=14)` with `series_type="close"`. RSI is **best-effort** — if the call fails, the endpoint still returns bars with `rsi: []` rather than failing. Bars without `close` or `timestamp` are filtered out.
 
+**Cache** — every successful response is stored in a per-process in-memory dict `_chart_cache` keyed by `(ticker, timeframe)`. TTLs:
+
+| Timeframe | TTL  | Reason |
+|-----------|------|--------|
+| `1D`, `5D` |  60 s | intraday — refresh-friendly |
+| `1M`, `3M`, `6M`, `1Y` | 300 s | daily bars — barely change minute-to-minute |
+
+A cache hit returns the stored JSON without hitting Massive at all (saves both `list_aggs` and `get_rsi` calls). Failed requests are **not** cached, so the next call retries fresh. Scope is **per-worker** under gunicorn — each worker has its own dict; that's fine since the data only changes slowly. `GET /api/chart_cache_stats` exposes `{entries, hits, misses, ttl, keys: [...]}` for verification.
+
+**RSI is best-effort** — wrapped in its own `try/except`. If RSI fails (rate limit, auth, timeout, malformed payload) the endpoint logs `[chart] RSI fetch failed for {ticker} {tf}: {err}` and returns the bars with `rsi: []` rather than 500-ing the whole request. The bars fetch must succeed for the response to be considered successful (and cacheable).
+
 **1D — most recent session** — when timeframe is `1D`, the endpoint queries hourly bars for the last 7 calendar days in **one** API call, then buckets the returned bars by ET calendar date (`datetime.fromtimestamp(ts/1000, tz=ET).strftime("%Y-%m-%d")`) and keeps only the most recent date's bars. This handles weekends, holidays, and pre-market hours uniformly without doing day-by-day walk-back queries — an earlier walk-back implementation tripped Massive's weekend rate limit (which returns auth-flavored 429s, easy to misread as a permission error). Returns 404 only if the 7-day query returns zero bars total. The `today` reference is `datetime.now(ZoneInfo("America/New_York")).date()` so the server's local timezone doesn't affect what counts as "today". Other timeframes use a rolling window that already absorbs closed days.
 
 The response carries two extra fields **only for 1D**:
