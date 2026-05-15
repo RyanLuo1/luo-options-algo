@@ -25,15 +25,26 @@ create table if not exists public.trade_outcomes (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
 
-  -- Outcome classification — see scripts/backfill_outcomes.py for the rules.
-  -- 'pending' is reserved for trades the script can't yet score (e.g. mid-life
-  -- early-close logic added later). The auto-backfill never writes 'pending'
-  -- today; it writes one of the 'expired_*' values when expiration is in the past.
+  -- Outcome classification — payoff-zone-based. See scripts/backfill_outcomes.py
+  -- for the rules. Labels reflect *where the stock landed* relative to the four
+  -- payoff zones (K_C < K_A < K_B), not which legs got assigned, because
+  -- assignment alone is misleading — the capped zone above K_B assigns the
+  -- short call but is also where absolute max profit is realized.
+  --
+  --   expired_capped       — S >= K_B, P&L > 0 (max profit; short call assigned)
+  --   expired_sweet_spot   — K_A < S < K_B, P&L > 0 (long call ITM, no assignments)
+  --   expired_credit_only  — S <= K_A, P&L > 0 (no spread captured, kept the credit)
+  --   expired_partial      — defensive fallback for any unclassified positive P&L
+  --   expired_breakeven    — |P&L| < $0.05
+  --   expired_loss         — P&L < 0
+  --   pending              — reserved for future mid-life / early-close logic
   outcome_type  text not null check (outcome_type in (
-                   'expired_max_profit',
+                   'expired_credit_only',
+                   'expired_sweet_spot',
+                   'expired_capped',
                    'expired_partial',
-                   'expired_loss',
                    'expired_breakeven',
+                   'expired_loss',
                    'pending'
                  )),
 

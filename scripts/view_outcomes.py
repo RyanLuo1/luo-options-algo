@@ -57,11 +57,30 @@ def _emit(text, style=None):
 
 
 def _pnl_style(pnl_contract):
+    """Sign-based color — used for aggregate stats (totals, averages)."""
     if pnl_contract > 0:
         return "green"
     if pnl_contract < 0:
         return "red"
     return "dim"
+
+
+# Outcome-zone color used for per-trade lines. Three positive-P&L zones print
+# green (credit-only / sweet-spot / capped), the two near-zero buckets print
+# yellow (partial / breakeven), losses red, pending dim.
+_OUTCOME_STYLE = {
+    'expired_capped':      'green',
+    'expired_sweet_spot':  'green',
+    'expired_credit_only': 'green',
+    'expired_partial':     'yellow',
+    'expired_breakeven':   'yellow',
+    'expired_loss':        'red',
+    'pending':             'dim',
+}
+
+
+def _outcome_style(outcome_type):
+    return _OUTCOME_STYLE.get(outcome_type, 'dim')
 
 
 def _format_capture(row, *, warn=False):
@@ -162,7 +181,7 @@ def main():
             f"(max=${r['max_potential']:+9.2f}, captured {capture_str})  "
             f"({r['outcome_type']})"
         )
-        _emit(line, _pnl_style(r['pnl_contract']))
+        _emit(line, _outcome_style(r['outcome_type']))
 
     # ── Summary ─────────────────────────────────────────────────────────────
     total_pnl       = sum(r['pnl_contract']  for r in rows)
@@ -214,11 +233,17 @@ def main():
 
     _emit("")
     _emit("  Breakdown by outcome_type:", "bold")
-    # Print in a stable, meaningful order (best → worst), not alphabetical.
-    for key in ('expired_max_profit', 'expired_partial',
-                'expired_breakeven', 'expired_loss', 'pending'):
+    # Quality order — best zone first, worst last. Colored to match the
+    # per-trade lines so the eye can sweep a single column for the summary.
+    for key in ('expired_capped',
+                'expired_sweet_spot',
+                'expired_credit_only',
+                'expired_partial',
+                'expired_breakeven',
+                'expired_loss',
+                'pending'):
         if key in counts:
-            _emit(f"    {key:<22}: {counts[key]}")
+            _emit(f"    {key:<22}: {counts[key]}", _outcome_style(key))
     _emit("")
 
 

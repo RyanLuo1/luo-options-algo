@@ -271,7 +271,7 @@ Every V3 scan execution is logged to Supabase so we can train ML models on real 
 
 `trade_outcomes` stores the realized P&L for every saved tradebook entry once its expiration date has passed. Paired with `scan_runs` / `scan_results`, this is the **foundational labeled dataset for future ML work**: every triplet the V3 algorithm produced (saved or not) is linked to a scan, and every saved triplet that has expired is linked to a deterministic outcome.
 
-**Table** — full DDL in `docs/trade_outcomes_schema.sql`. One row per tradebook entry, enforced by `unique (tradebook_id)`. Fields: `outcome_type` (`expired_max_profit` | `expired_partial` | `expired_loss` | `expired_breakeven` | `pending`), `stock_price_at_expiration`, the three leg-payoff numbers, `realized_pnl`, `pnl_per_contract`, and a `notes` column (defaulted to `'auto-backfilled'` by the script). RLS lets users SELECT only their own rows via the denormalized `user_id` column; INSERT / UPDATE / DELETE are service-role only.
+**Table** — full DDL in `docs/trade_outcomes_schema.sql`. One row per tradebook entry, enforced by `unique (tradebook_id)`. Fields: `outcome_type` (`expired_capped` | `expired_sweet_spot` | `expired_credit_only` | `expired_partial` | `expired_breakeven` | `expired_loss` | `pending` — see the classification table below), `stock_price_at_expiration`, the three leg-payoff numbers, `realized_pnl`, `pnl_per_contract`, and a `notes` column (defaulted to `'auto-backfilled'` by the script). RLS lets users SELECT only their own rows via the denormalized `user_id` column; INSERT / UPDATE / DELETE are service-role only.
 
 **Payoff formulas** — at expiration with stock close `S`:
 - Leg A (long call):  `leg_a_value     = max(0, S − leg_a_strike)`   (value to us)
@@ -280,13 +280,22 @@ Every V3 scan execution is logged to Supabase so we can train ML models on real 
 - `realized_pnl     = entry_net_premium + leg_a_value − leg_b_liability − leg_c_liability`
 - `pnl_per_contract = realized_pnl × 100`  (one option contract represents 100 shares)
 
-**Outcome classification** (first match wins — order is load-bearing):
-1. `expired_max_profit` — both short legs expired worthless (`leg_b_liability == 0 AND leg_c_liability == 0`). By construction V3 only writes triplets with positive net premium, so this is always also a positive-P&L case.
-2. `expired_loss`       — `realized_pnl < 0`
-3. `expired_breakeven`  — `abs(realized_pnl) < 0.05`
-4. `expired_partial`    — anything else (positive P&L but at least one short leg was assigned)
+**Outcome classification** — *payoff-zone-based*, not assignment-based. An earlier scheme labeled trades by which legs got assigned, but assignment alone is misleading: the capped zone above K_B assigns the short call **and** that's exactly where the trade hits its theoretical max profit, so "any short assigned" doesn't mean "partial outcome". Labels now reflect **where the underlying landed** relative to the four V3 strikes (`K_C < K_A < K_B`).
+
+First match wins — order is load-bearing and matches the SQL `case` block in `docs/trade_outcomes_relabel_migration.sql`:
+
+| # | Label                  | Condition                                  | Meaning                                                                  |
+|---|------------------------|--------------------------------------------|--------------------------------------------------------------------------|
+| 1 | `expired_breakeven`    | `abs(realized_pnl) < 0.05`                 | Within 5¢ of flat either way                                             |
+| 2 | `expired_loss`         | `realized_pnl < 0`                         | Negative P&L — usually put assignment below `K_C` exceeded the credit    |
+| 3 | `expired_credit_only`  | `S ≤ K_A` AND `pnl > 0`                    | All calls expired worthless; kept the entry credit; no spread captured   |
+| 4 | `expired_sweet_spot`   | `K_A < S < K_B` AND `pnl > 0`              | Long call ITM, no short assignments — the structurally ideal zone        |
+| 5 | `expired_capped`       | `S ≥ K_B` AND `pnl > 0`                    | Both calls ITM, short call assigned, full spread captured — **max profit** |
+| 6 | `expired_partial`      | (fallback)                                 | Defensive catch-all; unreachable when the above conditions are exhaustive |
 
 `'pending'` is reserved for future use (e.g. mid-life early-close logic) and is never written by the auto-backfill today.
+
+**Migration note** — existing rows written under the old labels are reclassified by `docs/trade_outcomes_relabel_migration.sql`. Run it once in the Supabase SQL Editor; it's idempotent (drops the old CHECK constraint, adds the new one, then runs an `UPDATE … FROM tradebook` with the same `case` order as the Python classifier so the two paths can never disagree).
 
 **Auto-backfill — `scripts/backfill_outcomes.py`**:
 - Run with `python3 scripts/backfill_outcomes.py` from the project root (no arguments). Reads `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `MASSIVE_API_KEY` from `.env` (loaded transitively via `options_screener`'s `load_dotenv()`).
@@ -306,11 +315,11 @@ Every V3 scan execution is logged to Supabase so we can train ML models on real 
 - Fetches `trade_outcomes` and `tradebook` as two flat queries and joins in Python (the dataset is small, and this avoids depending on PostgREST's embedded-relation schema cache).
 - Renders one line per outcome, sorted by expiration descending (most recent first):
   ```
-  GEV  2026-05-01  credit=$ 10.26  spread=$ 5.00  →  S=$ 1062.95  P&L=$+1026.00  (max=$+1526.00, captured  67.2%)  (expired_max_profit)
+  GEV  2026-05-01  credit=$ 10.26  spread=$ 5.00  →  S=$ 1062.95  P&L=$+1026.00  (max=$+1526.00, captured  67.2%)  (expired_credit_only)
   ```
   All dollar values are **per-contract** (× 100), matching brokerage-statement scale and the backfill script's CLI output. `credit` and `spread` come from `tradebook` (`net_premium`, `spread_width`), `S` and `P&L` come from `trade_outcomes`. `max` is computed at render time as `(entry_credit + spread_width) × 100` — the theoretical peak P&L when the underlying closes exactly at Leg B strike (long call captures the full spread; both shorts expire worthless). `captured` is `pnl_per_contract / max × 100`, clamped at 100% on display so an anomalous row prints `100.0%` rather than `142.0%`; a single stderr line tags the ticker / expiration whenever the clamp fires. If `max <= 0` (shouldn't happen in V3 — both terms are positive by construction), the column prints `n/a`.
 - Summary footer: total trades, win rate, total P&L, **total max potential**, **capture efficiency** (`total P&L ÷ total max`), average per trade, **average capture per trade** (mean of per-trade ratios), best and worst trade (ticker + expiration + dollar), and a breakdown by `outcome_type` in best-to-worst order. Aggregate stats use **raw** per-trade ratios (no clamp) so any data anomaly surfaces in the totals instead of being silently capped.
-- **Color** — if `rich` is importable, profitable lines print green, losing lines red, breakeven dim. If `rich` isn't installed the script still works in plain text. Installing it is optional: `pip install rich` (not in `server/requirements.txt` since it's only used by this local CLI).
+- **Color** — if `rich` is importable, per-trade lines are colored by `outcome_type` (not by P&L sign). The three positive-P&L zones (`expired_capped`, `expired_sweet_spot`, `expired_credit_only`) print green; `expired_partial` and `expired_breakeven` print yellow; `expired_loss` prints red; `pending` is dim. Aggregate stats in the summary (total P&L, average per trade) keep sign-based coloring. The outcome-type breakdown table reuses the per-trade color map so the eye can sweep a single column. If `rich` isn't installed the script still works in plain text. Installing it is optional: `pip install rich` (not in `server/requirements.txt` since it's only used by this local CLI).
 
 ### Script summary
 

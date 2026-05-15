@@ -79,26 +79,44 @@ def compute_outcome(trade, stock_close):
         Leg B (short call):  max(0, S - leg_b_strike)        # liability
         Leg C (short put) :  max(0, leg_c_strike - S)        # liability
     Realized P&L = entry net credit + leg_a_value − leg_b_liability − leg_c_liability
+
+    Outcome classification is *payoff-zone-based*, not assignment-based — an
+    earlier scheme that fired 'max_profit' whenever both shorts were worthless
+    conflated the credit-only zone with the capped zone. Now we label by
+    where S landed:
+
+        breakeven    — |pnl| < $0.05
+        loss         — pnl < 0
+        credit_only  — S ≤ K_A, pnl > 0  (no spread captured)
+        sweet_spot   — K_A < S < K_B, pnl > 0  (long call ITM, no assignments)
+        capped       — S ≥ K_B, pnl > 0  (full spread captured, short call assigned)
+        partial      — defensive fallback (unreachable when conditions are exhaustive)
+
+    Order is load-bearing — see docs/trade_outcomes_relabel_migration.sql for
+    the matching SQL `case` block.
     """
     S = float(stock_close)
-    leg_a_value     = max(0.0, S - float(trade['leg_a_strike']))
-    leg_b_liability = max(0.0, S - float(trade['leg_b_strike']))
+    leg_a_strike = float(trade['leg_a_strike'])
+    leg_b_strike = float(trade['leg_b_strike'])
+    leg_a_value     = max(0.0, S - leg_a_strike)
+    leg_b_liability = max(0.0, S - leg_b_strike)
     leg_c_liability = max(0.0, float(trade['leg_c_strike']) - S)
 
     realized_pnl     = float(trade['net_premium']) + leg_a_value - leg_b_liability - leg_c_liability
     pnl_per_contract = realized_pnl * 100  # one option contract = 100 shares
 
-    # Order matters: max-profit (both shorts worthless) takes precedence over
-    # any other classification, since by construction net_premium > 0 in V3
-    # so a max-profit outcome is always also a positive-pnl outcome.
-    if leg_b_liability == 0 and leg_c_liability == 0:
-        outcome_type = 'expired_max_profit'
+    if abs(realized_pnl) < 0.05:
+        outcome_type = 'expired_breakeven'
     elif realized_pnl < 0:
         outcome_type = 'expired_loss'
-    elif abs(realized_pnl) < 0.05:
-        outcome_type = 'expired_breakeven'
+    elif S <= leg_a_strike:
+        outcome_type = 'expired_credit_only'
+    elif S <  leg_b_strike:
+        outcome_type = 'expired_sweet_spot'
+    elif S >= leg_b_strike:
+        outcome_type = 'expired_capped'
     else:
-        outcome_type = 'expired_partial'
+        outcome_type = 'expired_partial'  # unreachable; kept defensively
 
     return {
         'outcome_type':              outcome_type,
