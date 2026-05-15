@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""
+scripts/view_outcomes.py — read-only report of every row in `trade_outcomes`.
+
+Usage:
+    python3 scripts/view_outcomes.py
+
+No arguments. Reads SUPABASE_URL + SUPABASE_SERVICE_KEY from `.env` (loaded
+transitively by `options_screener`). Performs zero writes — safe to run any
+time to see current results, including immediately after a backfill.
+
+If the `rich` library is installed, profitable trades print green and losing
+trades print red. Otherwise everything prints in plain text; the script
+still works.
+"""
+
+import os
+import sys
+from collections import Counter
+
+# Project root on path so `options_screener`'s import-time load_dotenv()
+# populates SUPABASE_URL / SUPABASE_SERVICE_KEY for us.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
+
+import options_screener  # noqa: F401, E402 — import for load_dotenv() side effect
+
+from supabase import create_client  # noqa: E402
+
+# Optional pretty output. The script must work whether or not rich is installed.
+try:
+    from rich.console import Console
+    _console = Console()
+    _HAS_RICH = True
+except ImportError:
+    _console = None
+    _HAS_RICH = False
+
+
+SUPABASE_URL         = os.environ.get('SUPABASE_URL', '')
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    print("error: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env",
+          file=sys.stderr)
+    sys.exit(1)
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+
+def _emit(text, style=None):
+    """Print with rich color if available, plain text otherwise."""
+    if _HAS_RICH and style:
+        _console.print(text, style=style, highlight=False)
+    else:
+        print(text)
+
+
+def _pnl_style(pnl_contract):
+    if pnl_contract > 0:
+        return "green"
+    if pnl_contract < 0:
+        return "red"
+    return "dim"
+
+
+def _format_capture(row, *, warn=False):
+    """
+    "67.2%", " n/a ", " -14.3%" — the captured-fraction string for one row.
+
+    Clamps the displayed value at 100% so an anomalous data point doesn't print
+    e.g. "captured 142.0%". Aggregate stats in the summary keep raw values so
+    such anomalies still surface in totals. When `warn=True`, an over-100%
+    value also emits a single stderr line tagged with ticker/expiration.
+    """
+    max_p = row['max_potential']
+    if max_p <= 0:
+        return "  n/a"
+    pct = row['pnl_contract'] / max_p * 100.0
+    if pct > 100.0:
+        if warn:
+            print(f"warning: capture > 100% for {row['ticker']} {row['expiration']} "
+                  f"(pnl=${row['pnl_contract']:.2f}, max=${max_p:.2f}) — "
+                  f"clamping display at 100%", file=sys.stderr)
+        pct = 100.0
+    return f"{pct:5.1f}%"
+
+
+def main():
+    # Two flat queries → Python-side join. Smaller mental load than relying on
+    # PostgREST's embedded-relation syntax, and the dataset is small enough that
+    # an in-memory dict join is trivially fast.
+    outcomes_resp = supabase.table('trade_outcomes').select('*').execute()
+    outcomes = outcomes_resp.data or []
+
+    if not outcomes:
+        _emit("No outcomes yet. Run `python3 scripts/backfill_outcomes.py` to populate.", "yellow")
+        return
+
+    trades_resp = supabase.table('tradebook').select('*').execute()
+    trades_by_id = {t['id']: t for t in (trades_resp.data or [])}
+
+    # Stitch: each outcome carries the trade context (ticker, entry credit,
+    # expiration date) needed to render a useful line.
+    rows = []
+    for o in outcomes:
+        t = trades_by_id.get(o['tradebook_id'])
+        if t is None:
+            # FK cascade should make this impossible; flag rather than crash.
+            print(f"warning: outcome {o['id']} references missing tradebook "
+                  f"row {o['tradebook_id']}", file=sys.stderr)
+            continue
+
+        entry_credit = float(t['net_premium'])              # per-share, matches option quotes
+        # spread_width should be populated on every V3 save; recompute from
+        # strikes if a legacy row missed it.
+        spread_width = t.get('spread_width')
+        if spread_width is None:
+            spread_width = float(t['leg_b_strike']) - float(t['leg_a_strike'])
+        else:
+            spread_width = float(spread_width)
+
+        # Theoretical max P&L occurs when the underlying closes exactly at
+        # Leg B strike: long call captures the full spread, both shorts expire
+        # worthless. (credit + spread_width) × 100 → per-contract dollars.
+        max_potential = (entry_credit + spread_width) * 100.0
+
+        rows.append({
+            'ticker':         t['ticker'],
+            'expiration':     t['expiration'],
+            'entry_credit':   entry_credit,
+            'spread_width':   spread_width,
+            'stock_close':    float(o['stock_price_at_expiration']),
+            'pnl_contract':   float(o['pnl_per_contract']),  # raw payoff × 100, matches brokerage
+            'max_potential':  max_potential,
+            'outcome_type':   o['outcome_type'],
+        })
+
+    if not rows:
+        _emit("No outcomes joinable to tradebook rows.", "yellow")
+        return
+
+    # Most recent expiration first.
+    rows.sort(key=lambda r: r['expiration'], reverse=True)
+
+    # Column widths driven by actual data so 3- and 4-char tickers line up.
+    ticker_w = max(4, max(len(r['ticker']) for r in rows))
+
+    _emit("")
+    _emit("─" * 88, "dim")
+    _emit(f"Trade Outcomes  ({len(rows)} row{'s' if len(rows) != 1 else ''})", "bold")
+    _emit("─" * 88, "dim")
+
+    for r in rows:
+        capture_str = _format_capture(r, warn=True)
+        line = (
+            f"{r['ticker']:<{ticker_w}}  {r['expiration']}  "
+            f"credit=${r['entry_credit']:>6.2f}  "
+            f"spread=${r['spread_width']:>5.2f}  "
+            f"→  S=${r['stock_close']:>8.2f}  "
+            f"P&L=${r['pnl_contract']:+9.2f}  "
+            f"(max=${r['max_potential']:+9.2f}, captured {capture_str})  "
+            f"({r['outcome_type']})"
+        )
+        _emit(line, _pnl_style(r['pnl_contract']))
+
+    # ── Summary ─────────────────────────────────────────────────────────────
+    total_pnl       = sum(r['pnl_contract']  for r in rows)
+    total_max       = sum(r['max_potential'] for r in rows)
+    wins            = sum(1 for r in rows if r['pnl_contract'] > 0)
+    n               = len(rows)
+    win_rate        = wins / n * 100 if n else 0.0
+    avg_pnl         = total_pnl / n if n else 0.0
+
+    # Aggregate stats use *raw* per-trade ratios (no 100% clamp) so anomalies
+    # surface here instead of being silently capped. Trades with max <= 0 are
+    # excluded from the per-trade average — they'd otherwise be n/a anyway.
+    per_trade_ratios = [
+        r['pnl_contract'] / r['max_potential']
+        for r in rows if r['max_potential'] > 0
+    ]
+    avg_capture     = sum(per_trade_ratios) / len(per_trade_ratios) * 100 \
+                      if per_trade_ratios else 0.0
+    capture_eff     = total_pnl / total_max * 100 if total_max > 0 else 0.0
+
+    best  = max(rows, key=lambda r: r['pnl_contract'])
+    worst = min(rows, key=lambda r: r['pnl_contract'])
+
+    counts = Counter(r['outcome_type'] for r in rows)
+
+    _emit("")
+    _emit("─" * 88, "dim")
+    _emit("Summary", "bold")
+    _emit("─" * 88, "dim")
+    _emit(f"  Total trades              : {n}")
+    _emit(f"  Win rate                  : {win_rate:.1f}%")
+    _emit(f"  Total P&L (per contract)  : ${total_pnl:+,.2f}",
+          _pnl_style(total_pnl))
+    _emit(f"  Total max potential       : ${total_max:+,.2f}")
+    if total_max > 0:
+        _emit(f"  Capture efficiency        : {capture_eff:.1f}%  "
+              f"(${total_pnl:+,.0f} / ${total_max:,.0f} max)")
+    else:
+        _emit("  Capture efficiency        : n/a  (no positive max potential)")
+    _emit(f"  Average per trade         : ${avg_pnl:+,.2f}",
+          _pnl_style(avg_pnl))
+    _emit(f"  Average capture per trade : {avg_capture:.1f}%")
+    _emit(f"  Best trade                : {best['ticker']:<{ticker_w}}  "
+          f"{best['expiration']}  ${best['pnl_contract']:+,.2f}",
+          "green")
+    _emit(f"  Worst trade               : {worst['ticker']:<{ticker_w}}  "
+          f"{worst['expiration']}  ${worst['pnl_contract']:+,.2f}",
+          "red" if worst['pnl_contract'] < 0 else "dim")
+
+    _emit("")
+    _emit("  Breakdown by outcome_type:", "bold")
+    # Print in a stable, meaningful order (best → worst), not alphabetical.
+    for key in ('expired_max_profit', 'expired_partial',
+                'expired_breakeven', 'expired_loss', 'pending'):
+        if key in counts:
+            _emit(f"    {key:<22}: {counts[key]}")
+    _emit("")
+
+
+if __name__ == '__main__':
+    main()

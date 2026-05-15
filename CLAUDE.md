@@ -267,6 +267,58 @@ Every V3 scan execution is logged to Supabase so we can train ML models on real 
 
 **Endpoint contract reminder** — `/api/tradebook/save` requires a valid JWT (returns 401 otherwise) and ignores any client-supplied `user_id`/`id`/`scan_id`/`result_id` inside the `trade` payload — those are taken from the top-level JSON fields and from the verified user.
 
+### Trade Outcomes — `trade_outcomes` (realized P&L on expired trades)
+
+`trade_outcomes` stores the realized P&L for every saved tradebook entry once its expiration date has passed. Paired with `scan_runs` / `scan_results`, this is the **foundational labeled dataset for future ML work**: every triplet the V3 algorithm produced (saved or not) is linked to a scan, and every saved triplet that has expired is linked to a deterministic outcome.
+
+**Table** — full DDL in `docs/trade_outcomes_schema.sql`. One row per tradebook entry, enforced by `unique (tradebook_id)`. Fields: `outcome_type` (`expired_max_profit` | `expired_partial` | `expired_loss` | `expired_breakeven` | `pending`), `stock_price_at_expiration`, the three leg-payoff numbers, `realized_pnl`, `pnl_per_contract`, and a `notes` column (defaulted to `'auto-backfilled'` by the script). RLS lets users SELECT only their own rows via the denormalized `user_id` column; INSERT / UPDATE / DELETE are service-role only.
+
+**Payoff formulas** — at expiration with stock close `S`:
+- Leg A (long call):  `leg_a_value     = max(0, S − leg_a_strike)`   (value to us)
+- Leg B (short call): `leg_b_liability = max(0, S − leg_b_strike)`   (owed by us)
+- Leg C (short put):  `leg_c_liability = max(0, leg_c_strike − S)`   (owed by us)
+- `realized_pnl     = entry_net_premium + leg_a_value − leg_b_liability − leg_c_liability`
+- `pnl_per_contract = realized_pnl × 100`  (one option contract represents 100 shares)
+
+**Outcome classification** (first match wins — order is load-bearing):
+1. `expired_max_profit` — both short legs expired worthless (`leg_b_liability == 0 AND leg_c_liability == 0`). By construction V3 only writes triplets with positive net premium, so this is always also a positive-P&L case.
+2. `expired_loss`       — `realized_pnl < 0`
+3. `expired_breakeven`  — `abs(realized_pnl) < 0.05`
+4. `expired_partial`    — anything else (positive P&L but at least one short leg was assigned)
+
+`'pending'` is reserved for future use (e.g. mid-life early-close logic) and is never written by the auto-backfill today.
+
+**Auto-backfill — `scripts/backfill_outcomes.py`**:
+- Run with `python3 scripts/backfill_outcomes.py` from the project root (no arguments). Reads `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `MASSIVE_API_KEY` from `.env` (loaded transitively via `options_screener`'s `load_dotenv()`).
+- Finds tradebook rows with `expiration < today_ET` that don't yet have an outcome.
+- Fetches the closing stock price on the expiration date from Massive's `list_aggs` (daily, 7-day backward window so holiday-shifted expirations resolve to the nearest prior trading day). Works on the existing $30 Options plan since this is **historical** stock data — Massive's "no today's data" restriction doesn't apply.
+- Computes the four values + outcome_type per the formulas above, inserts to `trade_outcomes` with `notes='auto-backfilled'`.
+- Prints one line per trade and a summary: `Backfilled N trades. Win rate: X%. Total P&L: $Y. Average per trade: $Z.`
+- **CLI output is in per-contract dollars** (i.e. `pnl_per_contract`, which is raw payoff × 100). Brokerage statements quote dollars at this scale — `[backfill] GEV 2026-05-01: P&L=$+1026.00` rather than the per-share `$+10.26`. The database stores **both**: `realized_pnl` (per-share, matches option quote prices) and `pnl_per_contract` (per-contract, matches brokerage P&L). When tradebook later tracks contract quantity, the CLI multiplies by `qty` on top of the × 100; the DB columns remain unit-fixed.
+- **Idempotent** — re-runs only touch rows that don't already have an outcome (pre-filtered against the existing outcomes set, plus the unique constraint on `tradebook_id` acts as a safety net). A clean re-run prints `No new trades to backfill, exiting cleanly.`
+- **Error handling** — a missing stock price or insert failure logs a warning and continues to the next trade; the script never crashes on a single bad row.
+
+**When to re-run** — the natural cadence is once per Friday close (or first thing Monday) after the week's options expire. A future task may schedule this via cron or a Supabase Edge Function; today it's a manual run.
+
+**Read-only viewer — `scripts/view_outcomes.py`**:
+- Run with `python3 scripts/view_outcomes.py` from the project root (no arguments). Reads `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` from `.env`.
+- Performs **zero writes** — safe to run any time, including immediately after a backfill or when nothing has been backfilled yet (prints a hint pointing at the backfill script in that case).
+- Fetches `trade_outcomes` and `tradebook` as two flat queries and joins in Python (the dataset is small, and this avoids depending on PostgREST's embedded-relation schema cache).
+- Renders one line per outcome, sorted by expiration descending (most recent first):
+  ```
+  GEV  2026-05-01  credit=$ 10.26  spread=$ 5.00  →  S=$ 1062.95  P&L=$+1026.00  (max=$+1526.00, captured  67.2%)  (expired_max_profit)
+  ```
+  All dollar values are **per-contract** (× 100), matching brokerage-statement scale and the backfill script's CLI output. `credit` and `spread` come from `tradebook` (`net_premium`, `spread_width`), `S` and `P&L` come from `trade_outcomes`. `max` is computed at render time as `(entry_credit + spread_width) × 100` — the theoretical peak P&L when the underlying closes exactly at Leg B strike (long call captures the full spread; both shorts expire worthless). `captured` is `pnl_per_contract / max × 100`, clamped at 100% on display so an anomalous row prints `100.0%` rather than `142.0%`; a single stderr line tags the ticker / expiration whenever the clamp fires. If `max <= 0` (shouldn't happen in V3 — both terms are positive by construction), the column prints `n/a`.
+- Summary footer: total trades, win rate, total P&L, **total max potential**, **capture efficiency** (`total P&L ÷ total max`), average per trade, **average capture per trade** (mean of per-trade ratios), best and worst trade (ticker + expiration + dollar), and a breakdown by `outcome_type` in best-to-worst order. Aggregate stats use **raw** per-trade ratios (no clamp) so any data anomaly surfaces in the totals instead of being silently capped.
+- **Color** — if `rich` is importable, profitable lines print green, losing lines red, breakeven dim. If `rich` isn't installed the script still works in plain text. Installing it is optional: `pip install rich` (not in `server/requirements.txt` since it's only used by this local CLI).
+
+### Script summary
+
+| Script                              | Effect      | Use when                                              |
+|-------------------------------------|-------------|-------------------------------------------------------|
+| `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
+| `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
+
 ### `v3_screener.py`
 - V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run_v3`)
 - Run with `python3 v3_screener.py` or with optional arguments (see below)
