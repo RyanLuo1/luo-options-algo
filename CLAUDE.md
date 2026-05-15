@@ -7,6 +7,48 @@ The project has two interfaces: a Python CLI for terminal output and PDF export,
 
 ---
 
+## Data Provider Responsibilities
+
+The project intentionally uses **two** data providers with a clear division of responsibility. Understanding this split is critical when touching anything that fetches stock prices, options chains, or chart data.
+
+### Massive (Options Starter plan, $30/month) — options data + historical stocks
+
+- All option chains: strikes, premiums, delta, IV, volume, open interest
+- Pre-calculated Greeks for every contract (no need to compute Black-Scholes ourselves)
+- Historical stock aggregates: daily and hourly bars from **yesterday and earlier**
+- Technical indicators (`get_rsi`) on historical timespans
+- This is why V3 scans and most chart timeframes (5D, 1M, 3M, 6M, 1Y) work — they all rely on data the Options plan includes
+
+### yfinance (free) — fills the gap Massive's Options plan doesn't cover
+
+- **Today's current stock price** (intraday during market hours, today's close after hours)
+- **Today's intraday bars** (the Massive Options plan returns `NOT_AUTHORIZED` for any aggregate dated today — see below)
+- **Indices**: the VIX (yfinance symbol `^VIX`) and any other index data the Options plan blocks
+- **Market-context inputs for scan logging**: SPY today's close and VIX today's close, logged into `scan_runs.spy_price` and `scan_runs.vix` so we can correlate scan output with market regime later (`server/app.py` → `_get_market_context()`)
+- **Fundamentals**: forward/trailing EPS, P/E ratios, `targetMeanPrice`, earnings dates — used by V3's fair-value chain in `v3_screener.get_fair_value`
+- **V3 stock price input**: the per-ticker price fed to `scan_ticker()` comes from `yf.Ticker(ticker).history(period="1d")["Close"].iloc[-1]`
+
+### Why the split exists
+
+Massive sells stocks data and options data as **separate** subscriptions. The $30/month Options plan grants:
+
+- ✅ Today's options data (real-time-ish, ~15-minute delay)
+- ✅ Historical stock data (yesterday and back)
+- ❌ Today's stock data — any aggregate dated today, **even after market close** (requires the Stocks plan, +$30/month)
+- ❌ Indices data of any kind — VIX, SPX, etc. (the `I:` ticker prefix returns `NOT_AUTHORIZED`)
+
+yfinance scrapes Yahoo Finance's public quotes and fills these gaps for free. Treat it as a narrow-purpose fallback for **today's stock data and indices** — everything else uses Massive. yfinance has no SLA, no rate-limit guarantees, and can break when Yahoo changes their HTML; that's acceptable for the data it covers (current price + a few day bars + VIX) but would be a poor fit for the bulk options data Massive serves.
+
+### Practical implications when editing code
+
+- If you add a new endpoint that needs **today's** stock price, bars, or any index value (VIX, SPX, etc.), call yfinance, not Massive
+- If you add a new endpoint that needs **historical** bars or any options data, call Massive
+- When yfinance is the primary path, always have a graceful "yfinance failed → return None" branch and let the caller decide on a fallback. Never let a yfinance failure 500 the endpoint
+- The `/api/chart` endpoint is the canonical example: 1D bars and the header price (current/prev/change_pct) come from yfinance; 5D+ bars and RSI come from Massive; Massive's last bar is the fallback for header price when yfinance is down
+- `_get_market_context()` is the canonical indices example: SPY and VIX both come from yfinance, cached 60s. There is no Massive fallback — Massive can't access either field on the Options plan, so a yfinance failure simply logs `None` into `scan_runs.spy_price` / `scan_runs.vix`
+
+---
+
 ## Watchlist (Default 10 Stocks)
 $GEV, $PLTR, $APP, $AVGO, $META, $MU, $NVDA, $TSLA, $AMD, $TSM
 
@@ -146,18 +188,24 @@ Ratio = (Premium Collected / Stock Price) / Delta
 
 ### `/api/chart` endpoint (added in `server/app.py`)
 
-`GET /api/chart?ticker=MU&timeframe=1M` — returns OHLCV bars + RSI series for the stock chart in the screener. Timeframes map to Massive `list_aggs` params:
+`GET /api/chart?ticker=MU&timeframe=1M` — returns OHLCV bars + RSI series for the stock chart in the screener.
 
-| Timeframe | multiplier | timespan | days_back |
-|-----------|------------|----------|-----------|
-| `1D`      | 1          | hour     | 1         |
-| `5D`      | 1          | hour     | 7         |
-| `1M`      | 1          | day      | 35        |
-| `3M`      | 1          | day      | 95        |
-| `6M`      | 1          | day      | 190       |
-| `1Y`      | 1          | day      | 370       |
+**Bar source depends on the timeframe** (see `Data Provider Responsibilities` above for the rationale):
 
-**1D uses 1-hour bars, not 5-minute** — the Massive Options plan does not include sub-hourly stock aggregates (5/15/30-min requests return 401 `NOT_AUTHORIZED`). Hourly aggregates are included and yield ~7 bars per trading session, which is enough resolution for an at-a-glance intraday view.
+| Timeframe | Bar source       | Notes                                              |
+|-----------|------------------|----------------------------------------------------|
+| `1D`      | **yfinance**     | `period='5d' interval='1h'`, filtered to latest ET date; Massive fallback if yfinance fails |
+| `5D`      | Massive `list_aggs` | 1-hour bars over a 7-day window |
+| `1M`      | Massive `list_aggs` | 1-day bars over 35 days |
+| `3M`      | Massive `list_aggs` | 1-day bars over 95 days |
+| `6M`      | Massive `list_aggs` | 1-day bars over 190 days |
+| `1Y`      | Massive `list_aggs` | 1-day bars over 370 days |
+
+**Why 1D uses yfinance** — Massive's $30/mo Options plan returns `NOT_AUTHORIZED` for any stock aggregate dated today, regardless of market state. Without yfinance, 1D would always show *yesterday's* bars even mid-session. yfinance fills exactly that gap. The Massive 1D path remains in the code as a fallback for the rare case yfinance also fails (unknown ticker, Yahoo outage); it returns the most recent **non-today** session by bucketing a 7-day hourly window by ET date and picking the max, same as before.
+
+**5D still uses Massive 1-hour bars** — that timeframe is bars from yesterday and earlier (today's hourly slot is replaced by 1D), so Massive's historical stock data is sufficient.
+
+**Header price is always yfinance** (`current_price`, `prev_close`, `change_pct`) — for every timeframe. This guarantees the displayed price matches what V3 actually uses for its scan (yfinance current-day quote), so users never see a chart header showing yesterday's $802 while V3 scanned at today's $775. yfinance is queried via `yf.Ticker(ticker).history(period='2d')`; if that fails, the endpoint falls back to the last bar's close in the bars array (which yields yesterday's close for non-1D timeframes).
 
 RSI is fetched via `massive_client.get_rsi(ticker, timespan=…, window=14)` with `series_type="close"`. RSI is **best-effort** — if the call fails, the endpoint still returns bars with `rsi: []` rather than failing. Bars without `close` or `timestamp` are filtered out.
 
@@ -168,11 +216,11 @@ RSI is fetched via `massive_client.get_rsi(ticker, timespan=…, window=14)` wit
 | `1D`, `5D` |  60 s | intraday — refresh-friendly |
 | `1M`, `3M`, `6M`, `1Y` | 300 s | daily bars — barely change minute-to-minute |
 
-A cache hit returns the stored JSON without hitting Massive at all (saves both `list_aggs` and `get_rsi` calls). Failed requests are **not** cached, so the next call retries fresh. Scope is **per-worker** under gunicorn — each worker has its own dict; that's fine since the data only changes slowly. `GET /api/chart_cache_stats` exposes `{entries, hits, misses, ttl, keys: [...]}` for verification.
+A cache hit returns the stored JSON without making any outbound calls — for non-1D timeframes that saves both Massive `list_aggs` and `get_rsi`; for 1D and the header price it also saves the yfinance fetches. Failed requests are **not** cached, so the next call retries fresh. Scope is **per-worker** under gunicorn — each worker has its own dict; that's fine since the data only changes slowly. `GET /api/chart_cache_stats` exposes `{entries, hits, misses, ttl, keys: [...]}` for verification.
 
 **RSI is best-effort** — wrapped in its own `try/except`. If RSI fails (rate limit, auth, timeout, malformed payload) the endpoint logs `[chart] RSI fetch failed for {ticker} {tf}: {err}` and returns the bars with `rsi: []` rather than 500-ing the whole request. The bars fetch must succeed for the response to be considered successful (and cacheable).
 
-**1D — most recent session** — when timeframe is `1D`, the endpoint queries hourly bars for the last 7 calendar days in **one** API call, then buckets the returned bars by ET calendar date (`datetime.fromtimestamp(ts/1000, tz=ET).strftime("%Y-%m-%d")`) and keeps only the most recent date's bars. This handles weekends, holidays, and pre-market hours uniformly without doing day-by-day walk-back queries — an earlier walk-back implementation tripped Massive's weekend rate limit (which returns auth-flavored 429s, easy to misread as a permission error). Returns 404 only if the 7-day query returns zero bars total. The `today` reference is `datetime.now(ZoneInfo("America/New_York")).date()` so the server's local timezone doesn't affect what counts as "today". Other timeframes use a rolling window that already absorbs closed days.
+**1D — most recent session** — when timeframe is `1D`, the endpoint first calls `_fetch_1d_bars_yfinance(ticker)` which runs `yf.Ticker(ticker).history(period='5d', interval='1h')`, normalizes the index to ET, picks the max calendar date present, and returns that session's bars. During market hours / after the close this is today; on weekends and holidays it's the most recent trading day. If yfinance returns an empty frame or raises, the endpoint falls back to Massive's single 7-day hourly window, buckets by ET date, and picks the max — same logic as before. The Massive path is what existed before yfinance was wired in; it's kept because Massive's `list_aggs` is reliable for *historical* data and serves as a safety net (an earlier walk-back implementation tripped Massive's weekend rate limit, which returns auth-flavored 429s — the single-call window avoids that). Returns 404 only if both yfinance and the Massive fallback come back empty. The `today` reference is `datetime.now(ZoneInfo("America/New_York")).date()` so the server's local timezone doesn't affect what counts as "today". Other timeframes use a rolling window from Massive that already absorbs closed days.
 
 The response carries two extra fields **only for 1D**:
 - `session_date` — `YYYY-MM-DD` of the session actually returned (or `null` for non-1D)

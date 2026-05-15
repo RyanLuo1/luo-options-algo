@@ -93,8 +93,11 @@ def _ensure_events(weeks=4):
 
 
 # ── Market context (VIX + SPY) ────────────────────────────────────────────────
-# Fetched best-effort and cached across scans for 60s so back-to-back V3 runs
-# don't keep hammering Massive. Used only for logging — never fails the scan.
+# Both fields come from yfinance — Massive's Options plan blocks today's stock
+# aggregates (SPY) and doesn't include indices data at all (VIX). See CLAUDE.md
+# → "Data Provider Responsibilities" for the rationale. Fetched best-effort and
+# cached across scans for 60s so back-to-back V3 runs don't keep hitting yfinance.
+# Used only for scan_runs logging — never fails the scan.
 _market_context_cache = {"data": None, "timestamp": 0.0}
 _MARKET_CONTEXT_TTL   = 60  # seconds
 
@@ -105,23 +108,29 @@ def _get_market_context():
     now = _t.time()
     cached = _market_context_cache["data"]
     if cached is not None and (now - _market_context_cache["timestamp"]) < _MARKET_CONTEXT_TTL:
+        age = now - _market_context_cache["timestamp"]
+        print(f"[market_ctx] cache hit (age={age:.1f}s)", flush=True)
         return cached
 
-    eastern   = ZoneInfo("America/New_York")
-    today_et  = datetime.now(eastern).date()
-    from_date = (today_et - timedelta(days=7)).strftime("%Y-%m-%d")
-    to_date   = today_et.strftime("%Y-%m-%d")
-
-    def _last_close(ticker):
+    def _yf_last_close(symbol):
+        """Latest non-NaN close from yfinance, or None on any failure."""
         try:
-            aggs = list(massive_client.list_aggs(ticker, 1, "day", from_date, to_date, limit=10))
-            if aggs and aggs[-1].close is not None:
-                return float(aggs[-1].close)
+            hist = yf.Ticker(symbol).history(period='2d')
+            if hist.empty:
+                return None
+            for c in reversed(hist['Close'].tolist()):
+                f = _yf_float(c)
+                if f is not None:
+                    return f
         except Exception as e:
-            print(f"[market_ctx] {ticker} fetch failed: {e}", flush=True)
+            print(f"[market_ctx] {symbol} fetch failed: {e}", flush=True)
         return None
 
-    data = {"vix": _last_close("I:VIX"), "spy_price": _last_close("SPY")}
+    data = {
+        "vix":       _yf_last_close("^VIX"),  # yfinance uses ^VIX, not I:VIX
+        "spy_price": _yf_last_close("SPY"),
+    }
+    print(f"[market_ctx] fetched fresh: vix={data['vix']} spy_price={data['spy_price']}", flush=True)
     _market_context_cache["data"]      = data
     _market_context_cache["timestamp"] = now
     return data
@@ -662,8 +671,9 @@ _CHART_TIMEFRAMES = {
 
 # Per-process in-memory cache for /api/chart responses. Keyed by (ticker, tf).
 # Per-worker scope under gunicorn — fine since chart data only changes slowly.
-# Bars + RSI are both fetched from Massive on every cache miss; caching the
-# whole response means we hit Massive at most once per (ticker, tf) per TTL.
+# Each cache miss may hit yfinance (1D bars, header price for all timeframes),
+# Massive (5D+ bars, RSI), or both; caching the whole response keeps the total
+# outbound rate to at most one fetch per (ticker, tf) per TTL.
 _chart_cache = {}
 _CACHE_TTL = {  # seconds
     "1D":  60,   # intraday — refresh-friendly
@@ -688,6 +698,98 @@ def _get_cached_chart(ticker, timeframe):
 
 def _set_cached_chart(ticker, timeframe, data):
     _chart_cache[(ticker, timeframe)] = {"data": data, "timestamp": _time.time()}
+
+
+# ── yfinance helpers (today-only data — Massive Options plan doesn't cover this) ─
+# The $30/mo Massive Options plan includes options + *historical* stock aggs but
+# returns NOT_AUTHORIZED for any stock aggregate dated today. yfinance fills the
+# gap by scraping Yahoo's public quotes for today's bars and the current price.
+# See CLAUDE.md → "Data Provider Responsibilities" for the full split.
+
+def _yf_float(v):
+    """yfinance returns float('nan') for missing OHLC values — coerce to None."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        if f != f:  # NaN
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_1d_bars_yfinance(ticker):
+    """
+    Fetch the most recent trading session's hourly bars via yfinance.
+
+    Returns (bars, session_date_str) on success, or None if yfinance had no
+    usable data (caller should fall back to Massive). `bars` is in the same
+    shape as the Massive path: list of dicts with timestamp/open/high/low/close/volume.
+    """
+    try:
+        hist = yf.Ticker(ticker).history(period='5d', interval='1h')
+        if hist.empty:
+            return None
+
+        # Force ET tz so date bucketing matches everything else in this file.
+        if hist.index.tz is None:
+            hist.index = hist.index.tz_localize('America/New_York')
+        else:
+            hist.index = hist.index.tz_convert('America/New_York')
+
+        # Pick the most recent trading date present in the response.
+        dates = [ts.date() for ts in hist.index]
+        if not dates:
+            return None
+        latest_date = max(dates)
+
+        bars = []
+        for idx, row in hist.iterrows():
+            if idx.date() != latest_date:
+                continue
+            close = _yf_float(row.get('Close'))
+            if close is None:
+                continue
+            vol = _yf_float(row.get('Volume'))
+            bars.append({
+                "timestamp": int(idx.timestamp() * 1000),
+                "open":      _yf_float(row.get('Open')),
+                "high":      _yf_float(row.get('High')),
+                "low":       _yf_float(row.get('Low')),
+                "close":     close,
+                "volume":    int(vol) if vol is not None else 0,
+            })
+
+        if not bars:
+            return None
+        bars.sort(key=lambda b: b["timestamp"])
+        return bars, latest_date.strftime('%Y-%m-%d')
+
+    except Exception as e:
+        print(f"[chart] yfinance 1D fetch failed for {ticker}: {e}", flush=True)
+        return None
+
+
+def _fetch_header_price_yfinance(ticker):
+    """
+    Fetch the latest price + previous day's close via yfinance for the chart
+    header. Returns (current_price, prev_close, change_pct) on success, or None.
+    """
+    try:
+        hist = yf.Ticker(ticker).history(period='2d')
+        if hist.empty:
+            return None
+        closes = [c for c in hist['Close'].tolist() if c is not None and c == c]
+        if not closes:
+            return None
+        current = float(closes[-1])
+        prev    = float(closes[-2]) if len(closes) >= 2 else current
+        change  = round(((current - prev) / prev) * 100, 2) if prev else 0.0
+        return current, prev, change
+    except Exception as e:
+        print(f"[chart] yfinance header price failed for {ticker}: {e}", flush=True)
+        return None
 
 
 @app.route("/api/chart", methods=["GET"])
@@ -728,64 +830,78 @@ def chart():
         multiplier, timespan, days_back = _CHART_TIMEFRAMES[timeframe]
         eastern  = ZoneInfo("America/New_York")
         today_et = datetime.now(eastern).date()
+        today_str = today_et.strftime("%Y-%m-%d")
 
         # ── OHLCV bars ──────────────────────────────────────────
-        # 1D needs special handling: when the market is closed (weekend, holiday,
-        # pre-open) "today" has no bars, so we want the most recent trading
-        # session's intraday data. Implementation: one 7-day-window hourly
-        # request, then bucket bars by ET calendar date and pick the latest.
-        # (An earlier walk-back loop that made up to 7 day-by-day calls tripped
-        # Massive's weekend rate limit, which returns auth-flavored 429s.)
-        # Other timeframes use a rolling window that already absorbs closed days.
-        aggs             = []
+        # 1D: yfinance is the primary source. Massive's Options plan returns
+        # NOT_AUTHORIZED for any stock aggregate dated today, so we can never
+        # get today's intraday from Massive — yfinance fills the gap. Massive
+        # remains the fallback for edge cases (yfinance ticker unknown, network).
+        # Other timeframes (5D/1M/3M/6M/1Y) request only historical bars, which
+        # Massive's Options plan DOES include.
+        bars             = []
         session_date_str = None  # only set for 1D — see frontend "Showing …" label
 
         if timeframe == "1D":
-            from_date = (today_et - timedelta(days=7)).strftime("%Y-%m-%d")
-            to_date   = today_et.strftime("%Y-%m-%d")
-            try:
-                all_aggs = list(massive_client.list_aggs(
-                    ticker, multiplier, timespan, from_date, to_date, limit=50000,
-                ))
-            except Exception as e:
-                return jsonify({"error": f"chart fetch failed: {e}"}), 502
+            yf_result = _fetch_1d_bars_yfinance(ticker)
+            if yf_result is not None:
+                bars, session_date_str = yf_result
 
-            # Group bars by ET calendar date, pick the most recent session.
-            by_date = {}
-            for a in all_aggs:
-                if a.timestamp is None:
-                    continue
-                ts_et = datetime.fromtimestamp(a.timestamp / 1000, tz=eastern)
-                key   = ts_et.strftime("%Y-%m-%d")
-                by_date.setdefault(key, []).append(a)
+            if not bars:
+                # yfinance fallback — try Massive's single-call 7-day window,
+                # bucket bars by ET calendar date, pick the most recent session.
+                # (An earlier walk-back loop made day-by-day calls and tripped
+                # Massive's weekend rate limit; single call avoids that.)
+                from_date = (today_et - timedelta(days=7)).strftime("%Y-%m-%d")
+                try:
+                    all_aggs = list(massive_client.list_aggs(
+                        ticker, multiplier, timespan, from_date, today_str, limit=50000,
+                    ))
+                except Exception as e:
+                    return jsonify({"error": f"chart fetch failed: {e}"}), 502
 
-            if not by_date:
-                return jsonify({"error": f"No recent intraday data for {ticker}"}), 404
+                by_date = {}
+                for a in all_aggs:
+                    if a.timestamp is None:
+                        continue
+                    ts_et = datetime.fromtimestamp(a.timestamp / 1000, tz=eastern)
+                    by_date.setdefault(ts_et.strftime("%Y-%m-%d"), []).append(a)
 
-            session_date_str = max(by_date.keys())
-            aggs             = by_date[session_date_str]
+                if not by_date:
+                    return jsonify({"error": f"No recent intraday data for {ticker}"}), 404
+
+                session_date_str = max(by_date.keys())
+                for a in by_date[session_date_str]:
+                    if a.close is None:
+                        continue
+                    bars.append({
+                        "timestamp": int(a.timestamp),
+                        "open":      float(a.open)   if a.open   is not None else None,
+                        "high":      float(a.high)   if a.high   is not None else None,
+                        "low":       float(a.low)    if a.low    is not None else None,
+                        "close":     float(a.close),
+                        "volume":    int(a.volume)   if a.volume is not None else 0,
+                    })
         else:
             from_date = (today_et - timedelta(days=days_back)).strftime("%Y-%m-%d")
-            to_date   = today_et.strftime("%Y-%m-%d")
             try:
                 aggs = list(massive_client.list_aggs(
-                    ticker, multiplier, timespan, from_date, to_date, limit=50000,
+                    ticker, multiplier, timespan, from_date, today_str, limit=50000,
                 ))
             except Exception as e:
                 return jsonify({"error": f"chart fetch failed: {e}"}), 502
 
-        bars = []
-        for a in aggs:
-            if a.close is None or a.timestamp is None:
-                continue
-            bars.append({
-                "timestamp": int(a.timestamp),
-                "open":      float(a.open)   if a.open   is not None else None,
-                "high":      float(a.high)   if a.high   is not None else None,
-                "low":       float(a.low)    if a.low    is not None else None,
-                "close":     float(a.close),
-                "volume":    int(a.volume)   if a.volume is not None else 0,
-            })
+            for a in aggs:
+                if a.close is None or a.timestamp is None:
+                    continue
+                bars.append({
+                    "timestamp": int(a.timestamp),
+                    "open":      float(a.open)   if a.open   is not None else None,
+                    "high":      float(a.high)   if a.high   is not None else None,
+                    "low":       float(a.low)    if a.low    is not None else None,
+                    "close":     float(a.close),
+                    "volume":    int(a.volume)   if a.volume is not None else 0,
+                })
 
         if not bars:
             return jsonify({"error": f"No bar data for {ticker} ({timeframe})"}), 404
@@ -793,9 +909,11 @@ def chart():
         bars.sort(key=lambda b: b["timestamp"])
 
         # Truthy only for 1D — non-1D timeframes use rolling windows where the
-        # concept of "the session date" doesn't apply.
+        # concept of "the session date" doesn't apply. The "Showing {date}"
+        # label in the frontend fires when session_is_today is False (weekends,
+        # holidays — when yfinance also can't give us today's data).
         session_is_today = (
-            session_date_str == today_et.strftime("%Y-%m-%d")
+            session_date_str == today_str
             if session_date_str is not None else None
         )
 
@@ -824,9 +942,18 @@ def chart():
             rsi_values = []
 
         # ── Summary ─────────────────────────────────────────────
-        current_price = bars[-1]["close"]
-        prev_close    = bars[-2]["close"] if len(bars) >= 2 else current_price
-        change_pct    = round(((current_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
+        # Header price always tries yfinance first so the displayed price
+        # matches what V3 actually uses for scans (yfinance current-day quote).
+        # Massive's last bar is the fallback — for timeframes where bars come
+        # from Massive, that bar is yesterday's close, which is what users
+        # would see during a yfinance outage.
+        yf_price = _fetch_header_price_yfinance(ticker)
+        if yf_price is not None:
+            current_price, prev_close, change_pct = yf_price
+        else:
+            current_price = bars[-1]["close"]
+            prev_close    = bars[-2]["close"] if len(bars) >= 2 else current_price
+            change_pct    = round(((current_price - prev_close) / prev_close) * 100, 2) if prev_close else 0.0
 
         payload = {
             "ticker":           ticker,
