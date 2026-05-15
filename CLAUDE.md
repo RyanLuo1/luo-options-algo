@@ -124,7 +124,8 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `GET /api/status` — fast health check; returns market open/closed, last run time
   - `GET /api/events` — returns cached macro events (FOMC, CPI, PPI, NFP, earnings)
   - `POST /api/run` — runs a full scan and returns ranked results
-  - `POST /api/run_v3` — runs a V3 Call Spread Risk Reversal scan and returns ranked triplets
+  - `POST /api/run_v3` — runs a V3 Call Spread Risk Reversal scan and returns ranked triplets (V3 scans are logged to `scan_runs`/`scan_results` — see Scan History below)
+  - `POST /api/tradebook/save` — server-side tradebook insert; attributes user_id from JWT, links to source scan, flips `was_saved=true` on `scan_results`
   - `GET /api/chain` — returns a filtered options chain for a ticker/expiration/side with BS delta computed
 - `/api/run` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
@@ -137,7 +138,7 @@ Ratio = (Premium Collected / Stock Price) / Delta
   - `weeks_max`: integer 1–12; defaults to 12
   - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
-- `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_min_used`, `weeks_max_used`, `min_premium_used`, `min_p_profit_used`
+- `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_min_used`, `weeks_max_used`, `min_premium_used`, `min_p_profit_used`, `elapsed_ms`, `scan_id` (uuid; null if logging failed or no auth), and each `ranked[i]` entry carries a `result_id` (uuid; null on logging failure)
 - `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
   - Fetches chain via Massive `list_snapshot_options_chain`; delta and IV are pre-calculated by Massive
   - Filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01; premium from `o.day.close`
@@ -191,6 +192,32 @@ Response:
 ```
 
 `current_price` / `prev_close` come from the last two bars; if there's only one bar, `change_pct` is 0. Returns 404 if no bars are returned for the ticker/timeframe.
+
+### Scan History — `scan_runs` / `scan_results` (V3-only)
+
+Every V3 scan execution is logged to Supabase so we can train ML models on real algorithm output later. **V2 is intentionally excluded** — it is a baseline ranker, not the proprietary strategy, and logging it would just pollute the training set. Logging is **best-effort**: if the Supabase write fails (network, schema mismatch, missing service key, no auth token), the scan response is unaffected and a warning is printed to stderr — the contract is that logging must **never** break the scan response.
+
+**Tables** (full DDL in `docs/scan_history_schema.sql`):
+- `scan_runs` — one row per V3 execution: inputs (tickers requested/used/skipped, weeks_min/max, min_premium, min_p_profit), outputs (total_evaluated, total_passed), context (market_open, elapsed_ms, vix, spy_price), and `error_message` (nullable; populated when the scan threw)
+- `scan_results` — one row per produced triplet, linked via `scan_id`. Mirrors the V3 triplet shape (legs, strikes, deltas, premiums, score, P(max profit), fair value) plus `rank`, `was_saved` boolean, and `created_at`
+- RLS: users may only SELECT/INSERT their own rows. `was_saved` is only updatable via the service role (no user UPDATE policy)
+
+**Write path** — `log_scan_run()` in `server/app.py` is called from `/api/run_v3` on **both** success and exception paths:
+- Success: inserts `scan_runs` row with `error_message=NULL` and a batch insert into `scan_results` for every ranked triplet (chunked at 200 rows per request). Returns `(scan_id, result_ids)` parallel to the ranked list, and the endpoint decorates each response triplet with its `result_id`.
+- Failure: inserts a `scan_runs` row with `error_message` populated, `tickers_used=[]`, `ranked=[]`, and `total_passed=0` so the failure itself is captured for future analysis (e.g. "scans error more often around earnings"). 400-level validation errors are NOT logged — only execution-time exceptions.
+
+**Auth** — `/api/run_v3` calls `verify_token(request)` to extract `user_id` from the Supabase JWT. If no token is present or verification fails, `user_id` is None and `log_scan_run()` returns `(None, [])` without writing. Scans still succeed for unauthenticated callers; they just aren't logged. The frontend (`useOptionsData.js`) attaches `Authorization: Bearer <session.access_token>` on V3 scan requests.
+
+**Market context** — at the top of each scan, `_get_market_context()` fetches last-close VIX (via Massive ticker `I:VIX`) and SPY price (via Massive `SPY`). Both are best-effort — failures log to stderr and store `None`. Result is cached for 60 seconds across scans in a process-local dict to avoid hammering Massive on back-to-back runs.
+
+**Scan provenance linkage** — saved trades carry their origin:
+- `/api/run_v3` returns `scan_id` at top level and `result_id` per ranked entry
+- Frontend (`useOptionsData.js`) exposes `v3ScanId`; each row in `v3Ranked` already includes its `result_id`
+- Saving via the V3 table dropdown (`App.jsx saveToTradebook`) or the trade editor (`TradePage.jsx handleSave`) posts to `/api/tradebook/save` with `{scan_id, result_id, trade}`
+- The server inserts into `tradebook` (filling `user_id` from the JWT — clients cannot spoof it) and then flips `was_saved=true` on the matching `scan_results` row (best-effort; a failure here does NOT undo the save)
+- `scan_id` and `result_id` are **nullable** on the `tradebook` table — older saves predate logging, and saves made without auth still work without linkage
+
+**Endpoint contract reminder** — `/api/tradebook/save` requires a valid JWT (returns 401 otherwise) and ignores any client-supplied `user_id`/`id`/`scan_id`/`result_id` inside the `trade` payload — those are taken from the top-level JSON fields and from the verified user.
 
 ### `v3_screener.py`
 - V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run_v3`)
@@ -413,6 +440,8 @@ create policy "Users can only access their own trades" on tradebook
 ```
 
 Leg columns are flat (not JSONB): `leg_a_strike`, `leg_a_premium`, `leg_a_delta` (and same for b/c). The insert payload must match this flat structure exactly.
+
+Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`): `scan_id uuid references scan_runs(id)` and `result_id uuid references scan_results(id)`. Both are **nullable** — saves made before scan history existed (or saves made without auth) carry NULL for both. The frontend no longer inserts to `tradebook` directly; saves go through `POST /api/tradebook/save`, which sets `user_id` from the JWT and writes the linkage columns server-side.
 
 ---
 

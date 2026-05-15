@@ -66,6 +66,7 @@ export default function App() {
     v3WeeksMinUsed, v3WeeksMaxUsed,
     v3MinPremiumUsed, v3MinPProfitUsed,
     v3TotalEvaluated, v3HasResult,
+    v3ScanId,
     // shared
     loading, error,
     runScan, runV3Scan, clearAll,
@@ -335,7 +336,6 @@ export default function App() {
     if (!user) return
     setSaveError(null)
     const trade = {
-      user_id:       user.id,
       ticker:        row.ticker,
       expiration:    row.expiration,
       saved_at:      new Date().toISOString(),
@@ -354,17 +354,42 @@ export default function App() {
       p_max_profit:  row.p_max_profit,
       fair_value:    row.fair_value,
     }
-    const { error } = await supabase.from('tradebook').insert(trade)
-    if (error) {
-      console.error('Supabase insert error:', error)
-      setSaveError(`Save failed: ${error.message}`)
+
+    // Route saves through the server so user_id is auth-attributed and the
+    // source scan_results row gets was_saved flipped to true. The server-side
+    // handler also accepts null scan_id/result_id for legacy rows.
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers = { 'Content-Type': 'application/json' }
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
+    try {
+      const res  = await fetch('/api/tradebook/save', {
+        method:  'POST',
+        headers,
+        body:    JSON.stringify({
+          scan_id:   v3ScanId,
+          result_id: row.result_id ?? null,
+          trade,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        console.error('Tradebook save error:', data)
+        setSaveError(`Save failed: ${data.error || res.status}`)
+        return
+      }
+    } catch (e) {
+      console.error('Tradebook save network error:', e)
+      setSaveError(`Save failed: ${e.message}`)
       return
     }
     showToast()
   }
 
   function handleEdit(row) {
-    navigate('/trade', { state: { triplet: row } })
+    // Thread scan_id + result_id through router state so the trade editor can
+    // attribute the eventual save back to the originating scan.
+    navigate('/trade', { state: { triplet: row, scan_id: v3ScanId } })
   }
 
   // ── Screener content (inlined so it has closure access to all state) ────────

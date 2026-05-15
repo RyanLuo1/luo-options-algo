@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { loadScreenerResults, saveScreenerResults } from '../lib/sessionState'
+import { supabase } from '../lib/supabase'
 
 // Stable empty array — avoids creating a new reference on every render,
 // which would trigger useEffect dependency checks in App and cause an infinite loop.
@@ -77,9 +78,15 @@ export default function useOptionsData() {
       if (minPremium !== undefined)          body.min_premium  = minPremium
       if (minPProfit !== undefined)          body.min_p_profit = minPProfit
 
+      // Forward the Supabase JWT so the server can attribute this scan in
+      // scan_runs (logging is server-side, best-effort, and only for V3).
+      const headers = { 'Content-Type': 'application/json' }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
       const res  = await fetch('/api/run_v3', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body:    JSON.stringify(body),
       })
       const data = await res.json()
@@ -133,6 +140,9 @@ export default function useOptionsData() {
     v3MinPProfitUsed:  v3Result?.min_p_profit_used ?? null,
     v3TotalEvaluated:  v3Result?.total_evaluated  ?? 0,
     v3HasResult:       v3Result !== null,
+    // Scan provenance — propagated to tradebook saves so each saved trade
+    // links back to the scan and triplet it came from.
+    v3ScanId:          v3Result?.scan_id          ?? null,
 
     // ── Shared state ─────────────────────────────────────────────────────────
     loading,

@@ -149,6 +149,7 @@ export default function TradePage() {
   const location = useLocation()
   const navigate  = useNavigate()
   const triplet   = location.state?.triplet
+  const scanId    = location.state?.scan_id ?? null   // scan provenance (V3 only)
   const { user }  = useAuth()
 
   // Selected contract per leg
@@ -232,7 +233,6 @@ export default function TradePage() {
     if (!triplet || !user) return
     setSaveError(null)
     const trade = {
-      user_id:       user.id,
       ticker:        triplet.ticker,
       expiration:    triplet.expiration,
       saved_at:      new Date().toISOString(),
@@ -251,10 +251,32 @@ export default function TradePage() {
       p_max_profit:  metrics?.p_max_profit ?? triplet.p_max_profit,
       fair_value:    triplet.fair_value,
     }
-    const { error } = await supabase.from('tradebook').insert(trade)
-    if (error) {
-      console.error('Supabase insert error:', error)
-      setSaveError(`Save failed: ${error.message}`)
+
+    // Route through the server endpoint — sets user_id from JWT, links to the
+    // originating scan_run/scan_result, and flips was_saved=true on the source row.
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers = { 'Content-Type': 'application/json' }
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
+    try {
+      const res  = await fetch('/api/tradebook/save', {
+        method:  'POST',
+        headers,
+        body:    JSON.stringify({
+          scan_id:   scanId,
+          result_id: triplet.result_id ?? null,
+          trade,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        console.error('Tradebook save error:', data)
+        setSaveError(`Save failed: ${data.error || res.status}`)
+        return
+      }
+    } catch (e) {
+      console.error('Tradebook save network error:', e)
+      setSaveError(`Save failed: ${e.message}`)
       return
     }
     setToastVisible(true)

@@ -92,6 +92,127 @@ def _ensure_events(weeks=4):
     return None
 
 
+# ── Market context (VIX + SPY) ────────────────────────────────────────────────
+# Fetched best-effort and cached across scans for 60s so back-to-back V3 runs
+# don't keep hammering Massive. Used only for logging — never fails the scan.
+_market_context_cache = {"data": None, "timestamp": 0.0}
+_MARKET_CONTEXT_TTL   = 60  # seconds
+
+
+def _get_market_context():
+    """Return {vix, spy_price}, either field may be None. Best-effort."""
+    import time as _t
+    now = _t.time()
+    cached = _market_context_cache["data"]
+    if cached is not None and (now - _market_context_cache["timestamp"]) < _MARKET_CONTEXT_TTL:
+        return cached
+
+    eastern   = ZoneInfo("America/New_York")
+    today_et  = datetime.now(eastern).date()
+    from_date = (today_et - timedelta(days=7)).strftime("%Y-%m-%d")
+    to_date   = today_et.strftime("%Y-%m-%d")
+
+    def _last_close(ticker):
+        try:
+            aggs = list(massive_client.list_aggs(ticker, 1, "day", from_date, to_date, limit=10))
+            if aggs and aggs[-1].close is not None:
+                return float(aggs[-1].close)
+        except Exception as e:
+            print(f"[market_ctx] {ticker} fetch failed: {e}", flush=True)
+        return None
+
+    data = {"vix": _last_close("I:VIX"), "spy_price": _last_close("SPY")}
+    _market_context_cache["data"]      = data
+    _market_context_cache["timestamp"] = now
+    return data
+
+
+# ── Scan history logging (V3 only) ────────────────────────────────────────────
+# Writes one row to `scan_runs` and a batch of rows to `scan_results`. All
+# failures here are swallowed and printed to stderr — logging must never break
+# the scan response. See docs/scan_history_schema.sql for table definitions.
+
+def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
+                 weeks_min, weeks_max, min_premium, min_p_profit,
+                 ranked, total_evaluated, market_open, elapsed_ms,
+                 error_message, market_context):
+    """
+    Persist a V3 scan run and all produced triplets.
+
+    Returns:
+        (scan_id, result_ids) where result_ids is parallel to `ranked` (same
+        order). On any failure returns (None, []) and logs to stderr.
+    """
+    if _supabase is None or user_id is None:
+        return None, []
+
+    try:
+        run_row = {
+            "user_id":           str(user_id),
+            "tickers_requested": list(tickers_requested or []),
+            "tickers_used":      list(tickers_used      or []),
+            "tickers_skipped":   list(tickers_skipped   or []),
+            "weeks_min":         int(weeks_min),
+            "weeks_max":         int(weeks_max),
+            "min_premium":       float(min_premium),
+            "min_p_profit":      float(min_p_profit),
+            "total_evaluated":   int(total_evaluated),
+            "total_passed":      len(ranked),
+            "market_open":       bool(market_open) if market_open is not None else None,
+            "elapsed_ms":        int(elapsed_ms) if elapsed_ms is not None else None,
+            "error_message":     error_message,
+            "vix":               market_context.get("vix")       if market_context else None,
+            "spy_price":         market_context.get("spy_price") if market_context else None,
+        }
+        run_resp = _supabase.table("scan_runs").insert(run_row).execute()
+        if not run_resp.data:
+            return None, []
+        scan_id = run_resp.data[0]["id"]
+
+        if not ranked:
+            return scan_id, []
+
+        result_rows = []
+        for i, r in enumerate(ranked, start=1):
+            result_rows.append({
+                "scan_id":       scan_id,
+                "rank":          i,
+                "ticker":        r["ticker"],
+                "expiration":    r["expiration"],
+                "week_num":      int(r["week"]),
+                "leg_a_strike":  float(r["leg_a_strike"]),
+                "leg_a_premium": float(r["leg_a_prem"]),
+                "leg_a_delta":   float(r["leg_a_delta"]),
+                "leg_b_strike":  float(r["leg_b_strike"]),
+                "leg_b_premium": float(r["leg_b_prem"]),
+                "leg_b_delta":   float(r["leg_b_delta"]),
+                "leg_c_strike":  float(r["leg_c_strike"]),
+                "leg_c_premium": float(r["leg_c_prem"]),
+                "leg_c_delta":   float(r["leg_c_delta"]),
+                "net_premium":   float(r["net_premium"]),
+                "spread_width":  float(r["spread_width"]),
+                "score":         float(r["score"]),
+                "p_max_profit":  float(r["p_max_profit"]),
+                "fair_value":    float(r["fair_value"]) if r.get("fair_value") is not None else None,
+                "fv_available":  bool(r.get("fv_available", r.get("fair_value") is not None)),
+            })
+
+        # Insert in chunks to stay well under Supabase's per-request payload limit.
+        result_ids = []
+        CHUNK = 200
+        for start in range(0, len(result_rows), CHUNK):
+            chunk = result_rows[start:start + CHUNK]
+            resp = _supabase.table("scan_results").insert(chunk).execute()
+            if resp.data:
+                result_ids.extend(row["id"] for row in resp.data)
+
+        return scan_id, result_ids
+
+    except Exception as e:
+        print(f"[scan_history] log_scan_run failed: {e}", flush=True)
+        return None, []
+
+
 # ─────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────
@@ -228,42 +349,58 @@ def run_v3():
         weeks_max     : int 1–12  — maximum expiration week (default 12)
         min_premium   : float     — minimum net credit in dollars (default 5.00)
         min_p_profit  : float 0–1 — minimum P(max profit) (default 0.50)
+
+    Scan history is logged to Supabase tables `scan_runs` / `scan_results`
+    automatically (best-effort — logging never fails the response).
     """
     import traceback
+    import time as _t
     global _last_run
 
+    body = request.get_json(silent=True) or {}
+    requested_tickers   = body.get("tickers")
+    requested_weeks_min = body.get("weeks_min", 1)
+    requested_weeks_max = body.get("weeks_max", 12)
+    requested_min_prem  = body.get("min_premium", 5.00)
+    requested_min_pp    = body.get("min_p_profit", 0.50)
+
+    # ── Validate (400 errors are not logged to scan_runs) ────────
+    if not isinstance(requested_weeks_min, int) or not (1 <= requested_weeks_min <= 12):
+        return jsonify({"error": "weeks_min must be an integer between 1 and 12"}), 400
+    if not isinstance(requested_weeks_max, int) or not (1 <= requested_weeks_max <= 12):
+        return jsonify({"error": "weeks_max must be an integer between 1 and 12"}), 400
+    if requested_weeks_min > requested_weeks_max:
+        return jsonify({"error": "weeks_min must be ≤ weeks_max"}), 400
+    if not isinstance(requested_min_prem, (int, float)) or requested_min_prem < 0:
+        return jsonify({"error": "min_premium must be a non-negative number"}), 400
+    if not isinstance(requested_min_pp, (int, float)) or not (0 <= requested_min_pp <= 1):
+        return jsonify({"error": "min_p_profit must be a float between 0 and 1"}), 400
+
+    # ── Resolve tickers ──────────────────────────────────────────
+    if requested_tickers:
+        tickers_requested_clean = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
+        tickers = list(tickers_requested_clean)
+    else:
+        tickers_requested_clean = []
+        tickers = list(DEFAULT_TICKERS)
+
+    # Auth — best-effort. Scans still work without a token, just won't be logged.
+    user = verify_token(request)
+    user_id = user.id if user is not None else None
+
+    market_ctx = _get_market_context()
+    is_open, et_time = _market_status()
+
+    started_at = _t.time()
+
+    # ── Try the scan; on exception, log a scan_runs row with error_message ──
     try:
-        body = request.get_json(silent=True) or {}
-        requested_tickers   = body.get("tickers")
-        requested_weeks_min = body.get("weeks_min", 1)
-        requested_weeks_max = body.get("weeks_max", 12)
-        requested_min_prem  = body.get("min_premium", 5.00)
-        requested_min_pp    = body.get("min_p_profit", 0.50)
-
-        # ── Validate ─────────────────────────────────────────────
-        if not isinstance(requested_weeks_min, int) or not (1 <= requested_weeks_min <= 12):
-            return jsonify({"error": "weeks_min must be an integer between 1 and 12"}), 400
-        if not isinstance(requested_weeks_max, int) or not (1 <= requested_weeks_max <= 12):
-            return jsonify({"error": "weeks_max must be an integer between 1 and 12"}), 400
-        if requested_weeks_min > requested_weeks_max:
-            return jsonify({"error": "weeks_min must be ≤ weeks_max"}), 400
-        if not isinstance(requested_min_prem, (int, float)) or requested_min_prem < 0:
-            return jsonify({"error": "min_premium must be a non-negative number"}), 400
-        if not isinstance(requested_min_pp, (int, float)) or not (0 <= requested_min_pp <= 1):
-            return jsonify({"error": "min_p_profit must be a float between 0 and 1"}), 400
-
-        # ── Resolve tickers ──────────────────────────────────────
-        if requested_tickers:
-            tickers = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
-        else:
-            tickers = list(DEFAULT_TICKERS)
-
-        # ── Load events ──────────────────────────────────────────
+        # Load events
         err = _ensure_events(weeks=requested_weeks_max)
         if err:
-            return jsonify({"error": f"Failed to load events: {err}"}), 500
+            raise RuntimeError(f"Failed to load events: {err}")
 
-        # ── Target expirations (filtered to [weeks_min, weeks_max]) ──
+        # Target expirations (filtered to [weeks_min, weeks_max])
         target_fridays = get_next_fridays(requested_weeks_max)
         week_exps = [
             (i + 1, f.strftime("%Y-%m-%d"))
@@ -271,7 +408,7 @@ def run_v3():
             if requested_weeks_min <= (i + 1) <= requested_weeks_max
         ]
 
-        # ── Scan each ticker ─────────────────────────────────────
+        # Scan each ticker
         all_triplets    = []
         total_evaluated = 0
         tickers_scanned = []
@@ -296,20 +433,45 @@ def run_v3():
             total_evaluated += evaluated
             all_triplets.extend(triplets)
 
-        # ── Rank by score descending ─────────────────────────────
         ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
+        tickers_used    = sorted(tickers_scanned)
+        tickers_skipped = [t for t in tickers if t not in tickers_scanned]
 
-        is_open, et_time = _market_status()
+        elapsed_ms = int((_t.time() - started_at) * 1000)
+
+        scan_id, result_ids = log_scan_run(
+            user_id            = user_id,
+            tickers_requested  = tickers_requested_clean,
+            tickers_used       = tickers_used,
+            tickers_skipped    = tickers_skipped,
+            weeks_min          = requested_weeks_min,
+            weeks_max          = requested_weeks_max,
+            min_premium        = float(requested_min_prem),
+            min_p_profit       = float(requested_min_pp),
+            ranked             = ranked,
+            total_evaluated    = total_evaluated,
+            market_open        = is_open,
+            elapsed_ms         = elapsed_ms,
+            error_message      = None,
+            market_context     = market_ctx,
+        )
+
+        # Attach result_id to each ranked entry (in same order as logged).
+        ranked_with_ids = []
+        for i, r in enumerate(ranked):
+            row = dict(r)
+            row["result_id"] = result_ids[i] if i < len(result_ids) else None
+            ranked_with_ids.append(row)
+
         run_at = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
         _last_run = run_at
 
-        tickers_skipped = [t for t in tickers if t not in tickers_scanned]
-
         return jsonify({
-            "ranked":            ranked,
+            "ranked":            ranked_with_ids,
+            "scan_id":           scan_id,
             "macro_events":      get_macro_events(),
             "total_evaluated":   total_evaluated,
-            "tickers_used":      sorted(tickers_scanned),
+            "tickers_used":      tickers_used,
             "tickers_skipped":   tickers_skipped,
             "market_open":       is_open,
             "time_et":           et_time,
@@ -318,10 +480,88 @@ def run_v3():
             "weeks_max_used":    requested_weeks_max,
             "min_premium_used":  float(requested_min_prem),
             "min_p_profit_used": float(requested_min_pp),
+            "elapsed_ms":        elapsed_ms,
         })
 
     except Exception as e:
+        elapsed_ms = int((_t.time() - started_at) * 1000)
+        log_scan_run(
+            user_id            = user_id,
+            tickers_requested  = tickers_requested_clean,
+            tickers_used       = [],
+            tickers_skipped    = list(tickers),
+            weeks_min          = requested_weeks_min,
+            weeks_max          = requested_weeks_max,
+            min_premium        = float(requested_min_prem),
+            min_p_profit       = float(requested_min_pp),
+            ranked             = [],
+            total_evaluated    = 0,
+            market_open        = is_open,
+            elapsed_ms         = elapsed_ms,
+            error_message      = str(e),
+            market_context     = market_ctx,
+        )
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+# ─────────────────────────────────────────────────────────────
+# Tradebook save endpoint
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/tradebook/save", methods=["POST"])
+def tradebook_save():
+    """
+    Save a triplet to tradebook and flip `was_saved` on the source scan_results row.
+
+    Body (JSON):
+        scan_id   : uuid | null  — source scan run (nullable; older trades pre-date logging)
+        result_id : uuid | null  — source triplet row (nullable for the same reason)
+        trade     : dict         — flat tradebook payload (strikes, premiums, deltas, …)
+
+    The server fills in `user_id` from the verified JWT — clients may NOT spoof it.
+    Returns the inserted tradebook row.
+    """
+    import traceback
+    user = verify_token(request)
+    if user is None:
+        return jsonify({"error": "Not authenticated"}), 401
+    if _supabase is None:
+        return jsonify({"error": "Supabase not configured on server"}), 500
+
+    body      = request.get_json(silent=True) or {}
+    scan_id   = body.get("scan_id")    # may be None for legacy / unlinked saves
+    result_id = body.get("result_id")  # may be None
+    trade     = body.get("trade") or {}
+
+    if not isinstance(trade, dict) or not trade.get("ticker") or not trade.get("expiration"):
+        return jsonify({"error": "trade payload must include ticker and expiration"}), 400
+
+    # Force server-controlled fields — clients cannot spoof user_id, scan_id, result_id.
+    insert_row = dict(trade)
+    insert_row["user_id"]   = str(user.id)
+    insert_row["scan_id"]   = scan_id
+    insert_row["result_id"] = result_id
+    insert_row.pop("id", None)  # never accept a client-supplied PK
+
+    try:
+        ins = _supabase.table("tradebook").insert(insert_row).execute()
+        saved = ins.data[0] if ins.data else None
+    except Exception as e:
+        return jsonify({"error": f"Tradebook insert failed: {e}",
+                        "traceback": traceback.format_exc()}), 500
+
+    # Flip was_saved on the linked scan_results row. Best-effort — a failure
+    # here doesn't undo the save; we just print to stderr and move on.
+    if result_id:
+        try:
+            _supabase.table("scan_results") \
+                .update({"was_saved": True}) \
+                .eq("id", result_id) \
+                .execute()
+        except Exception as e:
+            print(f"[scan_history] failed to flip was_saved for {result_id}: {e}", flush=True)
+
+    return jsonify({"trade": saved})
 
 
 # ─────────────────────────────────────────────────────────────
