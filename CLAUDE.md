@@ -117,16 +117,16 @@ Shared utilities module — holds the small set of helpers the screener depends 
 - **Routes:**
   - `GET /api/status` — fast health check; returns market open/closed, last run time
   - `GET /api/events` — returns cached macro events (FOMC, CPI, PPI, NFP, earnings)
-  - `POST /api/run_v3` — runs a Call Spread Risk Reversal scan and returns ranked triplets (scans are logged to `scan_runs`/`scan_results` — see Scan History below). This is the sole scan endpoint; it keeps the historical `_v3` suffix in its path so existing clients/deploys don't break.
+  - `POST /api/run` — runs a Call Spread Risk Reversal scan and returns ranked triplets (scans are logged to `scan_runs`/`scan_results` — see Scan History below). This is the sole scan endpoint.
   - `POST /api/tradebook/save` — server-side tradebook insert; attributes user_id from JWT, links to source scan, flips `was_saved=true` on `scan_results`
   - `GET /api/chain` — returns a filtered options chain for a ticker/expiration/side with BS delta computed
-- `/api/run_v3` request body (all optional):
+- `/api/run` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
   - `weeks_min`: integer 1–12; defaults to 1; must be ≤ `weeks_max`
   - `weeks_max`: integer 1–12; defaults to 12
   - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
-- `/api/run_v3` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_min_used`, `weeks_max_used`, `min_premium_used`, `min_p_profit_used`, `elapsed_ms`, `scan_id` (uuid; null if logging failed or no auth), and each `ranked[i]` entry carries a `result_id` (uuid; null on logging failure)
+- `/api/run` response includes: `ranked`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `market_open`, `run_at`, `weeks_min_used`, `weeks_max_used`, `min_premium_used`, `min_p_profit_used`, `elapsed_ms`, `scan_id` (uuid; null if logging failed or no auth), and each `ranked[i]` entry carries a `result_id` (uuid; null on logging failure)
 - `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
   - Fetches chain via Massive `list_snapshot_options_chain`; delta and IV are pre-calculated by Massive
   - Filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01; premium from `o.day.close`
@@ -196,16 +196,16 @@ Every scan execution is logged to Supabase so we can train ML models on real alg
 - `scan_results` — one row per produced triplet, linked via `scan_id`. Mirrors the triplet shape (legs, strikes, deltas, premiums, score, P(max profit), fair value) plus `rank`, `was_saved` boolean, and `created_at`
 - RLS: users may only SELECT/INSERT their own rows. `was_saved` is only updatable via the service role (no user UPDATE policy)
 
-**Write path** — `log_scan_run()` in `server/app.py` is called from `/api/run_v3` on **both** success and exception paths:
+**Write path** — `log_scan_run()` in `server/app.py` is called from `/api/run` on **both** success and exception paths:
 - Success: inserts `scan_runs` row with `error_message=NULL` and a batch insert into `scan_results` for every ranked triplet (chunked at 200 rows per request). Returns `(scan_id, result_ids)` parallel to the ranked list, and the endpoint decorates each response triplet with its `result_id`.
 - Failure: inserts a `scan_runs` row with `error_message` populated, `tickers_used=[]`, `ranked=[]`, and `total_passed=0` so the failure itself is captured for future analysis (e.g. "scans error more often around earnings"). 400-level validation errors are NOT logged — only execution-time exceptions.
 
-**Auth** — `/api/run_v3` calls `verify_token(request)` to extract `user_id` from the Supabase JWT. If no token is present or verification fails, `user_id` is None and `log_scan_run()` returns `(None, [])` without writing. Scans still succeed for unauthenticated callers; they just aren't logged. The frontend (`useOptionsData.js`) attaches `Authorization: Bearer <session.access_token>` on scan requests.
+**Auth** — `/api/run` calls `verify_token(request)` to extract `user_id` from the Supabase JWT. If no token is present or verification fails, `user_id` is None and `log_scan_run()` returns `(None, [])` without writing. Scans still succeed for unauthenticated callers; they just aren't logged. The frontend (`useOptionsData.js`) attaches `Authorization: Bearer <session.access_token>` on scan requests.
 
 **Market context** — at the top of each scan, `_get_market_context()` fetches last-close VIX (via Massive ticker `I:VIX`) and SPY price (via Massive `SPY`). Both are best-effort — failures log to stderr and store `None`. Result is cached for 60 seconds across scans in a process-local dict to avoid hammering Massive on back-to-back runs.
 
 **Scan provenance linkage** — saved trades carry their origin:
-- `/api/run_v3` returns `scan_id` at top level and `result_id` per ranked entry
+- `/api/run` returns `scan_id` at top level and `result_id` per ranked entry
 - Frontend (`useOptionsData.js`) exposes `scanId`; each row in `ranked` already includes its `result_id`
 - Saving via the results table dropdown (`App.jsx saveToTradebook`) or the trade editor (`TradePage.jsx handleSave`) posts to `/api/tradebook/save` with `{scan_id, result_id, trade}`
 - The server inserts into `tradebook` (filling `user_id` from the JWT — clients cannot spoof it) and then flips `was_saved=true` on the matching `scan_results` row (best-effort; a failure here does NOT undo the save)
@@ -275,7 +275,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
 
 ### `v3_screener.py`
-- V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run_v3`)
+- V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
 - Run with `python3 v3_screener.py` or with optional arguments (see below)
 - Imports `get_next_fridays` and `massive_client` from `options_screener.py` — no duplicate client initialization
 - `scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None)` — uses Massive for options chains; delta comes pre-calculated; accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None)
@@ -440,7 +440,7 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
 - **`useChartData.js`** — fetches `/api/chart` for `(ticker, timeframe)`. **Lifted to App.jsx** (not used inside StockChart) so the same data feeds both the compact and expanded variants without re-fetching when the user toggles expand. Caches by `ticker|timeframe` key in a `useRef(new Map())` and ignores out-of-order responses with a `latestKeyRef`.
 
 - **`useOptionsData.js`** — custom hook managing all API calls and result state
-  - `runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit })` — POSTs to `/api/run_v3` (forwarding the Supabase JWT for scan logging), stores in `result`
+  - `runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit })` — POSTs to `/api/run` (forwarding the Supabase JWT for scan logging), stores in `result`
   - `clearAll()` — wipes `result` and clears any error; called by the Clear button
   - Exposes fields: `ranked`, `tickersUsed`, `tickersSkipped`, `weeksMinUsed`, `weeksMaxUsed`, `minPremiumUsed`, `minPProfitUsed`, `totalEvaluated`, `hasResult`, `scanId`, `macroEvents`
   - `marketOpen` and `lastRun` derived from whichever is available (result → status)
@@ -548,8 +548,9 @@ sudo systemctl restart luocapital
 ---
 
 ## Notes
-- The platform runs a single algorithm: the Call Spread Risk Reversal screener (`v3_screener.py`, served by `/api/run_v3`)
+- The platform runs a single algorithm: the Call Spread Risk Reversal screener (`v3_screener.py`, served by `/api/run`)
 - Leg strikes are targeted by delta range (and Leg B by fair value when available); expirations snap to the nearest available Friday expiration for each target week
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)
-- **Removed (2026-06):** V1 and V2 algorithms. The platform was refocused on the proprietary Call Spread Risk Reversal strategy as its sole offering. The baseline V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) were retired: deleted `ratio_ranker.py`, `report.py` (V2 PDF generator), and `test_v2.py`; removed the `/api/run` endpoint; trimmed `options_screener.py` to the shared helpers V3 still uses (`TICKERS`, `massive_client`, `get_next_fridays`, `find_closest_strike`); and removed the web UI's V2/V3 mode toggle (including `RankedTable.jsx` and all V2 state in `useOptionsData.js`/`App.jsx`) so the screener now loads straight into the risk reversal table. The `/api/run_v3` path keeps its `_v3` suffix to avoid breaking existing clients/deploys. The `scan_runs`/`scan_results` tables were already V3-only by design — no schema changes, existing data left intact.
+- **Renamed (2026-06):** the scan endpoint `/api/run_v3` → `/api/run` (handler `run_v3()` → `run()`). With V2 gone the `/api/run` name was free again, and the `_v3` suffix was just leftover technical debt. Backend route, frontend fetch URL (`useOptionsData.js`), startup banner, and docs all moved together. There is no compatibility alias — the old `/api/run_v3` path now 404s.
+- **Removed (2026-06):** V1 and V2 algorithms. The platform was refocused on the proprietary Call Spread Risk Reversal strategy as its sole offering. The baseline V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) were retired: deleted `ratio_ranker.py`, `report.py` (V2 PDF generator), and `test_v2.py`; removed the old V2 `/api/run` endpoint; trimmed `options_screener.py` to the shared helpers V3 still uses (`TICKERS`, `massive_client`, `get_next_fridays`, `find_closest_strike`); and removed the web UI's V2/V3 mode toggle (including `RankedTable.jsx` and all V2 state in `useOptionsData.js`/`App.jsx`) so the screener now loads straight into the risk reversal table. The `scan_runs`/`scan_results` tables were already V3-only by design — no schema changes, existing data left intact.
 - **Removed (2026-04):** Robinhood holdings integration. The unofficial `robin-stocks` API was blocked and the integration had been non-functional since deployment. `server/robinhood.py`, the `/api/holdings` endpoint, the `robin-stocks` dependency, and all `ROBINHOOD_*` env vars were deleted. An empty Tickers input now falls back to the default watchlist (`options_screener.TICKERS`) instead.

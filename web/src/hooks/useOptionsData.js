@@ -48,7 +48,7 @@ export default function useOptionsData() {
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
 
-      const res  = await fetch('/api/run_v3', {
+      const res  = await fetch('/api/run', {
         method:  'POST',
         headers,
         body:    JSON.stringify(body),

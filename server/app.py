@@ -246,10 +246,10 @@ def events():
     return jsonify({"macro_events": get_macro_events()})
 
 
-@app.route("/api/run_v3", methods=["POST"])
-def run_v3():
+@app.route("/api/run", methods=["POST"])
+def run():
     """
-    Run a V3 Call Spread Risk Reversal scan and return ranked triplets.
+    Run a Call Spread Risk Reversal scan and return ranked triplets.
 
     Body (JSON, all optional):
         tickers       : list[str]  — ticker universe; omit for the default watchlist
@@ -930,5 +930,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/events  /api/run_v3  /api/chain  /api/chart  /api/chart_cache_stats")
+    print("Endpoints: /api/status  /api/events  /api/run  /api/chain  /api/chart  /api/chart_cache_stats")
     app.run(host='0.0.0.0', port=5001)
