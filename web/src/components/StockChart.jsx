@@ -79,7 +79,7 @@ function ChartHeader({ ticker, timeframe, expanded, data, onTimeframeChange, onT
   const changePct   = data?.change_pct
   const changeColor = changePct == null
     ? 'text-gray-500'
-    : changePct >= 0 ? 'text-emerald-400' : 'text-red-400'
+    : changePct >= 0 ? 'text-profit' : 'text-loss'
   const changeSign = changePct >= 0 ? '+' : ''
 
   // 1D fallback: backend walks back to the most recent session when "today"
@@ -94,12 +94,12 @@ function ChartHeader({ ticker, timeframe, expanded, data, onTimeframeChange, onT
           {ticker || '—'}
         </span>
         {price != null && (
-          <span className={`font-mono ${expanded ? 'text-base' : 'text-xs'} text-gray-200`}>
+          <span className={`num ${expanded ? 'text-base' : 'text-xs'} text-gray-200`}>
             ${price.toFixed(2)}
           </span>
         )}
         {changePct != null && (
-          <span className={`font-mono ${expanded ? 'text-sm' : 'text-xs'} ${changeColor}`}>
+          <span className={`num ${expanded ? 'text-sm' : 'text-xs'} ${changeColor}`}>
             {changeSign}{changePct.toFixed(2)}%
           </span>
         )}

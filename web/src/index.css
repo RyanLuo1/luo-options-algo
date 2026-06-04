@@ -2,8 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Design tokens — single source of truth for the dark fintech palette.
+   Slate base + purple accent + reserved profit/loss greens & reds.
+   Wired into Tailwind via tailwind.config.js (theme.extend.colors) so these
+   are consumed as semantic utility classes (bg-surface, text-profit,
+   border-subtle, …) rather than hardcoded hex in components.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* backgrounds — darkest to lightest surface */
+  --bg-base: #0F172A;
+  --bg-surface: #1E293B;
+  --bg-surface-raised: #1A2436;
+  /* borders */
+  --border-subtle: #334155;
+  --border-strong: #475569;
+  /* text */
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-tertiary: #64748B;
+  /* accent — actions, highlights, 'top pick'. NOT used for profit/loss */
+  --accent: #7C5CFF;
+  --accent-hover: #6D4FE8;
+  /* semantic profit/loss — reserved ONLY for money/P&L, never for chrome */
+  --profit: #34D399;
+  --profit-dim: #065F46;
+  --loss: #F43F5E;
+  --loss-dim: #7F1D1D;
+  /* link/info */
+  --link: #7C9EF8;
+
+  /* Monospace numeric font. JetBrains Mono (loaded in index.html) with a
+     system-monospace fallback so digits stay fixed-width even offline. */
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+}
+
 body {
   @apply bg-gray-950 text-gray-100;
+}
+
+/* Tabular numeric display — fixed-width digits so number columns align.
+   Apply to any numeric value (strikes, premiums, scores, percentages). */
+@layer utilities {
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
 }
 
 /* Dual-handle range slider — two stacked <input type="range">.

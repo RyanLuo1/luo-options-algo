@@ -95,9 +95,9 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
           <><span>·</span><span>Min P(Profit): <span className="text-gray-400">{(minPProfitUsed * 100).toFixed(0)}%</span></span></>
         )}
         <span>·</span>
-        <span>{rows.length} triplets ranked</span>
+        <span><span className="num">{rows.length}</span> triplets ranked</span>
         {totalEvaluated > 0 && (
-          <><span>·</span><span className="text-gray-600">{totalEvaluated.toLocaleString()} evaluated</span></>
+          <><span>·</span><span className="text-gray-600"><span className="num">{totalEvaluated.toLocaleString()}</span> evaluated</span></>
         )}
         <span className="ml-auto text-gray-600 italic">Click any row for actions</span>
       </div>
@@ -109,7 +109,7 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
         <span className="text-gray-600">=</span>
         <span className="text-gray-500">you pay (long call)</span>
         <span className="text-gray-600">·</span>
-        <span className="text-emerald-400">Leg B &amp; C Prem</span>
+        <span className="text-profit">Leg B &amp; C Prem</span>
         <span className="text-gray-600">=</span>
         <span className="text-gray-500">you collect</span>
         <span className="text-gray-600">·</span>
@@ -220,57 +220,57 @@ function ResultsRow({ row, idx, minPP, isDropdownOpen, onRowClick }) {
       <td className="px-3 py-2 text-left text-gray-500">W{row.week}</td>
 
       {/* Leg A Strike */}
-      <td className="px-3 py-2 text-right text-gray-300">
+      <td className="px-3 py-2 text-right text-gray-300 num">
         ${row.leg_a_strike?.toFixed(2) ?? '—'}
       </td>
 
       {/* Leg A Prem — blue (you pay) */}
-      <td className="px-3 py-2 text-right text-sky-400 font-semibold">
+      <td className="px-3 py-2 text-right text-sky-400 font-semibold num">
         ${row.leg_a_prem?.toFixed(4) ?? '—'}
       </td>
 
       {/* Leg B Strike */}
-      <td className="px-3 py-2 text-right text-gray-300">
+      <td className="px-3 py-2 text-right text-gray-300 num">
         ${row.leg_b_strike?.toFixed(2) ?? '—'}
       </td>
 
-      {/* Leg B Prem — emerald (you collect) */}
-      <td className="px-3 py-2 text-right text-emerald-400 font-semibold">
+      {/* Leg B Prem — profit token (you collect) */}
+      <td className="px-3 py-2 text-right text-profit font-semibold num">
         ${row.leg_b_prem?.toFixed(4) ?? '—'}
       </td>
 
       {/* Leg C Strike */}
-      <td className="px-3 py-2 text-right text-gray-300">
+      <td className="px-3 py-2 text-right text-gray-300 num">
         ${row.leg_c_strike?.toFixed(2) ?? '—'}
       </td>
 
-      {/* Leg C Prem — emerald (you collect) */}
-      <td className="px-3 py-2 text-right text-emerald-400 font-semibold">
+      {/* Leg C Prem — profit token (you collect) */}
+      <td className="px-3 py-2 text-right text-profit font-semibold num">
         ${row.leg_c_prem?.toFixed(4) ?? '—'}
       </td>
 
       {/* Net Prem — bold white */}
-      <td className="px-3 py-2 text-right text-white font-bold">
+      <td className="px-3 py-2 text-right text-white font-bold num">
         ${row.net_premium?.toFixed(4) ?? '—'}
       </td>
 
       {/* Spread Width */}
-      <td className="px-3 py-2 text-right text-gray-400">
+      <td className="px-3 py-2 text-right text-gray-400 num">
         {row.spread_width?.toFixed(2) ?? '—'}
       </td>
 
       {/* Score — emerald */}
-      <td className="px-3 py-2 text-right text-emerald-400 font-bold">
+      <td className="px-3 py-2 text-right text-emerald-400 font-bold num">
         {row.score?.toFixed(6) ?? '—'}
       </td>
 
       {/* P(Profit)% */}
-      <td className="px-3 py-2 text-right text-gray-300">
+      <td className="px-3 py-2 text-right text-gray-300 num">
         {row.p_max_profit != null ? `${(row.p_max_profit * 100).toFixed(2)}%` : '—'}
       </td>
 
       {/* Fair Value */}
-      <td className="px-3 py-2 text-right">
+      <td className="px-3 py-2 text-right num">
         {row.fv_available
           ? <span className="text-gray-400">${row.fair_value?.toFixed(2)}</span>
           : <span className="text-yellow-500">N/A</span>
