@@ -320,6 +320,7 @@ def run():
         all_triplets    = []
         total_evaluated = 0
         tickers_scanned = []
+        price_by_ticker = {}   # live yfinance price used for each ticker's scan
 
         for ticker in tickers:
             try:
@@ -330,6 +331,7 @@ def run():
             except Exception:
                 continue
 
+            price_by_ticker[ticker] = price
             fair_value = get_fair_value(ticker)
 
             tickers_scanned.append(ticker)
@@ -364,11 +366,16 @@ def run():
             market_context     = market_ctx,
         )
 
-        # Attach result_id to each ranked entry (in same order as logged).
+        # Attach result_id and the live underlying price to each ranked entry
+        # (in same order as logged). underlying_price is the yfinance current
+        # price used for this ticker's scan — distinct from fair_value (the model
+        # price). Added to the response copies only; the logged `ranked` list and
+        # scan_results rows are unaffected.
         ranked_with_ids = []
         for i, r in enumerate(ranked):
             row = dict(r)
             row["result_id"] = result_ids[i] if i < len(result_ids) else None
+            row["underlying_price"] = price_by_ticker.get(r["ticker"])
             ranked_with_ids.append(row)
 
         # Per-ticker grouping for the overview cards. Purely a reorganization
