@@ -71,7 +71,7 @@ export default function TradebookPage() {
         <div className="flex flex-col items-center justify-center py-32 gap-3 text-center px-6">
           <p className="text-gray-400 text-sm font-medium">No trades saved yet.</p>
           <p className="text-gray-600 text-xs max-w-sm">
-            Run a V3 scan and click any row to save a triplet to the tradebook.
+            Run a scan and click any row to save a triplet to the tradebook.
           </p>
         </div>
       )}

@@ -3,7 +3,7 @@
  *
  * Two keys, both session-scoped (cleared automatically when the tab closes):
  *   - luo-capital-screener-state    : App.jsx control state (mode, tickers, filters, etc.)
- *   - luo-capital-screener-results  : useOptionsData scan responses (result, v3Result)
+ *   - luo-capital-screener-results  : useOptionsData scan response (result)
  *
  * State survives in-session navigation (e.g. screener → /trade → back) but is
  * wiped on logout (Header) or when the tab closes (browser default).

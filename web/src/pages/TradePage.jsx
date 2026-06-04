@@ -149,7 +149,7 @@ export default function TradePage() {
   const location = useLocation()
   const navigate  = useNavigate()
   const triplet   = location.state?.triplet
-  const scanId    = location.state?.scan_id ?? null   // scan provenance (V3 only)
+  const scanId    = location.state?.scan_id ?? null   // scan provenance
   const { user }  = useAuth()
 
   // Selected contract per leg
@@ -289,7 +289,7 @@ export default function TradePage() {
       <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
         <Header />
         <div className="flex flex-col items-center justify-center py-32 gap-4">
-          <p className="text-gray-400 text-sm">No triplet data. Navigate here from a V3 scan.</p>
+          <p className="text-gray-400 text-sm">No triplet data. Navigate here from a scan.</p>
           <button
             onClick={() => navigate('/')}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded transition-colors"

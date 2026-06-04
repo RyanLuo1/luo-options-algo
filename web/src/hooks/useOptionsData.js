@@ -10,17 +10,16 @@ export default function useOptionsData() {
   // Hydrate persisted scan results from sessionStorage (single read on mount).
   const initial = useMemo(() => loadScreenerResults() ?? {}, [])
 
-  const [status,   setStatus]   = useState(null)              // from GET /api/status
-  const [result,   setResult]   = useState(initial.result   ?? null)  // V2 scan
-  const [v3Result, setV3Result] = useState(initial.v3Result ?? null)  // V3 scan
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState(null)  // string or null
+  const [status,  setStatus]  = useState(null)              // from GET /api/status
+  const [result,  setResult]  = useState(initial.result ?? null)  // risk reversal scan
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState(null)  // string or null
 
   // Persist scan results so they survive in-session navigation (/, /trade, /tradebook).
   // Cleared when the tab closes (sessionStorage default) or on logout (Header).
   useEffect(() => {
-    saveScreenerResults({ result, v3Result })
-  }, [result, v3Result])
+    saveScreenerResults({ result })
+  }, [result])
 
   // Fetch market status on mount (fast, no external calls)
   useEffect(() => {
@@ -30,20 +29,28 @@ export default function useOptionsData() {
       .catch(() => {})  // server may not be up yet; silently ignore
   }, [])
 
-  // ── V2 scan ────────────────────────────────────────────────────────────────
-  const runScan = useCallback(async ({ tickers, distances, weeks } = {}) => {
+  // ── Risk reversal scan ──────────────────────────────────────────────────────
+  const runScan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit } = {}) => {
     setLoading(true)
     setError(null)
 
     try {
       const body = {}
-      if (tickers && tickers.length > 0) body.tickers = tickers
-      if (distances && distances.length > 0) body.distances = distances
-      if (weeks !== undefined) body.weeks = weeks
+      if (tickers    && tickers.length > 0) body.tickers      = tickers
+      if (weeksMin   !== undefined)          body.weeks_min    = weeksMin
+      if (weeksMax   !== undefined)          body.weeks_max    = weeksMax
+      if (minPremium !== undefined)          body.min_premium  = minPremium
+      if (minPProfit !== undefined)          body.min_p_profit = minPProfit
 
-      const res  = await fetch('/api/run', {
+      // Forward the Supabase JWT so the server can attribute this scan in
+      // scan_runs (logging is server-side, best-effort).
+      const headers = { 'Content-Type': 'application/json' }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
+      const res  = await fetch('/api/run_v3', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body:    JSON.stringify(body),
       })
       const data = await res.json()
@@ -65,84 +72,31 @@ export default function useOptionsData() {
     }
   }, [])
 
-  // ── V3 scan ────────────────────────────────────────────────────────────────
-  const runV3Scan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit } = {}) => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const body = {}
-      if (tickers    && tickers.length > 0) body.tickers      = tickers
-      if (weeksMin   !== undefined)          body.weeks_min    = weeksMin
-      if (weeksMax   !== undefined)          body.weeks_max    = weeksMax
-      if (minPremium !== undefined)          body.min_premium  = minPremium
-      if (minPProfit !== undefined)          body.min_p_profit = minPProfit
-
-      // Forward the Supabase JWT so the server can attribute this scan in
-      // scan_runs (logging is server-side, best-effort, and only for V3).
-      const headers = { 'Content-Type': 'application/json' }
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-
-      const res  = await fetch('/api/run_v3', {
-        method:  'POST',
-        headers,
-        body:    JSON.stringify(body),
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || `Server error (${res.status})`)
-      } else {
-        setV3Result(data)
-        setStatus(prev => ({
-          ...prev,
-          market_open: data.market_open,
-          last_run:    data.run_at,
-        }))
-      }
-    } catch (e) {
-      setError(`Cannot reach server. Is Flask running on port 5001? (${e.message})`)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  // ── Clear all results (called on mode switch) ──────────────────────────────
+  // ── Clear results ───────────────────────────────────────────────────────────
   const clearAll = useCallback(() => {
     setResult(null)
-    setV3Result(null)
     setError(null)
   }, [])
 
   return {
     // market / timing
-    marketOpen: result?.market_open  ?? v3Result?.market_open  ?? status?.market_open ?? null,
-    lastRun:    result?.run_at       ?? v3Result?.run_at       ?? status?.last_run    ?? null,
+    marketOpen: result?.market_open ?? status?.market_open ?? null,
+    lastRun:    result?.run_at      ?? status?.last_run    ?? null,
+    macroEvents: result?.macro_events ?? null,
 
-    // ── V2 ──────────────────────────────────────────────────────────────────
-    ranked:            result?.ranked            ?? EMPTY,
-    macroEvents:       result?.macro_events ?? v3Result?.macro_events ?? null,
-    duplicatesRemoved: result?.duplicates_removed ?? 0,
-    tickersUsed:       result?.tickers_used      ?? EMPTY,
-    tickersSkipped:    result?.tickers_skipped   ?? EMPTY,
-    distancesUsed:     result?.distances_used    ?? null,
-    weeksUsed:         result?.weeks_used        ?? null,
-    hasResult:         result !== null,
-
-    // ── V3 ──────────────────────────────────────────────────────────────────
-    v3Ranked:          v3Result?.ranked           ?? EMPTY,
-    v3TickersUsed:     v3Result?.tickers_used     ?? EMPTY,
-    v3TickersSkipped:  v3Result?.tickers_skipped  ?? EMPTY,
-    v3WeeksMinUsed:    v3Result?.weeks_min_used   ?? null,
-    v3WeeksMaxUsed:    v3Result?.weeks_max_used   ?? null,
-    v3MinPremiumUsed:  v3Result?.min_premium_used ?? null,
-    v3MinPProfitUsed:  v3Result?.min_p_profit_used ?? null,
-    v3TotalEvaluated:  v3Result?.total_evaluated  ?? 0,
-    v3HasResult:       v3Result !== null,
+    // ── Risk reversal results ────────────────────────────────────────────────
+    ranked:          result?.ranked           ?? EMPTY,
+    tickersUsed:     result?.tickers_used     ?? EMPTY,
+    tickersSkipped:  result?.tickers_skipped  ?? EMPTY,
+    weeksMinUsed:    result?.weeks_min_used   ?? null,
+    weeksMaxUsed:    result?.weeks_max_used   ?? null,
+    minPremiumUsed:  result?.min_premium_used ?? null,
+    minPProfitUsed:  result?.min_p_profit_used ?? null,
+    totalEvaluated:  result?.total_evaluated  ?? 0,
+    hasResult:       result !== null,
     // Scan provenance — propagated to tradebook saves so each saved trade
     // links back to the scan and triplet it came from.
-    v3ScanId:          v3Result?.scan_id          ?? null,
+    scanId:          result?.scan_id          ?? null,
 
     // ── Shared state ─────────────────────────────────────────────────────────
     loading,
@@ -150,7 +104,6 @@ export default function useOptionsData() {
 
     // ── Actions ──────────────────────────────────────────────────────────────
     runScan,
-    runV3Scan,
     clearAll,
   }
 }

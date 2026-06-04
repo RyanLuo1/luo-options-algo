@@ -82,7 +82,7 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
 
       {/* metadata bar */}
       <div className="shrink-0 px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
-        <span>Algorithm: <span className="text-gray-400">V3 — Call Spread Risk Reversal</span></span>
+        <span>Algorithm: <span className="text-gray-400">Call Spread Risk Reversal</span></span>
         {weeksMinUsed != null && weeksMaxUsed != null && (
           <><span>·</span><span>Weeks: <span className="text-gray-400">
             {weeksMinUsed === weeksMaxUsed ? `W${weeksMinUsed}` : `W${weeksMinUsed} – W${weeksMaxUsed}`}

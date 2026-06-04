@@ -17,8 +17,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
-from options_screener import fetch_all_rows, DISTANCES as DEFAULT_DISTANCES, get_next_fridays, massive_client, TICKERS as DEFAULT_TICKERS
-from ratio_ranker import calculate_ratios
+from options_screener import get_next_fridays, massive_client, TICKERS as DEFAULT_TICKERS
 from event_filter import load_events, get_macro_events, get_earnings_flag
 from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value
 
@@ -245,106 +244,6 @@ def events():
     if err:
         return jsonify({"error": f"Failed to load events: {err}"}), 500
     return jsonify({"macro_events": get_macro_events()})
-
-
-@app.route("/api/run", methods=["POST"])
-def run():
-    """
-    Run a full options scan and return ranked results.
-
-    Body (JSON, all optional):
-        tickers: list[str]  — override ticker universe; omit to use the
-                              default watchlist (options_screener.TICKERS)
-    """
-    import traceback
-    global _last_run
-
-    try:
-        body = request.get_json(silent=True) or {}
-        requested_tickers = body.get("tickers")
-        requested_distances = body.get("distances")
-        requested_weeks = body.get("weeks", 4)
-
-        # ── Validate distances ───────────────────────────────────
-        if requested_distances is not None:
-            if not isinstance(requested_distances, list) or len(requested_distances) == 0:
-                return jsonify({"error": "distances must be a non-empty list of floats"}), 400
-            for d in requested_distances:
-                if not isinstance(d, (int, float)) or d < 0.01 or d > 0.50:
-                    return jsonify({
-                        "error": f"Each distance must be between 0.01 (1%) and 0.50 (50%). Got: {d}"
-                    }), 400
-            distances = [float(d) for d in requested_distances]
-        else:
-            distances = None  # will fall back to defaults inside fetch_all_rows
-
-        # ── Validate weeks ───────────────────────────────────────
-        if not isinstance(requested_weeks, int) or requested_weeks < 1 or requested_weeks > 12:
-            return jsonify({"error": "weeks must be an integer between 1 and 12"}), 400
-        weeks = requested_weeks
-
-        # ── Resolve ticker universe ──────────────────────────────
-        if requested_tickers:
-            tickers = [t.lstrip('$').upper().strip() for t in requested_tickers if t.strip()]
-        else:
-            tickers = list(DEFAULT_TICKERS)
-
-        # ── Load events ──────────────────────────────────────────
-        err = _ensure_events(weeks=weeks)
-        if err:
-            return jsonify({"error": f"Failed to load events: {err}"}), 500
-
-        # ── Fetch options data ───────────────────────────────────
-        all_rows = fetch_all_rows(verbose=False, tickers=tickers, distances=distances, weeks=weeks)
-        effective_distances = distances if distances is not None else DEFAULT_DISTANCES
-
-        # Tickers that came back with zero rows are skipped (no options chain available)
-        tickers_with_data = sorted({r["Ticker"] for r in all_rows})
-        tickers_skipped = [t for t in tickers if t not in tickers_with_data]
-
-        # ── Rank ─────────────────────────────────────────────────
-        ranked, duplicates_removed = calculate_ratios(all_rows)
-
-        # ── Serialize + annotate ─────────────────────────────────
-        output = []
-        for i, r in enumerate(ranked, start=1):
-            output.append({
-                "rank":          i,
-                "ticker":        r["Ticker"],
-                "side":          r["Side"],
-                "expiration":    r["Expiration"],
-                "week":          r["Week"],
-                "dist_pct":      r["Dist %"],
-                "delta":         r["Delta"],
-                "strike":        r["Strike"],
-                "premium":       r["Premium"],
-                "price":         r["Price"],
-                "volume":        r.get("Volume"),
-                "oi":            r.get("OI"),
-                "ratio":         r["Ratio"],
-                "earnings_flag": get_earnings_flag(r["Ticker"], r["Expiration"]),
-            })
-
-        is_open, et_time = _market_status()
-        run_at = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-        _last_run = run_at
-
-        return jsonify({
-            "ranked":             output,
-            "macro_events":       get_macro_events(),
-            "duplicates_removed": duplicates_removed,
-            "market_open":        is_open,
-            "time_et":            et_time,
-            "run_at":             run_at,
-            "tickers_used":       tickers_with_data,
-            "tickers_skipped":    tickers_skipped,
-            "total_ranked":       len(output),
-            "distances_used":     effective_distances,
-            "weeks_used":         weeks,
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @app.route("/api/run_v3", methods=["POST"])
@@ -1031,5 +930,5 @@ def serve_react(path):
 if __name__ == "__main__":
     print("Luo Capital — Options Screener API")
     print("Listening on http://localhost:5001")
-    print("Endpoints: /api/status  /api/events  /api/run  /api/run_v3  /api/chain  /api/chart  /api/chart_cache_stats")
+    print("Endpoints: /api/status  /api/events  /api/run_v3  /api/chain  /api/chart  /api/chart_cache_stats")
     app.run(host='0.0.0.0', port=5001)

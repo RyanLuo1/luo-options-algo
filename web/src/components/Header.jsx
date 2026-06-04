@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { clearScreenerSession } from '../lib/sessionState'
 
-export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale, mode, onModeChange }) {
+export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale }) {
   const location = useLocation()
   const navigate  = useNavigate()
   const path      = location.pathname
@@ -59,43 +59,12 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
           <div className="text-gray-500 text-xs mt-0.5">Options Screener</div>
         </div>
 
-        {/* Nav group — V2/V3 toggle (screener only) + Tradebook */}
+        {/* Nav group — Tradebook */}
         <div className="flex items-center flex-shrink-0 border border-gray-700 rounded">
-          {isScreener && (
-            <>
-              <button
-                onClick={() => onModeChange('v2')}
-                disabled={loading}
-                className={`
-                  px-4 py-1.5 text-xs font-semibold transition-colors rounded-l
-                  ${mode === 'v2'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'}
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                `}
-              >
-                V2 — Delta Rank
-              </button>
-              <button
-                onClick={() => onModeChange('v3')}
-                disabled={loading}
-                className={`
-                  px-4 py-1.5 text-xs font-semibold transition-colors border-l border-gray-700
-                  ${mode === 'v3'
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'}
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                `}
-              >
-                V3 — Risk Reversal
-              </button>
-            </>
-          )}
           <button
             onClick={() => navigate('/tradebook')}
             className={`
-              px-4 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap rounded-r
-              ${isScreener ? 'border-l border-gray-700' : 'rounded-l'}
+              px-4 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap rounded
               ${isTradebook
                 ? 'bg-violet-700 text-white'
                 : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'}
