@@ -371,24 +371,43 @@ def run():
             row["result_id"] = result_ids[i] if i < len(result_ids) else None
             ranked_with_ids.append(row)
 
+        # Per-ticker grouping for the overview cards. Purely a reorganization
+        # of the already-ranked list (sorted by score desc) — no recomputation.
+        # Each group keeps the ticker's single best (max-score) triplet plus a
+        # count of how many qualifying triplets it produced. Groups are ordered
+        # by best score descending so the strongest ticker's card comes first.
+        by_ticker_map = {}
+        for r in ranked_with_ids:
+            t = r["ticker"]
+            if t not in by_ticker_map:
+                by_ticker_map[t] = {"ticker": t, "best": r, "count": 0}
+            by_ticker_map[t]["count"] += 1
+        by_ticker = sorted(
+            by_ticker_map.values(),
+            key=lambda g: g["best"]["score"],
+            reverse=True,
+        )
+
         run_at = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
         _last_run = run_at
 
         return jsonify({
-            "ranked":            ranked_with_ids,
-            "scan_id":           scan_id,
-            "macro_events":      get_macro_events(),
-            "total_evaluated":   total_evaluated,
-            "tickers_used":      tickers_used,
-            "tickers_skipped":   tickers_skipped,
-            "market_open":       is_open,
-            "time_et":           et_time,
-            "run_at":            run_at,
-            "weeks_min_used":    requested_weeks_min,
-            "weeks_max_used":    requested_weeks_max,
-            "min_premium_used":  float(requested_min_prem),
-            "min_p_profit_used": float(requested_min_pp),
-            "elapsed_ms":        elapsed_ms,
+            "ranked":               ranked_with_ids,
+            "by_ticker":            by_ticker,
+            "scan_id":              scan_id,
+            "macro_events":         get_macro_events(),
+            "total_evaluated":      total_evaluated,
+            "tickers_used":         tickers_used,
+            "tickers_skipped":      tickers_skipped,
+            "tickers_with_results": len(by_ticker),
+            "market_open":          is_open,
+            "time_et":              et_time,
+            "run_at":               run_at,
+            "weeks_min_used":       requested_weeks_min,
+            "weeks_max_used":       requested_weeks_max,
+            "min_premium_used":     float(requested_min_prem),
+            "min_p_profit_used":    float(requested_min_pp),
+            "elapsed_ms":           elapsed_ms,
         })
 
     except Exception as e:

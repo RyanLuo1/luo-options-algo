@@ -86,6 +86,10 @@ export default function useOptionsData() {
 
     // ── Risk reversal results ────────────────────────────────────────────────
     ranked:          result?.ranked           ?? EMPTY,
+    // Per-ticker grouping (each ticker's single best triplet + count), ordered
+    // by best score desc. Powers the per-ticker overview cards (UI built later).
+    byTicker:        result?.by_ticker        ?? EMPTY,
+    tickersWithResults: result?.tickers_with_results ?? 0,
     tickersUsed:     result?.tickers_used     ?? EMPTY,
     tickersSkipped:  result?.tickers_skipped  ?? EMPTY,
     weeksMinUsed:    result?.weeks_min_used   ?? null,
