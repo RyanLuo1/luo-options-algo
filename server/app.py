@@ -19,7 +19,7 @@ import yfinance as yf
 
 from options_screener import get_next_fridays, massive_client, TICKERS as DEFAULT_TICKERS
 from event_filter import load_events, get_macro_events, get_earnings_flag
-from v3_screener import scan_ticker as v3_scan_ticker, get_fair_value
+from screener import scan_ticker, get_fair_value
 
 WEB_DIST = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
@@ -95,7 +95,7 @@ def _ensure_events(weeks=4):
 # Both fields come from yfinance — Massive's Options plan blocks today's stock
 # aggregates (SPY) and doesn't include indices data at all (VIX). See CLAUDE.md
 # → "Data Provider Responsibilities" for the rationale. Fetched best-effort and
-# cached across scans for 60s so back-to-back V3 runs don't keep hitting yfinance.
+# cached across scans for 60s so back-to-back runs don't keep hitting yfinance.
 # Used only for scan_runs logging — never fails the scan.
 _market_context_cache = {"data": None, "timestamp": 0.0}
 _MARKET_CONTEXT_TTL   = 60  # seconds
@@ -135,7 +135,7 @@ def _get_market_context():
     return data
 
 
-# ── Scan history logging (V3 only) ────────────────────────────────────────────
+# ── Scan history logging ──────────────────────────────────────────────────────
 # Writes one row to `scan_runs` and a batch of rows to `scan_results`. All
 # failures here are swallowed and printed to stderr — logging must never break
 # the scan response. See docs/scan_history_schema.sql for table definitions.
@@ -145,7 +145,7 @@ def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
                  ranked, total_evaluated, market_open, elapsed_ms,
                  error_message, market_context):
     """
-    Persist a V3 scan run and all produced triplets.
+    Persist a scan run and all produced triplets.
 
     Returns:
         (scan_id, result_ids) where result_ids is parallel to `ranked` (same
@@ -333,7 +333,7 @@ def run():
             fair_value = get_fair_value(ticker)
 
             tickers_scanned.append(ticker)
-            triplets, evaluated = v3_scan_ticker(
+            triplets, evaluated = scan_ticker(
                 ticker, price, week_exps, fair_value,
                 float(requested_min_prem),
                 min_p_profit=float(requested_min_pp),
@@ -842,7 +842,7 @@ def chart():
 
         # ── Summary ─────────────────────────────────────────────
         # Header price always tries yfinance first so the displayed price
-        # matches what V3 actually uses for scans (yfinance current-day quote).
+        # matches what the scan actually uses (yfinance current-day quote).
         # Massive's last bar is the fallback — for timeframes where bars come
         # from Massive, that bar is yesterday's close, which is what users
         # would see during a yfinance outage.

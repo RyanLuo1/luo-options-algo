@@ -5,12 +5,12 @@ from massive import RESTClient
 
 load_dotenv()
 
-# Default watchlist — used by the V3 screener and macro-event loading when the
+# Default watchlist — used by the screener and macro-event loading when the
 # caller doesn't supply an explicit ticker universe.
 TICKERS = ["GEV", "PLTR", "APP", "AVGO", "META", "MU", "NVDA", "TSLA", "AMD", "TSM"]
 
 # Module-level Massive client, initialized from MASSIVE_API_KEY. Imported by
-# server/app.py and v3_screener.py — there is only one client for the project.
+# server/app.py and screener.py — there is only one client for the project.
 massive_client = RESTClient(os.getenv('MASSIVE_API_KEY'))
 
 

@@ -22,7 +22,7 @@ function rowKey(row) {
   return `${row.ticker}-${row.expiration}-${row.leg_a_strike}-${row.leg_b_strike}-${row.leg_c_strike}`
 }
 
-export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook, onRowSelect }) {
+export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook, onRowSelect }) {
   const [sortKey,      setSortKey]      = useState('rank')
   const [sortAsc,      setSortAsc]      = useState(true)
   const [openRow,      setOpenRow]      = useState(null)   // row object whose dropdown is open
@@ -147,7 +147,7 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
           </thead>
           <tbody>
             {sorted.map((row, idx) => (
-              <V3Row
+              <ResultsRow
                 key={rowKey(row)}
                 row={row}
                 idx={idx}
@@ -187,7 +187,7 @@ export default function V3Table({ rows, totalEvaluated, weeksMinUsed, weeksMaxUs
   )
 }
 
-function V3Row({ row, idx, minPP, isDropdownOpen, onRowClick }) {
+function ResultsRow({ row, idx, minPP, isDropdownOpen, onRowClick }) {
   const borderline = row.p_max_profit >= minPP && row.p_max_profit <= minPP + 0.10
   const noFV       = !row.fv_available
 

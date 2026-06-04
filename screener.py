@@ -1,5 +1,5 @@
 """
-v3_screener.py — V3 Call Spread Risk Reversal Screener
+screener.py — Call Spread Risk Reversal Screener
 
 Strategy (3 legs):
   Leg A: Buy  ATM call  (long)  — pay premium
@@ -8,9 +8,9 @@ Strategy (3 legs):
   Goal:  Net Premium = (B + C) − A ≥ $5.00  (credit only)
 
 Run:
-  python3 v3_screener.py
-  python3 v3_screener.py --tickers NVDA META TSLA
-  python3 v3_screener.py --weeks 6 --min-premium 3.00
+  python3 screener.py
+  python3 screener.py --tickers NVDA META TSLA
+  python3 screener.py --weeks 6 --min-premium 3.00
 """
 
 import argparse
@@ -311,7 +311,7 @@ def print_results(ranked, tickers_no_triplets, total_evaluated, min_premium):
     div = "-" * _LINE_WIDTH
 
     print(f"\n{sep}")
-    print(f"  {BOLD}Luo Capital — V3 Call Spread Risk Reversal Screener{RESET}")
+    print(f"  {BOLD}Luo Capital — Call Spread Risk Reversal Screener{RESET}")
     print(f"  Run: {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}  |  "
           f"Market: {mkt} ({et_time})")
     print(f"  Min net premium: ${min_premium:.2f}  |  "
@@ -354,13 +354,13 @@ def print_results(ranked, tickers_no_triplets, total_evaluated, min_premium):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="V3 Call Spread Risk Reversal Screener — Luo Capital",
+        description="Call Spread Risk Reversal Screener — Luo Capital",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python3 v3_screener.py\n"
-            "  python3 v3_screener.py --tickers NVDA META TSLA\n"
-            "  python3 v3_screener.py --weeks 6 --min-premium 3.00\n"
+            "  python3 screener.py\n"
+            "  python3 screener.py --tickers NVDA META TSLA\n"
+            "  python3 screener.py --weeks 6 --min-premium 3.00\n"
         ),
     )
     parser.add_argument(
@@ -386,7 +386,7 @@ def main():
     weeks_min   = max(1, min(weeks_max, args.weeks_min))
     min_premium = args.min_premium
 
-    print(f"\nLuo Capital — V3 Call Spread Risk Reversal Screener")
+    print(f"\nLuo Capital — Call Spread Risk Reversal Screener")
     print(f"Run date    : {datetime.today().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Tickers     : {', '.join(tickers)}")
     print(f"Weeks       : W{weeks_min}–W{weeks_max}  |  Min net premium: ${min_premium:.2f}")
@@ -407,7 +407,7 @@ def main():
     for ticker in tickers:
         print(f"Scanning {ticker}...", end="", flush=True)
 
-        # ── Price (yfinance — only remaining yfinance call in v3) ──
+        # ── Price (yfinance — only remaining yfinance call here) ──
         try:
             hist = yf.Ticker(ticker).history(period="1d")
             if hist.empty:

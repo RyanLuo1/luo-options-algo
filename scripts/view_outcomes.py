@@ -137,7 +137,7 @@ def main():
             continue
 
         entry_credit = float(t['net_premium'])              # per-share, matches option quotes
-        # spread_width should be populated on every V3 save; recompute from
+        # spread_width should be populated on every save; recompute from
         # strikes if a legacy row missed it.
         spread_width = t.get('spread_width')
         if spread_width is None:

@@ -3,7 +3,7 @@
 ## Overview
 This project builds an options screening algorithm that identifies the best risk/reward **call spread risk reversal** opportunities across a watchlist of stocks. The system pulls options-chain data, constructs a three-leg structure per ticker/expiration, scores each candidate, ranks them, and signals which trades meet our credit and probability criteria.
 
-The platform is **single-strategy**: every scan runs the Call Spread Risk Reversal screener (V3). It is delivered through a web UI (Flask + React) for interactive scanning, with the same screener also runnable as a standalone Python CLI (`v3_screener.py`).
+The platform is **single-strategy**: every scan runs the Call Spread Risk Reversal screener. It is delivered through a web UI (Flask + React) for interactive scanning, with the same screener also runnable as a standalone Python CLI (`screener.py`).
 
 > **History:** Earlier baselines V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) have been removed (see Changelog). The proprietary risk reversal strategy is now the sole algorithm.
 
@@ -27,7 +27,7 @@ The project intentionally uses **two** data providers with a clear division of r
 - **Today's intraday bars** (the Massive Options plan returns `NOT_AUTHORIZED` for any aggregate dated today — see below)
 - **Indices**: the VIX (yfinance symbol `^VIX`) and any other index data the Options plan blocks
 - **Market-context inputs for scan logging**: SPY today's close and VIX today's close, logged into `scan_runs.spy_price` and `scan_runs.vix` so we can correlate scan output with market regime later (`server/app.py` → `_get_market_context()`)
-- **Fundamentals**: forward/trailing EPS, P/E ratios, `targetMeanPrice`, earnings dates — used by the fair-value chain in `v3_screener.get_fair_value`
+- **Fundamentals**: forward/trailing EPS, P/E ratios, `targetMeanPrice`, earnings dates — used by the fair-value chain in `screener.get_fair_value`
 - **Stock price input**: the per-ticker price fed to `scan_ticker()` comes from `yf.Ticker(ticker).history(period="1d")["Close"].iloc[-1]`
 
 ### Why the split exists
@@ -86,7 +86,7 @@ For each ticker we evaluate weekly expirations (default weeks 1–12) and attemp
 3. `targetMeanPrice` (analyst consensus)
 4. `None` — Leg B selected by delta range only
 
-See the [`v3_screener.py`](#v3_screenerpy) section for the full implementation.
+See the [`screener.py`](#screenerpy) section for the full implementation.
 
 ---
 
@@ -95,8 +95,8 @@ See the [`v3_screener.py`](#v3_screenerpy) section for the full implementation.
 ### `options_screener.py`
 Shared utilities module — holds the small set of helpers the screener depends on. (After the V2 removal it no longer contains any ranking/matrix logic.)
 - `TICKERS` — the default watchlist; imported by `server/app.py` and `event_filter.py`
-- `massive_client` — module-level Massive `RESTClient` initialized from `MASSIVE_API_KEY` env var; imported by `server/app.py` and `v3_screener.py` (the single client for the whole project)
-- `get_next_fridays(n)` — finds the next N Friday expiration targets; used by `v3_screener.py` and `server/app.py`
+- `massive_client` — module-level Massive `RESTClient` initialized from `MASSIVE_API_KEY` env var; imported by `server/app.py` and `screener.py` (the single client for the whole project)
+- `get_next_fridays(n)` — finds the next N Friday expiration targets; used by `screener.py` and `server/app.py`
 - `find_closest_strike(strikes, target)` — snaps a target price to the nearest available chain strike
 
 ### `event_filter.py`
@@ -215,7 +215,7 @@ Every scan execution is logged to Supabase so we can train ML models on real alg
 
 ### Trade Outcomes — `trade_outcomes` (realized P&L on expired trades)
 
-`trade_outcomes` stores the realized P&L for every saved tradebook entry once its expiration date has passed. Paired with `scan_runs` / `scan_results`, this is the **foundational labeled dataset for future ML work**: every triplet the V3 algorithm produced (saved or not) is linked to a scan, and every saved triplet that has expired is linked to a deterministic outcome.
+`trade_outcomes` stores the realized P&L for every saved tradebook entry once its expiration date has passed. Paired with `scan_runs` / `scan_results`, this is the **foundational labeled dataset for future ML work**: every triplet the algorithm produced (saved or not) is linked to a scan, and every saved triplet that has expired is linked to a deterministic outcome.
 
 **Table** — full DDL in `docs/trade_outcomes_schema.sql`. One row per tradebook entry, enforced by `unique (tradebook_id)`. Fields: `outcome_type` (`expired_capped` | `expired_sweet_spot` | `expired_credit_only` | `expired_partial` | `expired_breakeven` | `expired_loss` | `pending` — see the classification table below), `stock_price_at_expiration`, the three leg-payoff numbers, `realized_pnl`, `pnl_per_contract`, and a `notes` column (defaulted to `'auto-backfilled'` by the script). RLS lets users SELECT only their own rows via the denormalized `user_id` column; INSERT / UPDATE / DELETE are service-role only.
 
@@ -226,7 +226,7 @@ Every scan execution is logged to Supabase so we can train ML models on real alg
 - `realized_pnl     = entry_net_premium + leg_a_value − leg_b_liability − leg_c_liability`
 - `pnl_per_contract = realized_pnl × 100`  (one option contract represents 100 shares)
 
-**Outcome classification** — *payoff-zone-based*, not assignment-based. An earlier scheme labeled trades by which legs got assigned, but assignment alone is misleading: the capped zone above K_B assigns the short call **and** that's exactly where the trade hits its theoretical max profit, so "any short assigned" doesn't mean "partial outcome". Labels now reflect **where the underlying landed** relative to the four V3 strikes (`K_C < K_A < K_B`).
+**Outcome classification** — *payoff-zone-based*, not assignment-based. An earlier scheme labeled trades by which legs got assigned, but assignment alone is misleading: the capped zone above K_B assigns the short call **and** that's exactly where the trade hits its theoretical max profit, so "any short assigned" doesn't mean "partial outcome". Labels now reflect **where the underlying landed** relative to the four strikes (`K_C < K_A < K_B`).
 
 First match wins — order is load-bearing and matches the SQL `case` block in `docs/trade_outcomes_relabel_migration.sql`:
 
@@ -263,7 +263,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
   ```
   GEV  2026-05-01  credit=$ 10.26  spread=$ 5.00  →  S=$ 1062.95  P&L=$+1026.00  (max=$+1526.00, captured  67.2%)  (expired_credit_only)
   ```
-  All dollar values are **per-contract** (× 100), matching brokerage-statement scale and the backfill script's CLI output. `credit` and `spread` come from `tradebook` (`net_premium`, `spread_width`), `S` and `P&L` come from `trade_outcomes`. `max` is computed at render time as `(entry_credit + spread_width) × 100` — the theoretical peak P&L when the underlying closes exactly at Leg B strike (long call captures the full spread; both shorts expire worthless). `captured` is `pnl_per_contract / max × 100`, clamped at 100% on display so an anomalous row prints `100.0%` rather than `142.0%`; a single stderr line tags the ticker / expiration whenever the clamp fires. If `max <= 0` (shouldn't happen in V3 — both terms are positive by construction), the column prints `n/a`.
+  All dollar values are **per-contract** (× 100), matching brokerage-statement scale and the backfill script's CLI output. `credit` and `spread` come from `tradebook` (`net_premium`, `spread_width`), `S` and `P&L` come from `trade_outcomes`. `max` is computed at render time as `(entry_credit + spread_width) × 100` — the theoretical peak P&L when the underlying closes exactly at Leg B strike (long call captures the full spread; both shorts expire worthless). `captured` is `pnl_per_contract / max × 100`, clamped at 100% on display so an anomalous row prints `100.0%` rather than `142.0%`; a single stderr line tags the ticker / expiration whenever the clamp fires. If `max <= 0` (shouldn't happen in this strategy — both terms are positive by construction), the column prints `n/a`.
 - Summary footer: total trades, win rate, total P&L, **total max potential**, **capture efficiency** (`total P&L ÷ total max`), average per trade, **average capture per trade** (mean of per-trade ratios), best and worst trade (ticker + expiration + dollar), and a breakdown by `outcome_type` in best-to-worst order. Aggregate stats use **raw** per-trade ratios (no clamp) so any data anomaly surfaces in the totals instead of being silently capped.
 - **Color** — if `rich` is importable, per-trade lines are colored by `outcome_type` (not by P&L sign). The three positive-P&L zones (`expired_capped`, `expired_sweet_spot`, `expired_credit_only`) print green; `expired_partial` and `expired_breakeven` print yellow; `expired_loss` prints red; `pending` is dim. Aggregate stats in the summary (total P&L, average per trade) keep sign-based coloring. The outcome-type breakdown table reuses the per-trade color map so the eye can sweep a single column. If `rich` isn't installed the script still works in plain text. Installing it is optional: `pip install rich` (not in `server/requirements.txt` since it's only used by this local CLI).
 
@@ -274,9 +274,9 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
 
-### `v3_screener.py`
-- V3 Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
-- Run with `python3 v3_screener.py` or with optional arguments (see below)
+### `screener.py`
+- Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
+- Run with `python3 screener.py` or with optional arguments (see below)
 - Imports `get_next_fridays` and `massive_client` from `options_screener.py` — no duplicate client initialization
 - `scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None)` — uses Massive for options chains; delta comes pre-calculated; accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None)
 - `_parse_massive_contracts(raw)` — filters and normalizes Massive snapshot objects; applies IV ≤ 0.01 and volume < 20 exclusions; returns list of `{strike, premium, delta, volume}` dicts
@@ -383,13 +383,13 @@ The chain that makes this work:
 
 1. **`App.jsx` outer div** — `h-screen overflow-hidden flex flex-col`. Locks the page to 100vh; nothing escapes vertically.
 2. **`<main>`** — `flex-1 min-h-0 overflow-hidden flex flex-col`. Takes the remaining vertical space and is itself a flex column so its child can flex-grow.
-3. **`V3Table.jsx` outer div** — `flex-1 min-h-0 flex flex-col overflow-hidden`. Fills `<main>` and contains the metadata bar (with `shrink-0`), legend (with `shrink-0`), and the scroll wrapper.
+3. **`ResultsTable.jsx` outer div** — `flex-1 min-h-0 flex flex-col overflow-hidden`. Fills `<main>` and contains the metadata bar (with `shrink-0`), legend (with `shrink-0`), and the scroll wrapper.
 4. **Scroll wrapper inside the table component** — `flex-1 min-h-0 overflow-auto`. Both axes scroll: vertical for long row lists, horizontal for wide tables.
 5. **Sticky column headers** — `<th>` elements (not `<thead>` or `<tr>`) carry `sticky top-0 z-10 bg-gray-900 border-b border-gray-700`. Sticky must be on the cell, not the row, because `border-collapse: collapse` prevents `<tr>`-level sticky from working reliably across browsers. `bg-gray-900` is required so scrolled rows don't show through; the border-bottom on each `<th>` forms the divider line beneath the sticky header.
 
 **`min-h-0` is load-bearing** — without it on flex children, the default `min-height: auto` makes them refuse to shrink below their content size, defeating the overflow chain. Add it on every flex child in this stack.
 
-Empty / loading states (`EmptyState`, `LoadingSpinner`, `V3Table.jsx` no-data branch) all use `flex-1 min-h-0` so they fill the available space and center properly instead of hugging the top of `<main>`.
+Empty / loading states (`EmptyState`, `LoadingSpinner`, `ResultsTable.jsx` no-data branch) all use `flex-1 min-h-0` so they fill the available space and center properly instead of hugging the top of `<main>`.
 
 This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook`, `/login`) use natural document flow.
 
@@ -413,7 +413,7 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
   - `/trade`: minimal header with ← Back to Screener button + "Trade Editor" label
   - All navigation uses `useNavigate` (no `<Link>` or `<a>` tags)
 - **`Toast.jsx`** — fixed bottom-right toast notification; accepts `message` and `visible` props; fades in/out over 0.3s; used in App (after saving from the results table dropdown) and TradePage (after Save to Tradebook)
-- **`V3Table.jsx`** — sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value). Row click both opens the Save/Edit dropdown **and** calls `onRowSelect(row)` so App can update the chart ticker — same click does both.
+- **`ResultsTable.jsx`** — sortable ranked results table (15 columns: Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Prem, Leg B Strike, Leg B Prem, Leg C Strike, Leg C Prem, Net Prem, Spread Width, Score, P(Profit)%, Fair Value). Row click both opens the Save/Edit dropdown **and** calls `onRowSelect(row)` so App can update the chart ticker — same click does both.
   - Leg A Prem: `text-sky-400` (you pay); Leg B & C Prem: `text-emerald-400` (you collect); Net Prem: white bold; Score: emerald bold
   - Row colors: red bg when P(profit) is between minPP and minPP+10% (borderline); yellow bg when fair value unavailable; alternating gray otherwise
   - Metadata bar shows: algorithm, weeks range (`W{min} – W{max}` or `W{n}` if equal), min premium, min P(profit)%, triplets ranked, total evaluated
@@ -488,7 +488,7 @@ Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`
 ## Build Phases
 
 ### Phase 1 (Current)
-- On-demand Call Spread Risk Reversal scan via the web UI (or the `v3_screener.py` CLI)
+- On-demand Call Spread Risk Reversal scan via the web UI (or the `screener.py` CLI)
 - Options + historical stock data via Massive; today's stock price + indices via yfinance
 - Output: interactive ranked table in the web UI, with scans logged to Supabase for future ML
 - Language: Python (backend) + React (frontend)
@@ -548,7 +548,7 @@ sudo systemctl restart luocapital
 ---
 
 ## Notes
-- The platform runs a single algorithm: the Call Spread Risk Reversal screener (`v3_screener.py`, served by `/api/run`)
+- The platform runs a single algorithm: the Call Spread Risk Reversal screener (`screener.py`, served by `/api/run`)
 - Leg strikes are targeted by delta range (and Leg B by fair value when available); expirations snap to the nearest available Friday expiration for each target week
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)
 - **Renamed (2026-06):** the scan endpoint `/api/run_v3` → `/api/run` (handler `run_v3()` → `run()`). With V2 gone the `/api/run` name was free again, and the `_v3` suffix was just leftover technical debt. Backend route, frontend fetch URL (`useOptionsData.js`), startup banner, and docs all moved together. There is no compatibility alias — the old `/api/run_v3` path now 404s.

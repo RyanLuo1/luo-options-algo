@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/backfill_outcomes.py — compute realized P&L for expired V3 tradebook
+scripts/backfill_outcomes.py — compute realized P&L for expired tradebook
 trades and persist one row per trade to the `trade_outcomes` table.
 
 Usage:
@@ -123,7 +123,7 @@ def fetch_close_price(ticker, expiration_date, *, delays=(2, 5), use_cache=True)
 
 def compute_outcome(trade, stock_close):
     """
-    Apply the V3 call-spread-risk-reversal payoff formulas:
+    Apply the call-spread-risk-reversal payoff formulas:
         Leg A (long call) :  max(0, S - leg_a_strike)        # value to us
         Leg B (short call):  max(0, S - leg_b_strike)        # liability
         Leg C (short put) :  max(0, leg_c_strike - S)        # liability

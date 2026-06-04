@@ -10,7 +10,7 @@ import useChartData      from './hooks/useChartData'
 import Header            from './components/Header'
 import MacroEvents       from './components/MacroEvents'
 import Holdings          from './components/Holdings'
-import V3Table           from './components/V3Table'
+import ResultsTable      from './components/ResultsTable'
 import LoadingSpinner    from './components/LoadingSpinner'
 import Toast             from './components/Toast'
 import WeeksRangeSlider  from './components/WeeksRangeSlider'
@@ -470,7 +470,7 @@ export default function App() {
 
             {!loading && !error && (
               hasResult
-                ? <V3Table
+                ? <ResultsTable
                     rows={filteredRanked}
                     totalEvaluated={totalEvaluated}
                     weeksMinUsed={weeksMinUsed}
@@ -491,7 +491,7 @@ export default function App() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   // h-screen + overflow-hidden locks the page to viewport height so only the
-  // table body scrolls (see internal scroll in V3Table).
+  // table body scrolls (see internal scroll in ResultsTable).
   return (
     <div className="h-screen overflow-hidden bg-gray-950 text-gray-100 flex flex-col">
       <Header
