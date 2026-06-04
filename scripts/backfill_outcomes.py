@@ -16,6 +16,7 @@ pre-filter against the existing outcomes set so we don't waste Massive calls).
 
 import os
 import sys
+import time
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 
@@ -42,32 +43,80 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ── Massive stock-close fetch ────────────────────────────────────────────────
 
-def fetch_close_price(ticker, expiration_date):
-    """
-    Return the close on `expiration_date`, or the most recent prior trading
-    day if that exact date had no bar (holiday, half-day, etc.). Returns
-    None on any failure.
+# Process-local cache so multiple trades sharing a (ticker, expiration_date)
+# only hit Massive once. Keyed by (ticker, "YYYY-MM-DD"); value is the close
+# price or None when every retry attempt failed. The retry pass at the end
+# of main() looks for None entries here.
+_price_cache = {}
 
-    Massive's $30 Options plan includes historical stock aggregates (yesterday
-    and earlier), so this call works for any past expiration. The 7-day
-    backward window absorbs holiday-shifted expirations without extra logic.
+
+def _is_rate_limit_error(exc):
+    """Heuristic — Massive surfaces 429s with these substrings somewhere in str(exc)."""
+    msg = str(exc).lower()
+    return any(s in msg for s in (
+        '429', 'rate limit', 'too many requests', 'rate_limit', 'ratelimit',
+    ))
+
+
+def _fetch_with_retry(ticker, expiration_date, *, delays):
+    """
+    Fetch one (ticker, date) close from Massive. Retries on any exception
+    (rate-limit, transient 5xx, network blip) using the supplied delay
+    schedule. Returns the close price or None after exhausting retries.
+
+    `delays` is a tuple of sleeps between attempts. len(delays) + 1 attempts
+    total — e.g. delays=(2, 5) means: try, sleep 2s, try, sleep 5s, try, give up.
     """
     from_date = (expiration_date - timedelta(days=7)).strftime("%Y-%m-%d")
     to_date   = expiration_date.strftime("%Y-%m-%d")
-    try:
-        aggs = list(massive_client.list_aggs(
-            ticker, 1, "day", from_date, to_date, limit=10,
-        ))
-    except Exception as e:
-        print(f"  ! Massive fetch failed for {ticker} {expiration_date}: {e}",
-              file=sys.stderr)
-        return None
+    max_attempts = len(delays) + 1
 
-    valid = [a for a in aggs if a.close is not None and a.timestamp is not None]
-    if not valid:
-        return None
-    valid.sort(key=lambda a: a.timestamp)
-    return round(float(valid[-1].close), 4)
+    last_err = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            aggs = list(massive_client.list_aggs(
+                ticker, 1, "day", from_date, to_date, limit=10,
+            ))
+            valid = [a for a in aggs if a.close is not None and a.timestamp is not None]
+            if not valid:
+                return None
+            valid.sort(key=lambda a: a.timestamp)
+            return round(float(valid[-1].close), 4)
+        except Exception as e:
+            last_err = e
+            if attempt < max_attempts:
+                wait = delays[attempt - 1]
+                tag  = "rate-limited" if _is_rate_limit_error(e) else "errored"
+                print(f"  ⟳ {ticker} {expiration_date}: {tag}, "
+                      f"retrying in {wait}s (attempt {attempt}/{max_attempts}): {e}",
+                      file=sys.stderr)
+                time.sleep(wait)
+
+    print(f"  ! Massive fetch failed for {ticker} {expiration_date} after "
+          f"{max_attempts} attempts: {last_err}", file=sys.stderr)
+    return None
+
+
+def fetch_close_price(ticker, expiration_date, *, delays=(2, 5), use_cache=True):
+    """
+    Return the close on `expiration_date`, or the most recent prior trading
+    day if that exact date had no bar (holiday, half-day, etc.). Returns
+    None when every retry attempt failed.
+
+    Cached by (ticker, date) — repeats during the same run never call Massive.
+    Pass `use_cache=False` to force a fresh attempt (the retry pass in main()
+    uses this to re-try entries previously cached as None).
+
+    Massive's $30 Options plan includes historical stock aggregates, so this
+    call works for any past expiration. The 7-day backward window absorbs
+    holiday-shifted expirations without extra logic.
+    """
+    key = (ticker, expiration_date.strftime("%Y-%m-%d"))
+    if use_cache and key in _price_cache:
+        return _price_cache[key]
+    price = _fetch_with_retry(ticker, expiration_date, delays=delays)
+    _price_cache[key] = price
+    return price
 
 
 # ── P&L math ─────────────────────────────────────────────────────────────────
@@ -157,17 +206,45 @@ def main():
         print("No new trades to backfill, exiting cleanly.")
         return
 
-    print(f"Found {len(candidates)} expired trade(s) to process.\n")
+    print(f"Found {len(candidates)} expired trade(s) to process.")
 
+    # ── Pre-fetch pass: one Massive call per unique (ticker, date) pair ──────
+    # Many candidates share an expiration (e.g. multiple GEV trades expiring
+    # the same Friday). Fetching each unique combo once eliminates redundant
+    # API calls outright, which was the main rate-limit trigger.
+    unique_keys = sorted(
+        {(t['ticker'], exp_date) for t, exp_date in candidates},
+        key=lambda k: (k[1], k[0]),
+    )
+    print(f"\nFetching close prices for {len(unique_keys)} unique "
+          f"(ticker, date) pair(s)...")
+    for ticker, exp_date in unique_keys:
+        fetch_close_price(ticker, exp_date)  # populates _price_cache
+        time.sleep(0.2)  # gentle pacing between calls
+
+    # ── Retry pass: re-attempt anything still cached as None ────────────────
+    # Uses longer delays this time on the theory that a rate-limit ceiling
+    # has been reset by now.
+    failed = [k for k, v in _price_cache.items() if v is None]
+    if failed:
+        print(f"\nRetrying {len(failed)} failed fetch(es) with longer delays...")
+        for tkr, date_str in failed:
+            exp_date = date.fromisoformat(date_str)
+            fetch_close_price(tkr, exp_date, delays=(5, 10), use_cache=False)
+            time.sleep(0.5)
+
+    # ── Process pass: every candidate just reads from the cache ─────────────
+    print()
     successes = 0
     wins      = 0
     total_pnl = 0.0
 
     for trade, exp_date in candidates:
         ticker      = trade['ticker']
-        stock_close = fetch_close_price(ticker, exp_date)
+        stock_close = _price_cache.get((ticker, exp_date.strftime("%Y-%m-%d")))
         if stock_close is None:
-            print(f"  ! Skipping {ticker} {exp_date}: no stock price found")
+            print(f"  ! Skipping {ticker} {exp_date}: no stock price found "
+                  f"(rate-limited or unavailable after all retries)")
             continue
 
         outcome = compute_outcome(trade, stock_close)

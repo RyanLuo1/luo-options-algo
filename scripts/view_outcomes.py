@@ -89,15 +89,21 @@ def _format_capture(row, *, warn=False):
 
     Clamps the displayed value at 100% so an anomalous data point doesn't print
     e.g. "captured 142.0%". Aggregate stats in the summary keep raw values so
-    such anomalies still surface in totals. When `warn=True`, an over-100%
-    value also emits a single stderr line tagged with ticker/expiration.
+    such anomalies still surface in totals.
+
+    When `warn=True`, a stderr line fires only when the raw ratio exceeds
+    1.001 (0.1% tolerance). The clamp itself still kicks in at exactly 100% so
+    a row that came in at $3,305.00000001 / $3,305 prints "100.0%", but the
+    warning stays quiet — floating-point rounding shouldn't look like an
+    anomaly. Anything beyond 0.1% over-cap is treated as real and worth flagging.
     """
     max_p = row['max_potential']
     if max_p <= 0:
         return "  n/a"
-    pct = row['pnl_contract'] / max_p * 100.0
+    ratio = row['pnl_contract'] / max_p          # raw fraction (1.0 == exactly max profit)
+    pct   = ratio * 100.0
     if pct > 100.0:
-        if warn:
+        if warn and ratio > 1.001:
             print(f"warning: capture > 100% for {row['ticker']} {row['expiration']} "
                   f"(pnl=${row['pnl_contract']:.2f}, max=${max_p:.2f}) — "
                   f"clamping display at 100%", file=sys.stderr)
