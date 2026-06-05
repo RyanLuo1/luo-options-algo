@@ -6,7 +6,6 @@ import useAuth from './hooks/useAuth'
 import { loadScreenerState, saveScreenerState, clearScreenerSession } from './lib/sessionState'
 
 import useOptionsData    from './hooks/useOptionsData'
-import useChartData      from './hooks/useChartData'
 import Header            from './components/Header'
 import MacroEvents       from './components/MacroEvents'
 import Holdings          from './components/Holdings'
@@ -16,7 +15,7 @@ import SetupDetail       from './components/SetupDetail'
 import LoadingSpinner    from './components/LoadingSpinner'
 import Toast             from './components/Toast'
 import WeeksRangeSlider  from './components/WeeksRangeSlider'
-import StockChart        from './components/StockChart'
+import TradingViewChart, { toTvSymbol } from './components/TradingViewChart'
 
 export default function App() {
   const navigate = useNavigate()
@@ -49,7 +48,6 @@ export default function App() {
   // resulting displayed setup (computed below, once scan data is available).
   const [cardFilter,     setCardFilter]     = useState(persisted.cardFilter ?? null)
   const [selectedSetup,  setSelectedSetup]  = useState(persisted.selectedSetup ?? null)
-  const [chartTimeframe, setChartTimeframe] = useState(persisted.chartTimeframe ?? '1M')
   // Fullscreen-within-detail-zone toggle (not persisted — always opens in side panel).
   const [chartFull,      setChartFull]      = useState(false)
 
@@ -139,14 +137,14 @@ export default function App() {
       activeTickers, weeksMin, weeksMax,
       minPremium, minPProfit,
       minPremiumStr, minPProfitStr,
-      cardFilter, selectedSetup, chartTimeframe,
+      cardFilter, selectedSetup,
     })
   }, [
     tickerInput,
     activeTickers, weeksMin, weeksMax,
     minPremium, minPProfit,
     minPremiumStr, minPProfitStr,
-    cardFilter, selectedSetup, chartTimeframe,
+    cardFilter, selectedSetup,
   ])
 
   // The chart is contextual: it does NOT auto-open. Clear the selection when a
@@ -164,11 +162,6 @@ export default function App() {
       setChartFull(false)
     }
   }, [ranked])
-
-  // ── Chart data — fetched once at App level so the same data feeds both
-  //    the compact and expanded chart variants without re-fetch on toggle.
-  const { data: chartData, loading: chartLoading, error: chartError } =
-    useChartData(chartTicker, chartTimeframe)
 
   // ── Utility functions ──────────────────────────────────────────────────────
   function parseTickers(raw) {
@@ -204,7 +197,6 @@ export default function App() {
     setMinPProfitStr('50')
     setCardFilter(null)
     setSelectedSetup(null)
-    setChartTimeframe('1M')
     setChartFull(false)
     clearAll()
     clearScreenerSession()
@@ -617,15 +609,9 @@ export default function App() {
                       onSave={() => saveToTradebook(displayedSetup)}
                       onEdit={() => handleEdit(displayedSetup)}
                     />
-                    <StockChart
-                      ticker={chartTicker}
-                      timeframe={chartTimeframe}
-                      expanded
+                    <TradingViewChart
+                      symbol={toTvSymbol(chartTicker)}
                       fullscreen={isChartFull}
-                      data={chartData}
-                      loading={chartLoading}
-                      error={chartError}
-                      onTimeframeChange={setChartTimeframe}
                       onToggleFull={() => setChartFull(f => !f)}
                     />
                   </>
