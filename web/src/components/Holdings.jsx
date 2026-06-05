@@ -1,8 +1,10 @@
+// Inline chips row (no band wrapper) — folded into the controls area, since the
+// scanning chips echo the ticker input. Removing a chip filters that ticker.
 export default function Holdings({ tickers, skipped, onRemove }) {
   if (!tickers || tickers.length === 0) return null
 
   return (
-    <div className="px-6 py-3 flex items-center gap-2 flex-wrap border-b border-gray-800">
+    <div className="flex items-center gap-2 flex-wrap">
       <span className="text-gray-500 text-xs">Scanning:</span>
       {tickers.map(t => (
         <span

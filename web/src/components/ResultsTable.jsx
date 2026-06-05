@@ -1,40 +1,46 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
+// Scannable decision columns only (5). Score is the backend sort order but is
+// NOT shown; P(profit), the full leg breakdown (strikes / prems / deltas),
+// spread width, and fair value all live in the right-hand detail panel
+// (SetupDetail) — the row objects still carry that data, it's just not rendered
+// inline. `max_profit` is derived: (net_premium + spread_width) × 100.
+//
+// Layout: the table uses `table-fixed` with a <colgroup> that pins each column
+// to its `width`; a trailing spacer <col> (no width) then absorbs ALL leftover
+// space. So the 5 columns sit at fixed widths grouped on the left — identifier
+// columns (Rank, Ticker, Expiration) left-aligned, numeric (Net Premium, Max
+// Profit) right-aligned — with no stretching and no dead gaps between them,
+// regardless of how wide the table panel is.
+// Widths sized to fit each column's header (incl. the sort arrow) and its data,
+// so `table-fixed` never clips a header (e.g. "Rank ↑"). The sum (33rem) is the
+// table's natural width; the table column hugs it so there's no dead space after
+// Max Profit.
 const COLUMNS = [
-  { key: 'rank',         label: 'Rank',         align: 'right' },
-  { key: 'ticker',       label: 'Ticker',       align: 'left'  },
-  { key: 'expiration',   label: 'Expiration',   align: 'left'  },
-  { key: 'week',         label: 'Wk',           align: 'left'  },
-  { key: 'leg_a_strike', label: 'Leg A Strike', align: 'right' },
-  { key: 'leg_a_prem',   label: 'Leg A Prem',   align: 'right' },
-  { key: 'leg_b_strike', label: 'Leg B Strike', align: 'right' },
-  { key: 'leg_b_prem',   label: 'Leg B Prem',   align: 'right' },
-  { key: 'leg_c_strike', label: 'Leg C Strike', align: 'right' },
-  { key: 'leg_c_prem',   label: 'Leg C Prem',   align: 'right' },
-  { key: 'net_premium',  label: 'Net Prem',     align: 'right' },
-  { key: 'spread_width', label: 'Spread Width', align: 'right' },
-  { key: 'score',        label: 'Score',        align: 'right' },
-  { key: 'p_max_profit', label: 'P(Profit)%',  align: 'right' },
-  { key: 'fair_value',   label: 'Fair Value',   align: 'right' },
+  { key: 'rank',         label: 'Rank',        align: 'left',  width: '4.5rem' },
+  { key: 'ticker',       label: 'Ticker',      align: 'left',  width: '5.5rem' },
+  { key: 'expiration',   label: 'Expiration',  align: 'left',  width: '8rem'   },
+  { key: 'net_premium',  label: 'Net Premium', align: 'right', width: '7.5rem' },
+  { key: 'max_profit',   label: 'Max Profit',  align: 'right', width: '7.5rem' },
 ]
 
-function rowKey(row) {
+export function rowKey(row) {
   return `${row.ticker}-${row.expiration}-${row.leg_a_strike}-${row.leg_b_strike}-${row.leg_c_strike}`
 }
 
-export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onEdit, onSaveToTradebook, onRowSelect }) {
-  const [sortKey,      setSortKey]      = useState('rank')
-  const [sortAsc,      setSortAsc]      = useState(true)
-  const [openRow,      setOpenRow]      = useState(null)   // row object whose dropdown is open
-  const [dropdownPos,  setDropdownPos]  = useState({ x: 0, y: 0 })
+// Whole-dollar per-contract money (one option contract = 100 shares).
+function money0(n) {
+  return Math.round(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
 
-  // Close dropdown on any outside click
-  useEffect(() => {
-    if (!openRow) return
-    function close() { setOpenRow(null) }
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [openRow])
+function sortVal(r, key) {
+  if (key === 'max_profit') return (r.net_premium ?? 0) + (r.spread_width ?? 0)
+  return r[key] ?? ''
+}
+
+export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, onRowSelect, selectedKey }) {
+  const [sortKey, setSortKey] = useState('rank')
+  const [sortAsc, setSortAsc] = useState(true)
 
   if (!rows || rows.length === 0) {
     return (
@@ -48,8 +54,8 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
   }
 
   const sorted = [...rows].sort((a, b) => {
-    const av = a[sortKey] ?? ''
-    const bv = b[sortKey] ?? ''
+    const av = sortVal(a, sortKey)
+    const bv = sortVal(b, sortKey)
     if (av < bv) return sortAsc ? -1 : 1
     if (av > bv) return sortAsc ?  1 : -1
     return 0
@@ -58,19 +64,6 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
   function toggleSort(key) {
     if (sortKey === key) setSortAsc(v => !v)
     else { setSortKey(key); setSortAsc(true) }
-  }
-
-  function handleRowClick(e, row) {
-    e.stopPropagation()
-    // Always notify parent — keeps the chart in sync with the most recently
-    // clicked row, even when the user is just toggling the dropdown closed.
-    if (onRowSelect) onRowSelect(row)
-    if (openRow && rowKey(openRow) === rowKey(row)) {
-      setOpenRow(null)
-      return
-    }
-    setDropdownPos({ x: e.clientX, y: e.clientY + 6 })
-    setOpenRow(row)
   }
 
   const minPP = minPProfitUsed ?? 0.50
@@ -99,30 +92,17 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
         {totalEvaluated > 0 && (
           <><span>·</span><span className="text-gray-600"><span className="num">{totalEvaluated.toLocaleString()}</span> evaluated</span></>
         )}
-        <span className="ml-auto text-gray-600 italic">Click any row for actions</span>
       </div>
 
-      {/* legend */}
-      <div className="shrink-0 px-6 py-1.5 flex items-center gap-4 text-xs border-b border-gray-800 bg-gray-900/50">
-        <span className="text-gray-500">Legend:</span>
-        <span className="text-sky-400">Leg A Prem</span>
-        <span className="text-gray-600">=</span>
-        <span className="text-gray-500">you pay (long call)</span>
-        <span className="text-gray-600">·</span>
-        <span className="text-profit">Leg B &amp; C Prem</span>
-        <span className="text-gray-600">=</span>
-        <span className="text-gray-500">you collect</span>
-        <span className="text-gray-600">·</span>
-        <span className="text-red-400">Red = borderline P(profit)</span>
-        <span className="text-gray-600">·</span>
-        <span className="text-yellow-400">Yellow = no fair value</span>
-      </div>
-
-      {/* Scrollable table body. flex-1 + min-h-0 so it consumes remaining
-          height. overflow-auto handles both axes (sticky <th> below covers
-          vertical scroll; horizontal scroll still works for wide tables). */}
+      {/* Scrollable table body. */}
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full text-xs font-mono border-collapse">
+        <table className="w-full text-xs font-mono border-collapse table-fixed">
+          {/* Fixed column widths; the trailing spacer <col> (no width) absorbs
+              all leftover space so the 5 columns never stretch. */}
+          <colgroup>
+            {COLUMNS.map(col => <col key={col.key} style={{ width: col.width }} />)}
+            <col />
+          </colgroup>
           <thead>
             <tr>
               {COLUMNS.map(col => (
@@ -143,6 +123,8 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
                   )}
                 </th>
               ))}
+              {/* Spacer header cell — sits over the leftover-width <col>. */}
+              <th aria-hidden="true" className="sticky top-0 z-10 bg-gray-900 border-b border-gray-700 p-0" />
             </tr>
           </thead>
           <tbody>
@@ -152,46 +134,23 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
                 row={row}
                 idx={idx}
                 minPP={minPP}
-                isDropdownOpen={openRow ? rowKey(openRow) === rowKey(row) : false}
-                onRowClick={handleRowClick}
+                selected={selectedKey != null && rowKey(row) === selectedKey}
+                onRowClick={onRowSelect}
               />
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Fixed-position dropdown — escapes overflow-x-auto clip */}
-      {openRow && (
-        <div
-          style={{ position: 'fixed', top: dropdownPos.y, left: dropdownPos.x, zIndex: 1000 }}
-          onClick={e => e.stopPropagation()}
-          className="bg-gray-800 border border-gray-700 rounded shadow-xl w-48 py-1 text-xs"
-        >
-          <button
-            onClick={() => { onSaveToTradebook(openRow); setOpenRow(null) }}
-            className="w-full text-left px-4 py-2.5 text-gray-200 hover:bg-gray-700 transition-colors"
-          >
-            Save to Tradebook
-          </button>
-          <div className="border-t border-gray-700/60" />
-          <button
-            onClick={() => { onEdit(openRow); setOpenRow(null) }}
-            className="w-full text-left px-4 py-2.5 text-gray-200 hover:bg-gray-700 transition-colors"
-          >
-            Edit
-          </button>
-        </div>
-      )}
-
     </div>
   )
 }
 
-function ResultsRow({ row, idx, minPP, isDropdownOpen, onRowClick }) {
+function ResultsRow({ row, idx, minPP, selected, onRowClick }) {
   const borderline = row.p_max_profit >= minPP && row.p_max_profit <= minPP + 0.10
   const noFV       = !row.fv_available
 
-  const rowBg = isDropdownOpen
+  const rowBg = selected
     ? 'bg-gray-700/60'
     : borderline
       ? 'bg-red-950/30 hover:bg-red-950/50'
@@ -201,82 +160,40 @@ function ResultsRow({ row, idx, minPP, isDropdownOpen, onRowClick }) {
           ? 'bg-gray-950 hover:bg-gray-900'
           : 'bg-gray-900/50 hover:bg-gray-900'
 
+  const collected = (row.net_premium ?? 0) * 100
+  const maxProfit = ((row.net_premium ?? 0) + (row.spread_width ?? 0)) * 100
+
   return (
     <tr
-      onClick={e => onRowClick(e, row)}
+      onClick={() => onRowClick?.(row)}
       className={`border-b border-gray-800/60 transition-colors cursor-pointer ${rowBg}`}
     >
-
-      {/* Rank */}
-      <td className="px-3 py-2 text-right text-gray-500">{row.rank}</td>
+      {/* Rank — carries the accent left-marker when this row is the open setup */}
+      <td className={`px-3 py-2 text-left text-gray-500 num border-l-2 ${selected ? 'border-accent' : 'border-transparent'}`}>
+        {row.rank}
+      </td>
 
       {/* Ticker */}
       <td className="px-3 py-2 text-left font-bold text-gray-100">{row.ticker}</td>
 
-      {/* Expiration */}
-      <td className="px-3 py-2 text-left text-gray-300">{row.expiration}</td>
-
-      {/* Week */}
-      <td className="px-3 py-2 text-left text-gray-500">W{row.week}</td>
-
-      {/* Leg A Strike */}
-      <td className="px-3 py-2 text-right text-gray-300 num">
-        ${row.leg_a_strike?.toFixed(2) ?? '—'}
+      {/* Expiration (with Wk) */}
+      <td className="px-3 py-2 text-left text-gray-300 num whitespace-nowrap">
+        {row.expiration}
+        <span className="ml-2 text-gray-500">W{row.week}</span>
       </td>
 
-      {/* Leg A Prem — blue (you pay) */}
-      <td className="px-3 py-2 text-right text-sky-400 font-semibold num">
-        ${row.leg_a_prem?.toFixed(4) ?? '—'}
-      </td>
-
-      {/* Leg B Strike */}
-      <td className="px-3 py-2 text-right text-gray-300 num">
-        ${row.leg_b_strike?.toFixed(2) ?? '—'}
-      </td>
-
-      {/* Leg B Prem — profit token (you collect) */}
+      {/* Net Premium — collected credit, per contract */}
       <td className="px-3 py-2 text-right text-profit font-semibold num">
-        ${row.leg_b_prem?.toFixed(4) ?? '—'}
+        +${money0(collected)}
       </td>
 
-      {/* Leg C Strike */}
-      <td className="px-3 py-2 text-right text-gray-300 num">
-        ${row.leg_c_strike?.toFixed(2) ?? '—'}
+      {/* Max Profit — (net_premium + spread_width) × 100 */}
+      <td className="px-3 py-2 text-right text-profit font-bold num">
+        ${money0(maxProfit)}
       </td>
 
-      {/* Leg C Prem — profit token (you collect) */}
-      <td className="px-3 py-2 text-right text-profit font-semibold num">
-        ${row.leg_c_prem?.toFixed(4) ?? '—'}
-      </td>
-
-      {/* Net Prem — bold white */}
-      <td className="px-3 py-2 text-right text-white font-bold num">
-        ${row.net_premium?.toFixed(4) ?? '—'}
-      </td>
-
-      {/* Spread Width */}
-      <td className="px-3 py-2 text-right text-gray-400 num">
-        {row.spread_width?.toFixed(2) ?? '—'}
-      </td>
-
-      {/* Score — emerald */}
-      <td className="px-3 py-2 text-right text-emerald-400 font-bold num">
-        {row.score?.toFixed(6) ?? '—'}
-      </td>
-
-      {/* P(Profit)% */}
-      <td className="px-3 py-2 text-right text-gray-300 num">
-        {row.p_max_profit != null ? `${(row.p_max_profit * 100).toFixed(2)}%` : '—'}
-      </td>
-
-      {/* Fair Value */}
-      <td className="px-3 py-2 text-right num">
-        {row.fv_available
-          ? <span className="text-gray-400">${row.fair_value?.toFixed(2)}</span>
-          : <span className="text-yellow-500">N/A</span>
-        }
-      </td>
-
+      {/* Flexible spacer — absorbs the leftover width (matches the header spacer). */}
+      <td aria-hidden="true" className="p-0" />
     </tr>
   )
 }

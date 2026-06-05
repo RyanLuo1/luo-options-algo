@@ -10,7 +10,9 @@ import useChartData      from './hooks/useChartData'
 import Header            from './components/Header'
 import MacroEvents       from './components/MacroEvents'
 import Holdings          from './components/Holdings'
+import OverviewCard      from './components/OverviewCard'
 import ResultsTable      from './components/ResultsTable'
+import SetupDetail       from './components/SetupDetail'
 import LoadingSpinner    from './components/LoadingSpinner'
 import Toast             from './components/Toast'
 import WeeksRangeSlider  from './components/WeeksRangeSlider'
@@ -38,14 +40,52 @@ export default function App() {
   const [minPremiumStr,   setMinPremiumStr]   = useState(persisted.minPremiumStr ?? '5.00')
   const [minPProfitStr,   setMinPProfitStr]   = useState(persisted.minPProfitStr ?? '50')
 
-  // ── Stock chart ────────────────────────────────────────────────────────────
-  const [selectedChartTicker, setSelectedChartTicker] = useState(persisted.selectedChartTicker ?? null)
-  const [chartTimeframe,      setChartTimeframe]      = useState(persisted.chartTimeframe      ?? '1M')
-  const [chartExpanded,       setChartExpanded]       = useState(persisted.chartExpanded       ?? false)
+  // ── Detail zone (card-as-filter + per-setup detail) ─────────────────────────
+  // `cardFilter` = the ticker an overview card has focused on (null = no filter,
+  // table shows the full ranked list); it drives the table filter AND which card
+  // gets the accent state. `selectedSetup` = an explicit row override; null means
+  // "use the context default" (the filter ticker's best, else the overall
+  // rank-1). The chart ticker and selected-row highlight derive from the
+  // resulting displayed setup (computed below, once scan data is available).
+  const [cardFilter,     setCardFilter]     = useState(persisted.cardFilter ?? null)
+  const [selectedSetup,  setSelectedSetup]  = useState(persisted.selectedSetup ?? null)
+  const [chartTimeframe, setChartTimeframe] = useState(persisted.chartTimeframe ?? '1M')
+  // Fullscreen-within-detail-zone toggle (not persisted — always opens in side panel).
+  const [chartFull,      setChartFull]      = useState(false)
+
+  // Clicking a card toggles the single-ticker filter on/off (or switches it),
+  // clearing any explicit row override so the detail falls back to that
+  // context's default best setup.
+  function toggleCardFilter(ticker) {
+    setSelectedSetup(null)
+    setCardFilter(prev => (prev === ticker ? null : ticker))
+  }
+  // Clicking a table row picks that specific setup (overrides the default).
+  function selectRow(row) {
+    setSelectedSetup(row)
+  }
+
+  // Macro events band — reference chrome, collapsed by default (not persisted,
+  // so it always loads collapsed). Toggled from the 'macro ⌄' control.
+  const [macroOpen, setMacroOpen] = useState(false)
+
+  // Horizontal overview strip — ref + helpers for the chevron / wheel scrolling.
+  const overviewScrollRef = useRef(null)
+  function scrollOverview(dir) {
+    overviewScrollRef.current?.scrollBy({ left: dir * 280, behavior: 'smooth' })
+  }
+  function handleOverviewWheel(e) {
+    // Translate vertical wheel into horizontal scroll within the strip so mouse
+    // users (no horizontal wheel) can move through the cards. Trackpad
+    // horizontal swipe already works natively via overflow-x-auto.
+    const el = overviewScrollRef.current
+    if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY
+  }
 
   const {
     marketOpen, lastRun, macroEvents,
-    ranked, tickersUsed, tickersSkipped,
+    ranked, byTicker, tickersWithResults,
+    tickersUsed, tickersSkipped,
     weeksMinUsed, weeksMaxUsed,
     minPremiumUsed, minPProfitUsed,
     totalEvaluated, hasResult, scanId,
@@ -65,6 +105,32 @@ export default function App() {
     }
   }, [tickersUsed])
 
+  // ── Client-side filtering + detail-panel selection (all derived) ────────────
+  // 1) Holdings pill filter (activeTickers); 2) card filter (single ticker).
+  const baseRanked = ranked.filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
+  const tableRows = (cardFilter ? baseRanked.filter(r => r.ticker === cardFilter) : baseRanked)
+    .map((r, i) => ({ ...r, rank: i + 1 }))
+
+  // Overview cards mirror the Holdings filter only — they stay visible while a
+  // card filter is active so the user can toggle / switch it.
+  const overviewCards = byTicker
+    .filter(g => activeTickers.length === 0 || activeTickers.includes(g.ticker))
+
+  // Setup shown in the detail panel: explicit row override if present, else the
+  // context default (the filter ticker's best, else the overall rank-1).
+  const contextDefault = cardFilter
+    ? (byTicker.find(g => g.ticker === cardFilter)?.best ?? null)
+    : (baseRanked[0] ?? null)
+  const displayedSetup = selectedSetup ?? contextDefault
+  const chartTicker    = displayedSetup?.ticker ?? null
+
+  // Row highlight marks the displayed setup's row (matches ResultsTable.rowKey).
+  const selectedKey = displayedSetup
+    ? `${displayedSetup.ticker}-${displayedSetup.expiration}-${displayedSetup.leg_a_strike}-${displayedSetup.leg_b_strike}-${displayedSetup.leg_c_strike}`
+    : null
+
+  const isChartFull = chartFull && !!chartTicker
+
   // Persist control state on every change. Cheap — sessionStorage write of a
   // small JSON blob. Cleared on logout (Header) or tab close.
   useEffect(() => {
@@ -73,31 +139,36 @@ export default function App() {
       activeTickers, weeksMin, weeksMax,
       minPremium, minPProfit,
       minPremiumStr, minPProfitStr,
-      selectedChartTicker, chartTimeframe, chartExpanded,
+      cardFilter, selectedSetup, chartTimeframe,
     })
   }, [
     tickerInput,
     activeTickers, weeksMin, weeksMax,
     minPremium, minPProfit,
     minPremiumStr, minPProfitStr,
-    selectedChartTicker, chartTimeframe, chartExpanded,
+    cardFilter, selectedSetup, chartTimeframe,
   ])
 
-  // Auto-select rank-1 ticker when a new scan completes (or current selection
-  // is no longer in results). Depends on the raw scan array (stable ref from
-  // useOptionsData) — the derived/filtered array would re-fire every render.
+  // The chart is contextual: it does NOT auto-open. Clear the selection when a
+  // new scan arrives so the detail zone shows just the table until the user
+  // clicks a card or table row. The ref is primed with the initial `ranked` so
+  // the first post-hydration run is a no-op (preserves any persisted selection
+  // across in-session navigation); only a genuinely new scan (new `ranked`
+  // reference from useOptionsData) clears it.
+  const lastRankedRef = useRef(ranked)
   useEffect(() => {
-    if (ranked.length === 0) return
-    const exists = ranked.some(r => r.ticker === selectedChartTicker)
-    if (!selectedChartTicker || !exists) {
-      setSelectedChartTicker(ranked[0].ticker)
+    if (ranked !== lastRankedRef.current) {
+      lastRankedRef.current = ranked
+      setCardFilter(null)
+      setSelectedSetup(null)
+      setChartFull(false)
     }
-  }, [ranked, selectedChartTicker])
+  }, [ranked])
 
   // ── Chart data — fetched once at App level so the same data feeds both
   //    the compact and expanded chart variants without re-fetch on toggle.
   const { data: chartData, loading: chartLoading, error: chartError } =
-    useChartData(selectedChartTicker, chartTimeframe)
+    useChartData(chartTicker, chartTimeframe)
 
   // ── Utility functions ──────────────────────────────────────────────────────
   function parseTickers(raw) {
@@ -106,11 +177,6 @@ export default function App() {
       .map(t => t.trim().toUpperCase().replace(/^\$/, ''))
       .filter(Boolean)
   }
-
-  // ── Client-side filtering ────────────────────────────────────────────────────
-  const filteredRanked = ranked
-    .filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
-    .map((r, i) => ({ ...r, rank: i + 1 }))
 
   // ── Staleness detection ────────────────────────────────────────────────────
   const isStale = hasResult && (
@@ -136,9 +202,10 @@ export default function App() {
     setMinPremiumStr('5.00')
     setMinPProfit(0.50)
     setMinPProfitStr('50')
-    setSelectedChartTicker(null)
+    setCardFilter(null)
+    setSelectedSetup(null)
     setChartTimeframe('1M')
-    setChartExpanded(false)
+    setChartFull(false)
     clearAll()
     clearScreenerSession()
   }
@@ -158,6 +225,10 @@ export default function App() {
   // ── Handlers ───────────────────────────────────────────────────────────────
   function handleRemoveTicker(ticker) {
     setActiveTickers(prev => prev.filter(t => t !== ticker))
+    // Drop the card filter / row override if it pointed at the removed ticker,
+    // so the detail panel falls back to the overall default.
+    if (cardFilter === ticker) setCardFilter(null)
+    setSelectedSetup(prev => (prev?.ticker === ticker ? null : prev))
   }
 
   // Validation helpers
@@ -299,191 +370,276 @@ export default function App() {
   // ── Screener content (inlined so it has closure access to all state) ────────
   const screenerContent = (
     <>
-      <MacroEvents macroEvents={macroEvents} />
+      {/* Controls — a single labeled surface panel of evenly-spaced contained
+          fields; the 'macro ⌄' toggle sits at the panel's right edge and the
+          scanning chips fold in as a sub-row within the panel. */}
+      <div className="shrink-0 px-3 py-3">
+        <div className="bg-surface border border-subtle rounded-lg px-4 py-3">
 
-      {/* Control bar — inputs cluster on the left, stock chart fills the right */}
-      <div className="px-6 py-3 border-b border-gray-800 flex items-start gap-6 flex-wrap">
-
-        {/* Inputs cluster */}
-        <div className="flex items-start gap-8 flex-wrap shrink-0">
-
-        {/* Tickers */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 font-medium">Tickers</label>
-          <input
-            type="text"
-            value={tickerInput}
-            onChange={e => setTickerInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
-            placeholder="NVDA, META, TSLA…"
-            disabled={loading}
-            className="w-64 bg-gray-800 text-gray-100 border border-gray-700 rounded px-3 py-1.5
-                       text-sm font-mono placeholder-gray-600
-                       focus:outline-none focus:border-indigo-500
-                       disabled:opacity-50"
-          />
-          <span className="text-gray-600 text-xs">Comma or space · blank = default watchlist</span>
-        </div>
-
-        {/* Weeks range slider */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 font-medium">Weeks range</label>
-          <div className="flex items-center h-7">
-            <WeeksRangeSlider
-              min={1}
-              max={12}
-              valueMin={weeksMin}
-              valueMax={weeksMax}
-              onChange={(mn, mx) => { setWeeksMin(mn); setWeeksMax(mx) }}
-              disabled={loading}
-            />
-          </div>
-          <span className="text-gray-600 text-xs">
-            Weeks {weeksMin} – {weeksMax}
-          </span>
-        </div>
-
-        {/* Min Net Premium — free text + bumpers */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 font-medium">Min Net Premium $</label>
-          <div className="flex items-center gap-1">
+          {/* Panel header: CONTROLS label + macro toggle (right edge) */}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-semibold tracking-wider uppercase text-tertiary">Controls</span>
             <button
-              onClick={() => bumpMinPremium(-0.50)}
-              disabled={loading || minPremium <= 0}
-              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
-                         text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
-            >−</button>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={minPremiumStr}
-              onChange={handleMinPremiumChange}
-              onBlur={handleMinPremiumBlur}
-              onKeyDown={e => e.key === 'Enter' && !loading && minPremiumValid && handleRun()}
-              disabled={loading}
-              placeholder="e.g. 4.25"
-              className={`w-20 bg-gray-800 text-gray-100 border rounded px-2 py-1.5
-                         text-sm font-mono placeholder-gray-600 text-right
-                         focus:outline-none disabled:opacity-50
-                         ${minPremiumValid
-                           ? 'border-gray-700 focus:border-violet-500'
-                           : 'border-red-500 focus:border-red-400'}`}
-            />
-            <button
-              onClick={() => bumpMinPremium(+0.50)}
-              disabled={loading}
-              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
-                         text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
-            >+</button>
+              onClick={() => setMacroOpen(o => !o)}
+              title="Show/hide upcoming macro events"
+              className="text-xs text-secondary hover:text-primary transition-colors
+                         bg-surface-raised border border-subtle rounded-md px-2.5 py-1"
+            >
+              macro {macroOpen ? '⌃' : '⌄'}
+            </button>
           </div>
-          <span className="text-gray-600 text-xs">Net credit required</span>
-        </div>
 
-        {/* Min P(Profit) — free text + bumpers */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500 font-medium">Min P(Profit) %</label>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => bumpMinPProfit(-1)}
-              disabled={loading || Math.round(minPProfit * 100) <= 1}
-              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
-                         text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
-            >−</button>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={minPProfitStr}
-              onChange={handleMinPProfitChange}
-              onBlur={handleMinPProfitBlur}
-              onKeyDown={e => e.key === 'Enter' && !loading && minPProfitValid && handleRun()}
-              disabled={loading}
-              placeholder="1–99"
-              className={`w-20 bg-gray-800 text-gray-100 border rounded px-2 py-1.5
-                         text-sm font-mono placeholder-gray-600 text-right
-                         focus:outline-none disabled:opacity-50
-                         ${minPProfitValid
-                           ? 'border-gray-700 focus:border-violet-500'
-                           : 'border-red-500 focus:border-red-400'}`}
-            />
-            <button
-              onClick={() => bumpMinPProfit(+1)}
-              disabled={loading || Math.round(minPProfit * 100) >= 99}
-              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-700
-                         text-gray-300 hover:bg-gray-700 disabled:opacity-40 text-sm font-bold"
-            >+</button>
+          {/* Contained fields, evenly spaced */}
+          <div className="flex items-start gap-5 flex-wrap">
+
+            {/* Tickers */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium text-secondary">Tickers</label>
+              <input
+                type="text"
+                value={tickerInput}
+                onChange={e => setTickerInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
+                placeholder="NVDA, META, TSLA… · blank = watchlist"
+                title="Comma- or space-separated tickers · blank = default watchlist"
+                disabled={loading}
+                className="w-64 h-[34px] bg-surface-raised text-gray-100 border border-subtle rounded-md px-3
+                           text-sm font-mono placeholder-gray-600
+                           focus:outline-none focus:border-accent disabled:opacity-50"
+              />
+            </div>
+
+            {/* Weeks range */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium text-secondary">Weeks range</label>
+              <div className="flex items-center gap-3 h-[34px] bg-surface-raised border border-subtle rounded-md px-3">
+                <WeeksRangeSlider
+                  min={1}
+                  max={12}
+                  valueMin={weeksMin}
+                  valueMax={weeksMax}
+                  onChange={(mn, mx) => { setWeeksMin(mn); setWeeksMax(mx) }}
+                  disabled={loading}
+                />
+                <span className="text-xs num text-secondary whitespace-nowrap">{weeksMin}–{weeksMax}</span>
+              </div>
+            </div>
+
+            {/* Min Net Premium — unified stepper */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium text-secondary">Min Net Premium $</label>
+              <div
+                title="Minimum net credit required (per share)"
+                className={`flex items-center h-[34px] bg-surface-raised border rounded-md transition-colors
+                            ${minPremiumValid ? 'border-subtle focus-within:border-accent' : 'border-loss'}`}
+              >
+                <button
+                  onClick={() => bumpMinPremium(-0.50)}
+                  disabled={loading || minPremium <= 0}
+                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
+                >−</button>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={minPremiumStr}
+                  onChange={handleMinPremiumChange}
+                  onBlur={handleMinPremiumBlur}
+                  onKeyDown={e => e.key === 'Enter' && !loading && minPremiumValid && handleRun()}
+                  disabled={loading}
+                  placeholder="5.00"
+                  className="w-14 bg-transparent text-gray-100 text-sm font-mono text-center
+                             placeholder-gray-600 focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  onClick={() => bumpMinPremium(+0.50)}
+                  disabled={loading}
+                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
+                >+</button>
+              </div>
+            </div>
+
+            {/* Min P(Profit) — unified stepper */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium text-secondary">Min P(Profit) %</label>
+              <div
+                title="Minimum P(max profit) threshold (1–99%)"
+                className={`flex items-center h-[34px] bg-surface-raised border rounded-md transition-colors
+                            ${minPProfitValid ? 'border-subtle focus-within:border-accent' : 'border-loss'}`}
+              >
+                <button
+                  onClick={() => bumpMinPProfit(-1)}
+                  disabled={loading || Math.round(minPProfit * 100) <= 1}
+                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
+                >−</button>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={minPProfitStr}
+                  onChange={handleMinPProfitChange}
+                  onBlur={handleMinPProfitBlur}
+                  onKeyDown={e => e.key === 'Enter' && !loading && minPProfitValid && handleRun()}
+                  disabled={loading}
+                  placeholder="50"
+                  className="w-14 bg-transparent text-gray-100 text-sm font-mono text-center
+                             placeholder-gray-600 focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  onClick={() => bumpMinPProfit(+1)}
+                  disabled={loading || Math.round(minPProfit * 100) >= 99}
+                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
+                >+</button>
+              </div>
+            </div>
+
           </div>
-          <span className="text-gray-600 text-xs">P(max profit) threshold</span>
-        </div>
+
+          {/* Scanning chips — a sub-row within the panel, divided from the fields */}
+          {tickersUsed.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-subtle">
+              <Holdings
+                tickers={activeTickers}
+                skipped={tickersSkipped}
+                onRemove={handleRemoveTicker}
+              />
+            </div>
+          )}
 
         </div>
-        {/* End inputs cluster */}
-
-        {/* Stock chart — compact variant. Takes the remaining horizontal space.
-            With flex-wrap the chart drops to its own full-width row on narrow
-            viewports. Hidden when the chart is expanded (rendered in <main> instead). */}
-        {!chartExpanded && (
-          <div className="flex-1 min-w-[320px]">
-            <StockChart
-              ticker={selectedChartTicker}
-              timeframe={chartTimeframe}
-              expanded={false}
-              data={chartData}
-              loading={chartLoading}
-              error={chartError}
-              onTimeframeChange={setChartTimeframe}
-              onToggleExpanded={() => setChartExpanded(true)}
-            />
-          </div>
-        )}
-
       </div>
 
-      {/* Holdings filter bar */}
-      {tickersUsed.length > 0 && (
-        <Holdings
-          tickers={activeTickers}
-          skipped={tickersSkipped}
-          onRemove={handleRemoveTicker}
-        />
+      {/* Macro events band — collapsed by default, revealed by the toggle above. */}
+      {macroOpen && <MacroEvents macroEvents={macroEvents} />}
+
+      {/* Per-ticker overview — each ticker's single best setup as a card.
+          Only after a scan returns results. Single card = one full-width rich
+          card; multiple = ONE horizontal strip that scrolls sideways (never
+          wraps), so the overview is a fixed height regardless of how many
+          tickers qualify and never pushes the detail zone down. shrink-0. */}
+      {!loading && !error && hasResult && overviewCards.length > 0 && (
+        <section className="shrink-0 px-6 py-3 border-b border-subtle">
+          <div className="text-xs text-secondary mb-2.5">
+            Best per ticker · <span className="num">{tickersWithResults}</span> of{' '}
+            <span className="num">{tickersUsed.length}</span> names had qualifying trades
+          </div>
+          {overviewCards.length === 1 ? (
+            <OverviewCard
+              ticker={overviewCards[0].ticker}
+              best={overviewCards[0].best}
+              count={overviewCards[0].count}
+              isBest
+              selected={cardFilter === overviewCards[0].ticker}
+              compact={false}
+              onSelect={() => toggleCardFilter(overviewCards[0].ticker)}
+            />
+          ) : (
+            <div className="relative">
+              {/* horizontal strip — fixed-width cards, never wraps; the next
+                  card peeks at the right edge so it's obvious the row continues.
+                  Scrollbar hidden but scrollable (trackpad swipe / wheel / chevrons). */}
+              <div
+                ref={overviewScrollRef}
+                onWheel={handleOverviewWheel}
+                className="flex gap-3 overflow-x-auto no-scrollbar scroll-smooth pr-10 pt-2.5"
+              >
+                {overviewCards.map((g, i) => (
+                  <div key={g.ticker} className="shrink-0 w-[260px]">
+                    <OverviewCard
+                      ticker={g.ticker}
+                      best={g.best}
+                      count={g.count}
+                      isBest={i === 0}
+                      selected={cardFilter === g.ticker}
+                      compact
+                      onSelect={() => toggleCardFilter(g.ticker)}
+                    />
+                  </div>
+                ))}
+              </div>
+              {/* scroll affordance for mouse users — subtle chevrons */}
+              <button
+                onClick={() => scrollOverview(-1)}
+                aria-label="Scroll overview left"
+                className="absolute left-0 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center
+                           rounded-full bg-surface border border-subtle text-secondary
+                           hover:text-primary hover:border-strong shadow"
+              >‹</button>
+              <button
+                onClick={() => scrollOverview(1)}
+                aria-label="Scroll overview right"
+                className="absolute right-0 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center
+                           rounded-full bg-surface border border-subtle text-secondary
+                           hover:text-primary hover:border-strong shadow"
+              >›</button>
+            </div>
+          )}
+        </section>
       )}
 
+      {/* Detail zone — TWO columns: ranked table (left, ~60%) + right zone
+          (~40%) where SetupDetail stacks ABOVE the chart (the chart fills the
+          remaining height, so there's no empty void). The chart's ⤢ expands it
+          to fill the whole zone (table + detail hidden). */}
       <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        {/* Expanded chart takes over the whole table area until closed. */}
-        {chartExpanded ? (
-          <div className="flex-1 min-h-0 flex flex-col p-3">
-            <StockChart
-              ticker={selectedChartTicker}
-              timeframe={chartTimeframe}
-              expanded
-              data={chartData}
-              loading={chartLoading}
-              error={chartError}
-              onTimeframeChange={setChartTimeframe}
-              onToggleExpanded={() => setChartExpanded(false)}
-            />
-          </div>
-        ) : (
-          <>
-            {loading && <LoadingSpinner />}
+        {loading && <LoadingSpinner />}
 
-            {!loading && error && <ErrorBanner error={error} />}
+        {!loading && error && <ErrorBanner error={error} />}
 
-            {!loading && !error && (
-              hasResult
-                ? <ResultsTable
-                    rows={filteredRanked}
+        {!loading && !error && (
+          hasResult ? (
+            <div className="flex-1 min-h-0 flex gap-3 p-3">
+              {/* Left — ranked table. Width = the 33rem column sum + ~2rem so the
+                  trailing spacer gives a little padding after Max Profit (no large
+                  void); the chart column takes all the rest. Hidden in fullscreen. */}
+              {!isChartFull && (
+                <div className="w-[35rem] shrink-0 min-h-0 flex flex-col">
+                  <ResultsTable
+                    rows={tableRows}
                     totalEvaluated={totalEvaluated}
                     weeksMinUsed={weeksMinUsed}
                     weeksMaxUsed={weeksMaxUsed}
                     minPremiumUsed={minPremiumUsed}
                     minPProfitUsed={minPProfitUsed}
-                    onEdit={handleEdit}
-                    onSaveToTradebook={saveToTradebook}
-                    onRowSelect={row => setSelectedChartTicker(row.ticker)}
+                    selectedKey={selectedKey}
+                    onRowSelect={selectRow}
                   />
-                : <EmptyState />
-            )}
-          </>
+                </div>
+              )}
+
+              {/* Right — detail zone (~62%, the wider column): SetupDetail (compact
+                  band) stacked above the chart, which fills the rest of the column.
+                  Defaults to the overall rank-1 setup on scan; card filter / row
+                  click drive both. ⤢/⤡ toggles fullscreen (chart fills the zone). */}
+              <div className="flex-1 min-w-[360px] min-h-0 flex flex-col">
+                {displayedSetup ? (
+                  <>
+                    <SetupDetail
+                      setup={displayedSetup}
+                      onSave={() => saveToTradebook(displayedSetup)}
+                      onEdit={() => handleEdit(displayedSetup)}
+                    />
+                    <StockChart
+                      ticker={chartTicker}
+                      timeframe={chartTimeframe}
+                      expanded
+                      fullscreen={isChartFull}
+                      data={chartData}
+                      loading={chartLoading}
+                      error={chartError}
+                      onTimeframeChange={setChartTimeframe}
+                      onToggleFull={() => setChartFull(f => !f)}
+                    />
+                  </>
+                ) : (
+                  <div className="flex-1 min-h-0 flex items-center justify-center text-center
+                                  rounded border border-subtle bg-surface px-4">
+                    <p className="text-secondary text-sm">select a setup to view its detail &amp; chart</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <EmptyState />
+          )
         )}
       </main>
     </>

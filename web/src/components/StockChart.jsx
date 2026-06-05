@@ -45,9 +45,9 @@ function formatSessionDate(yyyyMmDd) {
  * variants without re-fetch on toggle.
  */
 export default function StockChart({
-  ticker, timeframe, expanded,
+  ticker, timeframe, expanded, fullscreen,
   data, loading, error,
-  onTimeframeChange, onToggleExpanded,
+  onTimeframeChange, onToggleFull, onClose,
 }) {
   const wrapperClass = expanded
     ? 'flex-1 min-h-0 flex flex-col bg-gray-900/40 border border-gray-800 rounded'
@@ -59,9 +59,11 @@ export default function StockChart({
         ticker={ticker}
         timeframe={timeframe}
         expanded={expanded}
+        fullscreen={fullscreen}
         data={data}
         onTimeframeChange={onTimeframeChange}
-        onToggleExpanded={onToggleExpanded}
+        onToggleFull={onToggleFull}
+        onClose={onClose}
       />
 
       {!ticker && <CenteredMessage>Run a scan to see chart</CenteredMessage>}
@@ -74,7 +76,7 @@ export default function StockChart({
   )
 }
 
-function ChartHeader({ ticker, timeframe, expanded, data, onTimeframeChange, onToggleExpanded }) {
+function ChartHeader({ ticker, timeframe, expanded, fullscreen, data, onTimeframeChange, onToggleFull, onClose }) {
   const price       = data?.current_price
   const changePct   = data?.change_pct
   const changeColor = changePct == null
@@ -118,13 +120,24 @@ function ChartHeader({ ticker, timeframe, expanded, data, onTimeframeChange, onT
         >
           {TIMEFRAMES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <button
-          onClick={onToggleExpanded}
-          title={expanded ? 'Close chart' : 'Expand chart'}
-          className="text-gray-500 hover:text-gray-200 text-base leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800"
-        >
-          {expanded ? '×' : '⤢'}
-        </button>
+        {onToggleFull && (
+          <button
+            onClick={onToggleFull}
+            title={fullscreen ? 'Collapse chart' : 'Expand chart to full width'}
+            className="text-gray-500 hover:text-gray-200 text-base leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800"
+          >
+            {fullscreen ? '⤡' : '⤢'}
+          </button>
+        )}
+        {onClose && (
+          <button
+            onClick={onClose}
+            title="Close chart"
+            className="text-gray-500 hover:text-gray-200 text-base leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800"
+          >
+            ×
+          </button>
+        )}
       </div>
     </div>
   )
@@ -153,6 +166,21 @@ function ChartBody({ data, timeframe, expanded }) {
     [bars]
   )
 
+  // Shared x-axis ticks — the actual bar timestamps (downsampled to ≤6 labels)
+  // passed identically to ALL THREE axes (price / volume / RSI). Without an
+  // explicit `ticks`, each chart's time scale generates its own "nice" ticks
+  // independently and they drift apart — that's why the volume axis showed a
+  // different repeating set than the candles. Forcing the same tick array makes
+  // every axis render the exact same timestamps.
+  const xTicks = useMemo(() => {
+    if (!bars.length) return undefined
+    const n = bars.length
+    const maxTicks = 6
+    if (n <= maxTicks) return bars.map(b => b.timestamp)
+    const step = (n - 1) / (maxTicks - 1)
+    return Array.from({ length: maxTicks }, (_, i) => bars[Math.round(i * step)].timestamp)
+  }, [bars])
+
   // YAxis must span min(low) → max(high), not just close prices, so wicks
   // never get clipped. ~3% padding above and below for breathing room.
   const priceYDomain = useMemo(() => {
@@ -177,6 +205,7 @@ function ChartBody({ data, timeframe, expanded }) {
             <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="timestamp" type="number" domain={xDomain} scale="time"
+              ticks={xTicks}
               tickFormatter={ts => formatTimestamp(ts, timeframe)}
               hide={!showAxis}
               tick={{ fill: '#9ca3af', fontSize: 10 }} stroke="#374151"
@@ -200,7 +229,16 @@ function ChartBody({ data, timeframe, expanded }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart syncId="luo-chart" data={bars} margin={{ top: 2, right: 8, left: 4, bottom: 0 }}>
             <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="timestamp" type="number" domain={xDomain} scale="time" hide />
+            {/* Mirror the price axis exactly — same domain, the same explicit
+                `ticks` array, and the same tickFormatter — so the volume time
+                labels render at the identical positions as the candle axis. */}
+            <XAxis
+              dataKey="timestamp" type="number" domain={xDomain} scale="time"
+              ticks={xTicks}
+              tickFormatter={ts => formatTimestamp(ts, timeframe)}
+              hide={!showAxis}
+              tick={{ fill: '#9ca3af', fontSize: 10 }} stroke="#374151"
+            />
             <YAxis
               hide={!showAxis}
               tick={{ fill: '#9ca3af', fontSize: 10 }} stroke="#374151"
@@ -221,6 +259,7 @@ function ChartBody({ data, timeframe, expanded }) {
             <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="timestamp" type="number" domain={xDomain} scale="time"
+              ticks={xTicks}
               tickFormatter={ts => formatTimestamp(ts, timeframe)}
               hide={!showAxis}
               tick={{ fill: '#9ca3af', fontSize: 10 }} stroke="#374151"
