@@ -7,13 +7,12 @@ import { loadScreenerState, saveScreenerState, clearScreenerSession } from './li
 
 import useOptionsData    from './hooks/useOptionsData'
 import Header            from './components/Header'
-import MacroEvents       from './components/MacroEvents'
 import Holdings          from './components/Holdings'
+import ControlsDrawer    from './components/ControlsDrawer'
 import ResultsTable      from './components/ResultsTable'
 import SetupDetail       from './components/SetupDetail'
 import LoadingSpinner    from './components/LoadingSpinner'
 import Toast             from './components/Toast'
-import WeeksRangeSlider  from './components/WeeksRangeSlider'
 import TradingViewChart, { toTvSymbol } from './components/TradingViewChart'
 
 export default function App() {
@@ -44,20 +43,30 @@ export default function App() {
   // both derive from the resulting displayed setup (computed below, once scan
   // data is available).
   const [selectedSetup,  setSelectedSetup]  = useState(persisted.selectedSetup ?? null)
+  // Per-ticker results filter (set by double-clicking a scanning chip). null =
+  // no filter (table/chart show all results). Only one ticker at a time.
+  const [tickerFilter,   setTickerFilter]   = useState(persisted.tickerFilter ?? null)
   // Fullscreen-within-detail-zone toggle (not persisted — always opens split).
   const [chartFull,      setChartFull]      = useState(false)
+  // Left controls drawer — CLOSED by default on load so results get full width;
+  // open/closed state is remembered for the session.
+  const [drawerOpen,     setDrawerOpen]     = useState(persisted.drawerOpen ?? false)
 
   // Clicking a table row picks that specific setup (overrides the rank-1 default).
   function selectRow(row) {
     setSelectedSetup(row)
   }
 
-  // Macro events band — reference chrome, collapsed by default (not persisted,
-  // so it always loads collapsed). Toggled from the 'macro ⌄' control.
-  const [macroOpen, setMacroOpen] = useState(false)
+  // Double-clicking a scanning chip toggles the per-ticker results filter on /
+  // off (or switches it to another ticker). Clears any explicit row override so
+  // the detail panel + chart fall back to that ticker's rank-1 setup.
+  function toggleTickerFilter(ticker) {
+    setSelectedSetup(null)
+    setTickerFilter(prev => (prev === ticker ? null : ticker))
+  }
 
   const {
-    marketOpen, lastRun, macroEvents,
+    marketOpen, lastRun,
     ranked,
     tickersUsed, tickersSkipped,
     weeksMinUsed, weeksMaxUsed,
@@ -80,13 +89,18 @@ export default function App() {
   }, [tickersUsed])
 
   // ── Client-side filtering + detail-panel selection (all derived) ────────────
-  // Holdings pill filter (activeTickers) re-ranks the visible rows 1..N.
+  // Two filters: (1) the scan-set membership (activeTickers — chips with × that
+  // remove a ticker from the set); (2) the single-ticker results filter
+  // (tickerFilter — set by double-clicking a chip). The visible rows are then
+  // re-ranked 1..N.
   const baseRanked = ranked.filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
-  const tableRows = baseRanked.map((r, i) => ({ ...r, rank: i + 1 }))
+  const tableRows = (tickerFilter ? baseRanked.filter(r => r.ticker === tickerFilter) : baseRanked)
+    .map((r, i) => ({ ...r, rank: i + 1 }))
 
   // Setup shown in the detail panel: explicit row override if present, else the
-  // overall rank-1.
-  const displayedSetup = selectedSetup ?? (baseRanked[0] ?? null)
+  // rank-1 of the current view (the filtered ticker's best, or the overall
+  // rank-1 when no ticker filter is active).
+  const displayedSetup = selectedSetup ?? (tableRows[0] ?? null)
   const chartTicker    = displayedSetup?.ticker ?? null
 
   // Row highlight marks the displayed setup's row (matches ResultsTable.rowKey).
@@ -104,14 +118,14 @@ export default function App() {
       activeTickers, weeksMin, weeksMax,
       minPremium, minPProfit,
       minPremiumStr, minPProfitStr,
-      selectedSetup,
+      selectedSetup, tickerFilter, drawerOpen,
     })
   }, [
     tickerInput,
     activeTickers, weeksMin, weeksMax,
     minPremium, minPProfit,
     minPremiumStr, minPProfitStr,
-    selectedSetup,
+    selectedSetup, tickerFilter, drawerOpen,
   ])
 
   // Reset the row selection when a new scan arrives so the detail panel + chart
@@ -124,6 +138,7 @@ export default function App() {
     if (ranked !== lastRankedRef.current) {
       lastRankedRef.current = ranked
       setSelectedSetup(null)
+      setTickerFilter(null)
       setChartFull(false)
     }
   }, [ranked])
@@ -161,7 +176,9 @@ export default function App() {
     setMinPProfit(0.50)
     setMinPProfitStr('50')
     setSelectedSetup(null)
+    setTickerFilter(null)
     setChartFull(false)
+    setDrawerOpen(false)
     clearAll()
     clearScreenerSession()
   }
@@ -169,6 +186,8 @@ export default function App() {
   // ── Run scan ───────────────────────────────────────────────────────────────
   function handleRun() {
     const tickers = parseTickers(tickerInput)
+    // Auto-close the controls drawer so the user drops straight into results.
+    setDrawerOpen(false)
     runScan({
       tickers:    tickers.length > 0 ? tickers : undefined,
       weeksMin,
@@ -181,9 +200,10 @@ export default function App() {
   // ── Handlers ───────────────────────────────────────────────────────────────
   function handleRemoveTicker(ticker) {
     setActiveTickers(prev => prev.filter(t => t !== ticker))
-    // Drop the row override if it pointed at the removed ticker, so the detail
-    // panel falls back to the overall rank-1 default.
+    // Drop the row override / ticker filter if they pointed at the removed
+    // ticker, so the detail panel falls back to the overall rank-1 default.
     setSelectedSetup(prev => (prev?.ticker === ticker ? null : prev))
+    setTickerFilter(prev => (prev === ticker ? null : prev))
   }
 
   // Validation helpers
@@ -325,145 +345,22 @@ export default function App() {
   // ── Screener content (inlined so it has closure access to all state) ────────
   const screenerContent = (
     <>
-      {/* Controls — a single labeled surface panel of evenly-spaced contained
-          fields; the 'macro ⌄' toggle sits at the panel's right edge and the
-          scanning chips fold in as a sub-row within the panel. */}
-      <div className="shrink-0 px-3 py-3">
-        <div className="bg-surface border border-subtle rounded-lg px-4 py-3">
-
-          {/* Panel header: CONTROLS label + macro toggle (right edge) */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-tertiary">Controls</span>
-            <button
-              onClick={() => setMacroOpen(o => !o)}
-              title="Show/hide upcoming macro events"
-              className="text-xs text-secondary hover:text-primary transition-colors
-                         bg-surface-raised border border-subtle rounded-md px-2.5 py-1"
-            >
-              macro {macroOpen ? '⌃' : '⌄'}
-            </button>
+      {/* Scanning chips — a slim visible row above the results (NOT in the
+          drawer). × removes a ticker from the scan set; double-clicking a chip
+          toggles the per-ticker results filter. */}
+      {tickersUsed.length > 0 && (
+        <div className="shrink-0 px-3 pt-3">
+          <div className="bg-surface border border-subtle rounded-lg px-4 py-2">
+            <Holdings
+              tickers={activeTickers}
+              skipped={tickersSkipped}
+              onRemove={handleRemoveTicker}
+              onToggleFilter={toggleTickerFilter}
+              activeFilter={tickerFilter}
+            />
           </div>
-
-          {/* Contained fields, evenly spaced */}
-          <div className="flex items-start gap-5 flex-wrap">
-
-            {/* Tickers */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-medium text-secondary">Tickers</label>
-              <input
-                type="text"
-                value={tickerInput}
-                onChange={e => setTickerInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !loading && handleRun()}
-                placeholder="NVDA, META, TSLA… · blank = watchlist"
-                title="Comma- or space-separated tickers · blank = default watchlist"
-                disabled={loading}
-                className="w-64 h-[34px] bg-surface-raised text-gray-100 border border-subtle rounded-md px-3
-                           text-sm font-mono placeholder-gray-600
-                           focus:outline-none focus:border-accent disabled:opacity-50"
-              />
-            </div>
-
-            {/* Weeks range */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-medium text-secondary">Weeks range</label>
-              <div className="flex items-center gap-3 h-[34px] bg-surface-raised border border-subtle rounded-md px-3">
-                <WeeksRangeSlider
-                  min={1}
-                  max={12}
-                  valueMin={weeksMin}
-                  valueMax={weeksMax}
-                  onChange={(mn, mx) => { setWeeksMin(mn); setWeeksMax(mx) }}
-                  disabled={loading}
-                />
-                <span className="text-xs num text-secondary whitespace-nowrap">{weeksMin}–{weeksMax}</span>
-              </div>
-            </div>
-
-            {/* Min Net Premium — unified stepper */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-medium text-secondary">Min Net Premium $</label>
-              <div
-                title="Minimum net credit required (per share)"
-                className={`flex items-center h-[34px] bg-surface-raised border rounded-md transition-colors
-                            ${minPremiumValid ? 'border-subtle focus-within:border-accent' : 'border-loss'}`}
-              >
-                <button
-                  onClick={() => bumpMinPremium(-0.50)}
-                  disabled={loading || minPremium <= 0}
-                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
-                >−</button>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={minPremiumStr}
-                  onChange={handleMinPremiumChange}
-                  onBlur={handleMinPremiumBlur}
-                  onKeyDown={e => e.key === 'Enter' && !loading && minPremiumValid && handleRun()}
-                  disabled={loading}
-                  placeholder="5.00"
-                  className="w-14 bg-transparent text-gray-100 text-sm font-mono text-center
-                             placeholder-gray-600 focus:outline-none disabled:opacity-50"
-                />
-                <button
-                  onClick={() => bumpMinPremium(+0.50)}
-                  disabled={loading}
-                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
-                >+</button>
-              </div>
-            </div>
-
-            {/* Min P(Profit) — unified stepper */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-medium text-secondary">Min P(Profit) %</label>
-              <div
-                title="Minimum P(max profit) threshold (1–99%)"
-                className={`flex items-center h-[34px] bg-surface-raised border rounded-md transition-colors
-                            ${minPProfitValid ? 'border-subtle focus-within:border-accent' : 'border-loss'}`}
-              >
-                <button
-                  onClick={() => bumpMinPProfit(-1)}
-                  disabled={loading || Math.round(minPProfit * 100) <= 1}
-                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
-                >−</button>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={minPProfitStr}
-                  onChange={handleMinPProfitChange}
-                  onBlur={handleMinPProfitBlur}
-                  onKeyDown={e => e.key === 'Enter' && !loading && minPProfitValid && handleRun()}
-                  disabled={loading}
-                  placeholder="50"
-                  className="w-14 bg-transparent text-gray-100 text-sm font-mono text-center
-                             placeholder-gray-600 focus:outline-none disabled:opacity-50"
-                />
-                <button
-                  onClick={() => bumpMinPProfit(+1)}
-                  disabled={loading || Math.round(minPProfit * 100) >= 99}
-                  className="px-2.5 h-full text-secondary hover:text-primary disabled:opacity-40 text-sm font-bold"
-                >+</button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Scanning chips — a sub-row within the panel, divided from the fields */}
-          {tickersUsed.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-subtle">
-              <Holdings
-                tickers={activeTickers}
-                skipped={tickersSkipped}
-                onRemove={handleRemoveTicker}
-              />
-            </div>
-          )}
-
         </div>
-      </div>
-
-      {/* Macro events band — collapsed by default, revealed by the toggle above. */}
-      {macroOpen && <MacroEvents macroEvents={macroEvents} />}
+      )}
 
       {/* Detail zone — TWO columns: LEFT (~38%, fixed table width) = SetupDetail
           stacked ABOVE the scrollable ranked table; RIGHT (flex-1) = the
@@ -522,6 +419,33 @@ export default function App() {
           )
         )}
       </main>
+
+      {/* Left controls drawer — slides in over the content; closed by default.
+          Run Scan lives in the header, not here. */}
+      <ControlsDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        loading={loading}
+        tickerInput={tickerInput}
+        setTickerInput={setTickerInput}
+        onRun={handleRun}
+        weeksMin={weeksMin}
+        weeksMax={weeksMax}
+        setWeeksMin={setWeeksMin}
+        setWeeksMax={setWeeksMax}
+        minPremium={minPremium}
+        minPremiumStr={minPremiumStr}
+        minPremiumValid={minPremiumValid}
+        handleMinPremiumChange={handleMinPremiumChange}
+        handleMinPremiumBlur={handleMinPremiumBlur}
+        bumpMinPremium={bumpMinPremium}
+        minPProfit={minPProfit}
+        minPProfitStr={minPProfitStr}
+        minPProfitValid={minPProfitValid}
+        handleMinPProfitChange={handleMinPProfitChange}
+        handleMinPProfitBlur={handleMinPProfitBlur}
+        bumpMinPProfit={bumpMinPProfit}
+      />
     </>
   )
 
@@ -537,6 +461,8 @@ export default function App() {
         onClear={handleClear}
         loading={loading}
         isStale={isStale}
+        onToggleControls={() => setDrawerOpen(o => !o)}
+        controlsOpen={drawerOpen}
       />
       {screenerContent}
       <Toast message="Saved to Tradebook ✓" visible={toastVisible} />

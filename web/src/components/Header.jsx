@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { clearScreenerSession } from '../lib/sessionState'
 
-export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale }) {
+export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale, onToggleControls, controlsOpen }) {
   const location = useLocation()
   const navigate  = useNavigate()
   const path      = location.pathname
@@ -60,9 +60,23 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
           <div className="text-tertiary text-xs mt-0.5">Options Screener</div>
         </div>
 
-        {/* Right — one tidy action cluster: status · Clear · Run · Tradebook · meta */}
+        {/* Right — one tidy action cluster: status · Controls · Clear · Run · Tradebook · meta */}
         <div className="flex items-center gap-2.5 flex-wrap">
           <MarketBadge open={marketOpen} />
+
+          {onToggleControls && (
+            <button
+              onClick={onToggleControls}
+              title="Open scan controls"
+              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-colors whitespace-nowrap
+                          bg-surface-raised border
+                          ${controlsOpen
+                            ? 'border-accent text-primary'
+                            : 'border-subtle text-secondary hover:text-primary hover:border-strong'}`}
+            >
+              ⚙ Controls
+            </button>
+          )}
 
           <button
             onClick={onClear}
