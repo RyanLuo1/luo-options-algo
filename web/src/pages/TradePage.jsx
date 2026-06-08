@@ -232,6 +232,16 @@ export default function TradePage() {
   async function handleSave() {
     if (!triplet || !user) return
     setSaveError(null)
+    // Compute the metrics FRESH from the currently-selected legs at save time —
+    // never trust the `metrics` state, which only updates on Recalculate. If the
+    // user edits a leg strike but saves without clicking Recalculate, the old
+    // behavior wrote the NEW strikes alongside the STALE spread_width/score/
+    // net_premium, leaving the row internally inconsistent (strikes said
+    // K_B−K_A=20 while spread_width still said 10). That broke downstream
+    // payoff/capture math (realized P&L could exceed the computed max). Deriving
+    // spread_width = selectedB.strike − selectedA.strike here keeps the saved
+    // strikes and metrics on the same basis, always.
+    const saveMetrics = calcMetrics(selectedA, selectedB, selectedC)
     const trade = {
       ticker:        triplet.ticker,
       expiration:    triplet.expiration,
@@ -245,10 +255,10 @@ export default function TradePage() {
       leg_c_strike:  selectedC.strike,
       leg_c_premium: selectedC.premium,
       leg_c_delta:   selectedC.delta,
-      net_premium:   metrics?.net_premium  ?? triplet.net_premium,
-      spread_width:  metrics?.spread_width ?? triplet.spread_width,
-      score:         metrics?.score        ?? triplet.score,
-      p_max_profit:  metrics?.p_max_profit ?? triplet.p_max_profit,
+      net_premium:   saveMetrics.net_premium,
+      spread_width:  saveMetrics.spread_width,
+      score:         saveMetrics.score,
+      p_max_profit:  saveMetrics.p_max_profit,
       fair_value:    triplet.fair_value,
     }
 

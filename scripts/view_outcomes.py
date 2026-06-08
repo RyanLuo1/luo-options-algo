@@ -137,17 +137,28 @@ def main():
             continue
 
         entry_credit = float(t['net_premium'])              # per-share, matches option quotes
-        # spread_width should be populated on every save; recompute from
-        # strikes if a legacy row missed it.
-        spread_width = t.get('spread_width')
-        if spread_width is None:
+
+        # Spread width MUST be derived from the SAME leg strikes the realized-P&L
+        # formula uses (leg_b_strike − leg_a_strike), NOT the stored spread_width
+        # column. The realized P&L (backfill_outcomes.compute_outcome) credits
+        # leg_a_value = max(0, S − K_A), which in the sweet-spot/capped zones rises
+        # all the way to K_B − K_A. If the stored spread_width is stale/mismatched
+        # and SMALLER than the actual K_B − K_A (some AAOI rows had spread_width
+        # = 10.00 while K_B − K_A was wider), the max denominator
+        # (credit + spread_width) understates the true peak and the realized P&L
+        # can exceed it — the impossible "P&L > max" / capture > 100% symptom.
+        # Recomputing from strikes keeps the max on the exact same basis as the
+        # P&L numerator, so realized P&L ≤ max holds for every outcome_type.
+        try:
             spread_width = float(t['leg_b_strike']) - float(t['leg_a_strike'])
-        else:
-            spread_width = float(spread_width)
+        except (KeyError, TypeError, ValueError):
+            # Legacy row missing strikes — fall back to the stored column.
+            sw = t.get('spread_width')
+            spread_width = float(sw) if sw is not None else 0.0
 
         # Theoretical max P&L occurs when the underlying closes exactly at
-        # Leg B strike: long call captures the full spread, both shorts expire
-        # worthless. (credit + spread_width) × 100 → per-contract dollars.
+        # Leg B strike: long call captures the full spread (K_B − K_A), both
+        # shorts expire worthless. (credit + spread_width) × 100 → per-contract.
         max_potential = (entry_credit + spread_width) * 100.0
 
         rows.append({

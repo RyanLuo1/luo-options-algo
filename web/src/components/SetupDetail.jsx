@@ -41,7 +41,14 @@ export default function SetupDetail({ setup, onSave, onEdit }) {
   if (!setup) return null
 
   const collected = (setup.net_premium ?? 0) * 100
-  const maxProfit = ((setup.net_premium ?? 0) + (setup.spread_width ?? 0)) * 100
+  // Spread width is derived from the actual leg strikes (K_B − K_A) — the same
+  // basis the realized-P&L / max-profit math uses — falling back to the stored
+  // spread_width only if a strike is missing. This keeps max profit consistent
+  // with the strikes even if a row ever carries a stale spread_width column.
+  const spreadWidth = (setup.leg_b_strike != null && setup.leg_a_strike != null)
+    ? setup.leg_b_strike - setup.leg_a_strike
+    : (setup.spread_width ?? 0)
+  const maxProfit = ((setup.net_premium ?? 0) + spreadWidth) * 100
 
   return (
     <div className="shrink-0 mb-2 rounded border border-subtle bg-surface px-3 py-2.5 flex flex-col gap-2 text-xs">
@@ -79,7 +86,7 @@ export default function SetupDetail({ setup, onSave, onEdit }) {
 
       {/* ── Spread / fair value + actions ── */}
       <div className="flex items-center gap-x-4 gap-y-1 flex-wrap pt-1 border-t border-subtle">
-        <span className="text-tertiary">spread <span className="num text-secondary">{setup.spread_width?.toFixed(2) ?? '—'}</span></span>
+        <span className="text-tertiary">spread <span className="num text-secondary">{spreadWidth ? spreadWidth.toFixed(2) : '—'}</span></span>
         <span className="text-tertiary">
           fair value{' '}
           <span className="num text-secondary">

@@ -33,8 +33,16 @@ function money0(n) {
   return Math.round(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
+// Spread width from the actual leg strikes (K_B − K_A) — the same basis the
+// payoff / max-profit math uses — falling back to the stored spread_width only
+// if a strike is missing. Keeps max profit consistent with the strikes.
+function spreadOf(r) {
+  if (r.leg_b_strike != null && r.leg_a_strike != null) return r.leg_b_strike - r.leg_a_strike
+  return r.spread_width ?? 0
+}
+
 function sortVal(r, key) {
-  if (key === 'max_profit') return (r.net_premium ?? 0) + (r.spread_width ?? 0)
+  if (key === 'max_profit') return (r.net_premium ?? 0) + spreadOf(r)
   return r[key] ?? ''
 }
 
@@ -161,7 +169,7 @@ function ResultsRow({ row, idx, minPP, selected, onRowClick }) {
           : 'bg-gray-900/50 hover:bg-gray-900'
 
   const collected = (row.net_premium ?? 0) * 100
-  const maxProfit = ((row.net_premium ?? 0) + (row.spread_width ?? 0)) * 100
+  const maxProfit = ((row.net_premium ?? 0) + spreadOf(row)) * 100
 
   return (
     <tr
