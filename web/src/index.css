@@ -51,6 +51,19 @@ body {
   }
 }
 
+/* Login brand-panel candlestick motif — a few candles drift slowly (~6–8s).
+   SVG-only; kept very subtle. Honors prefers-reduced-motion. */
+@keyframes candle-drift {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-12px); }
+}
+.candle-a { animation: candle-drift 6s ease-in-out infinite; }
+.candle-b { animation: candle-drift 7s ease-in-out infinite; animation-delay: -2.5s; }
+.candle-c { animation: candle-drift 8s ease-in-out infinite; animation-delay: -4.5s; }
+@media (prefers-reduced-motion: reduce) {
+  .candle-a, .candle-b, .candle-c { animation: none; }
+}
+
 /* Dual-handle range slider — two stacked <input type="range">.
    The track is invisible (drawn separately as a div underneath); only the
    thumb captures pointer events so both handles can be grabbed. */
