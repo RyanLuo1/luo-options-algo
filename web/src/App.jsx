@@ -9,7 +9,6 @@ import useOptionsData    from './hooks/useOptionsData'
 import Header            from './components/Header'
 import MacroEvents       from './components/MacroEvents'
 import Holdings          from './components/Holdings'
-import OverviewCard      from './components/OverviewCard'
 import ResultsTable      from './components/ResultsTable'
 import SetupDetail       from './components/SetupDetail'
 import LoadingSpinner    from './components/LoadingSpinner'
@@ -39,26 +38,16 @@ export default function App() {
   const [minPremiumStr,   setMinPremiumStr]   = useState(persisted.minPremiumStr ?? '5.00')
   const [minPProfitStr,   setMinPProfitStr]   = useState(persisted.minPProfitStr ?? '50')
 
-  // ── Detail zone (card-as-filter + per-setup detail) ─────────────────────────
-  // `cardFilter` = the ticker an overview card has focused on (null = no filter,
-  // table shows the full ranked list); it drives the table filter AND which card
-  // gets the accent state. `selectedSetup` = an explicit row override; null means
-  // "use the context default" (the filter ticker's best, else the overall
-  // rank-1). The chart ticker and selected-row highlight derive from the
-  // resulting displayed setup (computed below, once scan data is available).
-  const [cardFilter,     setCardFilter]     = useState(persisted.cardFilter ?? null)
+  // ── Detail zone (per-setup detail, driven by table-row selection) ───────────
+  // `selectedSetup` = an explicit row override; null means "use the context
+  // default" (the overall rank-1). The chart ticker and selected-row highlight
+  // both derive from the resulting displayed setup (computed below, once scan
+  // data is available).
   const [selectedSetup,  setSelectedSetup]  = useState(persisted.selectedSetup ?? null)
-  // Fullscreen-within-detail-zone toggle (not persisted — always opens in side panel).
+  // Fullscreen-within-detail-zone toggle (not persisted — always opens split).
   const [chartFull,      setChartFull]      = useState(false)
 
-  // Clicking a card toggles the single-ticker filter on/off (or switches it),
-  // clearing any explicit row override so the detail falls back to that
-  // context's default best setup.
-  function toggleCardFilter(ticker) {
-    setSelectedSetup(null)
-    setCardFilter(prev => (prev === ticker ? null : ticker))
-  }
-  // Clicking a table row picks that specific setup (overrides the default).
+  // Clicking a table row picks that specific setup (overrides the rank-1 default).
   function selectRow(row) {
     setSelectedSetup(row)
   }
@@ -67,22 +56,9 @@ export default function App() {
   // so it always loads collapsed). Toggled from the 'macro ⌄' control.
   const [macroOpen, setMacroOpen] = useState(false)
 
-  // Horizontal overview strip — ref + helpers for the chevron / wheel scrolling.
-  const overviewScrollRef = useRef(null)
-  function scrollOverview(dir) {
-    overviewScrollRef.current?.scrollBy({ left: dir * 280, behavior: 'smooth' })
-  }
-  function handleOverviewWheel(e) {
-    // Translate vertical wheel into horizontal scroll within the strip so mouse
-    // users (no horizontal wheel) can move through the cards. Trackpad
-    // horizontal swipe already works natively via overflow-x-auto.
-    const el = overviewScrollRef.current
-    if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY
-  }
-
   const {
     marketOpen, lastRun, macroEvents,
-    ranked, byTicker, tickersWithResults,
+    ranked,
     tickersUsed, tickersSkipped,
     weeksMinUsed, weeksMaxUsed,
     minPremiumUsed, minPProfitUsed,
@@ -104,22 +80,13 @@ export default function App() {
   }, [tickersUsed])
 
   // ── Client-side filtering + detail-panel selection (all derived) ────────────
-  // 1) Holdings pill filter (activeTickers); 2) card filter (single ticker).
+  // Holdings pill filter (activeTickers) re-ranks the visible rows 1..N.
   const baseRanked = ranked.filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
-  const tableRows = (cardFilter ? baseRanked.filter(r => r.ticker === cardFilter) : baseRanked)
-    .map((r, i) => ({ ...r, rank: i + 1 }))
-
-  // Overview cards mirror the Holdings filter only — they stay visible while a
-  // card filter is active so the user can toggle / switch it.
-  const overviewCards = byTicker
-    .filter(g => activeTickers.length === 0 || activeTickers.includes(g.ticker))
+  const tableRows = baseRanked.map((r, i) => ({ ...r, rank: i + 1 }))
 
   // Setup shown in the detail panel: explicit row override if present, else the
-  // context default (the filter ticker's best, else the overall rank-1).
-  const contextDefault = cardFilter
-    ? (byTicker.find(g => g.ticker === cardFilter)?.best ?? null)
-    : (baseRanked[0] ?? null)
-  const displayedSetup = selectedSetup ?? contextDefault
+  // overall rank-1.
+  const displayedSetup = selectedSetup ?? (baseRanked[0] ?? null)
   const chartTicker    = displayedSetup?.ticker ?? null
 
   // Row highlight marks the displayed setup's row (matches ResultsTable.rowKey).
@@ -137,27 +104,25 @@ export default function App() {
       activeTickers, weeksMin, weeksMax,
       minPremium, minPProfit,
       minPremiumStr, minPProfitStr,
-      cardFilter, selectedSetup,
+      selectedSetup,
     })
   }, [
     tickerInput,
     activeTickers, weeksMin, weeksMax,
     minPremium, minPProfit,
     minPremiumStr, minPProfitStr,
-    cardFilter, selectedSetup,
+    selectedSetup,
   ])
 
-  // The chart is contextual: it does NOT auto-open. Clear the selection when a
-  // new scan arrives so the detail zone shows just the table until the user
-  // clicks a card or table row. The ref is primed with the initial `ranked` so
-  // the first post-hydration run is a no-op (preserves any persisted selection
-  // across in-session navigation); only a genuinely new scan (new `ranked`
-  // reference from useOptionsData) clears it.
+  // Reset the row selection when a new scan arrives so the detail panel + chart
+  // default to the overall rank-1 setup. The ref is primed with the initial
+  // `ranked` so the first post-hydration run is a no-op (preserves any persisted
+  // selection across in-session navigation); only a genuinely new scan (new
+  // `ranked` reference from useOptionsData) clears it.
   const lastRankedRef = useRef(ranked)
   useEffect(() => {
     if (ranked !== lastRankedRef.current) {
       lastRankedRef.current = ranked
-      setCardFilter(null)
       setSelectedSetup(null)
       setChartFull(false)
     }
@@ -195,7 +160,6 @@ export default function App() {
     setMinPremiumStr('5.00')
     setMinPProfit(0.50)
     setMinPProfitStr('50')
-    setCardFilter(null)
     setSelectedSetup(null)
     setChartFull(false)
     clearAll()
@@ -217,9 +181,8 @@ export default function App() {
   // ── Handlers ───────────────────────────────────────────────────────────────
   function handleRemoveTicker(ticker) {
     setActiveTickers(prev => prev.filter(t => t !== ticker))
-    // Drop the card filter / row override if it pointed at the removed ticker,
-    // so the detail panel falls back to the overall default.
-    if (cardFilter === ticker) setCardFilter(null)
+    // Drop the row override if it pointed at the removed ticker, so the detail
+    // panel falls back to the overall rank-1 default.
     setSelectedSetup(prev => (prev?.ticker === ticker ? null : prev))
   }
 
@@ -502,75 +465,12 @@ export default function App() {
       {/* Macro events band — collapsed by default, revealed by the toggle above. */}
       {macroOpen && <MacroEvents macroEvents={macroEvents} />}
 
-      {/* Per-ticker overview — each ticker's single best setup as a card.
-          Only after a scan returns results. Single card = one full-width rich
-          card; multiple = ONE horizontal strip that scrolls sideways (never
-          wraps), so the overview is a fixed height regardless of how many
-          tickers qualify and never pushes the detail zone down. shrink-0. */}
-      {!loading && !error && hasResult && overviewCards.length > 0 && (
-        <section className="shrink-0 px-6 py-3 border-b border-subtle">
-          <div className="text-xs text-secondary mb-2.5">
-            Best per ticker · <span className="num">{tickersWithResults}</span> of{' '}
-            <span className="num">{tickersUsed.length}</span> names had qualifying trades
-          </div>
-          {overviewCards.length === 1 ? (
-            <OverviewCard
-              ticker={overviewCards[0].ticker}
-              best={overviewCards[0].best}
-              count={overviewCards[0].count}
-              isBest
-              selected={cardFilter === overviewCards[0].ticker}
-              compact={false}
-              onSelect={() => toggleCardFilter(overviewCards[0].ticker)}
-            />
-          ) : (
-            <div className="relative">
-              {/* horizontal strip — fixed-width cards, never wraps; the next
-                  card peeks at the right edge so it's obvious the row continues.
-                  Scrollbar hidden but scrollable (trackpad swipe / wheel / chevrons). */}
-              <div
-                ref={overviewScrollRef}
-                onWheel={handleOverviewWheel}
-                className="flex gap-3 overflow-x-auto no-scrollbar scroll-smooth pr-10 pt-2.5"
-              >
-                {overviewCards.map((g, i) => (
-                  <div key={g.ticker} className="shrink-0 w-[260px]">
-                    <OverviewCard
-                      ticker={g.ticker}
-                      best={g.best}
-                      count={g.count}
-                      isBest={i === 0}
-                      selected={cardFilter === g.ticker}
-                      compact
-                      onSelect={() => toggleCardFilter(g.ticker)}
-                    />
-                  </div>
-                ))}
-              </div>
-              {/* scroll affordance for mouse users — subtle chevrons */}
-              <button
-                onClick={() => scrollOverview(-1)}
-                aria-label="Scroll overview left"
-                className="absolute left-0 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center
-                           rounded-full bg-surface border border-subtle text-secondary
-                           hover:text-primary hover:border-strong shadow"
-              >‹</button>
-              <button
-                onClick={() => scrollOverview(1)}
-                aria-label="Scroll overview right"
-                className="absolute right-0 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center
-                           rounded-full bg-surface border border-subtle text-secondary
-                           hover:text-primary hover:border-strong shadow"
-              >›</button>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Detail zone — TWO columns: ranked table (left, ~60%) + right zone
-          (~40%) where SetupDetail stacks ABOVE the chart (the chart fills the
-          remaining height, so there's no empty void). The chart's ⤢ expands it
-          to fill the whole zone (table + detail hidden). */}
+      {/* Detail zone — TWO columns: LEFT (~38%, fixed table width) = SetupDetail
+          stacked ABOVE the scrollable ranked table; RIGHT (flex-1) = the
+          TradingView chart alone, filling all remaining width and the full
+          height. Selection is driven purely by clicking a table row (defaults to
+          the overall rank-1 on a fresh scan). The chart's ⤢ expands it to fill
+          the whole zone (left column hidden). */}
       <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {loading && <LoadingSpinner />}
 
@@ -579,48 +479,42 @@ export default function App() {
         {!loading && !error && (
           hasResult ? (
             <div className="flex-1 min-h-0 flex gap-3 p-3">
-              {/* Left — ranked table. Width = the 33rem column sum + ~2rem so the
-                  trailing spacer gives a little padding after Max Profit (no large
-                  void); the chart column takes all the rest. Hidden in fullscreen. */}
+              {/* Left — SetupDetail (compact band, on top) + the ranked table
+                  (below, scrolls within its area). Fixed width = the 33rem column
+                  sum + ~2rem padding after Max Profit. Hidden in fullscreen. */}
               {!isChartFull && (
                 <div className="w-[35rem] shrink-0 min-h-0 flex flex-col">
-                  <ResultsTable
-                    rows={tableRows}
-                    totalEvaluated={totalEvaluated}
-                    weeksMinUsed={weeksMinUsed}
-                    weeksMaxUsed={weeksMaxUsed}
-                    minPremiumUsed={minPremiumUsed}
-                    minPProfitUsed={minPProfitUsed}
-                    selectedKey={selectedKey}
-                    onRowSelect={selectRow}
-                  />
-                </div>
-              )}
-
-              {/* Right — detail zone (~62%, the wider column): SetupDetail (compact
-                  band) stacked above the chart, which fills the rest of the column.
-                  Defaults to the overall rank-1 setup on scan; card filter / row
-                  click drive both. ⤢/⤡ toggles fullscreen (chart fills the zone). */}
-              <div className="flex-1 min-w-[360px] min-h-0 flex flex-col">
-                {displayedSetup ? (
-                  <>
+                  {displayedSetup && (
                     <SetupDetail
                       setup={displayedSetup}
                       onSave={() => saveToTradebook(displayedSetup)}
                       onEdit={() => handleEdit(displayedSetup)}
                     />
-                    <TradingViewChart
-                      symbol={toTvSymbol(chartTicker)}
-                      fullscreen={isChartFull}
-                      onToggleFull={() => setChartFull(f => !f)}
+                  )}
+                  <div className="flex-1 min-h-0 flex flex-col">
+                    <ResultsTable
+                      rows={tableRows}
+                      totalEvaluated={totalEvaluated}
+                      weeksMinUsed={weeksMinUsed}
+                      weeksMaxUsed={weeksMaxUsed}
+                      minPremiumUsed={minPremiumUsed}
+                      minPProfitUsed={minPProfitUsed}
+                      selectedKey={selectedKey}
+                      onRowSelect={selectRow}
                     />
-                  </>
-                ) : (
-                  <div className="flex-1 min-h-0 flex items-center justify-center text-center
-                                  rounded border border-subtle bg-surface px-4">
-                    <p className="text-secondary text-sm">select a setup to view its detail &amp; chart</p>
                   </div>
-                )}
+                </div>
+              )}
+
+              {/* Right — the TradingView chart alone, filling the freed width and
+                  full height so price / volume / RSI panes all have room. ⤢/⤡
+                  toggles fullscreen (chart fills the whole zone). */}
+              <div className="flex-1 min-w-[360px] min-h-0 flex flex-col">
+                <TradingViewChart
+                  symbol={toTvSymbol(chartTicker)}
+                  fullscreen={isChartFull}
+                  onToggleFull={() => setChartFull(f => !f)}
+                />
               </div>
             </div>
           ) : (
