@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { clearScreenerSession } from '../lib/sessionState'
+import TickerTape from './TickerTape'
 
 export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale, onToggleControls, controlsOpen }) {
   const location = useLocation()
@@ -12,7 +13,6 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
     await supabase.auth.signOut()
     navigate('/login')
   }
-  const isScreener  = path === '/'
   const isTrade     = path === '/trade'
   const isTradebook = path === '/tradebook'
 
@@ -49,19 +49,28 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
   }
 
   // ── Screener: full header in a contained surface panel ─────────────────────
+  // Three always-visible zones in a flex row: lockup (left, fixed) · ticker tape
+  // (center, flex-1 fills the gap) · controls (right, fixed). No hover behavior.
   return (
     <header className="shrink-0 px-3 pt-3">
-      <div className="bg-surface border border-subtle rounded-lg px-5 py-3
-                      flex items-center justify-between gap-4 flex-wrap">
+      <div className="bg-surface border border-subtle rounded-lg px-5 py-3 flex items-center gap-4">
 
-        {/* Left — branding */}
+        {/* Left — branding (fixed) */}
         <div className="flex-shrink-0 leading-tight">
           <div className="text-primary font-bold text-xl tracking-tight">Luo Capital</div>
           <div className="text-tertiary text-xs mt-0.5">Options Screener</div>
         </div>
 
-        {/* Right — one tidy action cluster: status · Controls · Clear · Run · Tradebook · meta */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Center — ticker tape, fills the space between the two fixed groups.
+            Mounted once (no reload). Non-interactive strip (pointer-events-none)
+            so it never steals clicks from the controls. Constrained to the bar
+            height and hidden below md so a narrow window keeps lockup+controls. */}
+        <div className="hidden md:flex items-center flex-1 min-w-[8rem] h-9 overflow-hidden pointer-events-none">
+          <TickerTape />
+        </div>
+
+        {/* Right — controls (fixed), always visible & clickable */}
+        <div className="flex-shrink-0 flex items-center justify-end gap-2.5">
           <MarketBadge open={marketOpen} />
 
           {onToggleControls && (
