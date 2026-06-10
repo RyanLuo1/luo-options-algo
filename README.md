@@ -31,7 +31,7 @@ Legs A and B together form a **call debit spread** — a bullish position with a
 | Where the stock finishes | Outcome |
 |---|---|
 | Below the short put strike (Leg C) | Put assigned — you're obligated to buy the stock; this is the loss zone |
-| Between the put and the long call (Leg C → Leg A) | Both shorts expire worthless — you keep the entry credit |
+| Between the put and the long call (Leg C → Leg A) | All options expire worthless — you keep the entry credit (but capture none of the spread) |
 | Between the two calls (Leg A → Leg B) | The sweet spot — you capture the spread plus the credit |
 | Above the short call strike (Leg B) | Capped — maximum profit, flat above this point |
 
