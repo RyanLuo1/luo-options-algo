@@ -72,8 +72,14 @@ export default function LoginPage() {
           setError('An account with this email already exists — sign in instead.')
           return
         }
-        // Email confirmation required → no session is returned. Do NOT log in;
-        // tell the user to confirm via email, then switch back to sign-in.
+        // If a session came back, email confirmation is OFF — the user is already
+        // logged in, so route straight into the screener like a normal sign-in.
+        if (data?.session) {
+          navigate('/', { replace: true })
+          return
+        }
+        // No session → email confirmation is ON. Do NOT log in; tell the user to
+        // confirm via email, then switch back to sign-in.
         setMode('signin')
         setPassword('')
         setConfirmPw('')
