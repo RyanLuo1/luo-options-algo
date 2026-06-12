@@ -7,32 +7,78 @@ export default function LoginPage() {
   const navigate         = useNavigate()
   const { user, loading } = useAuth()
 
-  const [mode]                  = useState('signin')  // sign-in only (UI shows no sign-up); handler branch preserved
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [error,    setError]    = useState(null)
-  const [busy,     setBusy]     = useState(false)
-  const [showPw,   setShowPw]   = useState(false)     // UI-only password reveal
+  const [mode,        setMode]        = useState('signin')  // 'signin' | 'signup'
+  const [email,       setEmail]       = useState('')
+  const [password,    setPassword]    = useState('')
+  const [confirmPw,   setConfirmPw]   = useState('')
+  const [error,       setError]       = useState(null)       // inline loss-red error
+  const [notice,      setNotice]      = useState(null)       // on-brand confirmation message
+  const [busy,        setBusy]        = useState(false)
+  const [showPw,      setShowPw]       = useState(false)      // UI-only password reveal
+
+  const isSignup = mode === 'signup'
 
   // Redirect if already logged in
   useEffect(() => {
     if (!loading && user) navigate('/', { replace: true })
   }, [user, loading, navigate])
 
+  function switchMode() {
+    setMode(m => (m === 'signin' ? 'signup' : 'signin'))
+    setError(null)
+    setNotice(null)
+    setConfirmPw('')
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
-    setBusy(true)
     setError(null)
+    setNotice(null)
+
+    // Client-side validation: passwords must match before submitting a sign-up
+    if (isSignup && password !== confirmPw) {
+      setError('Passwords do not match.')
+      return
+    }
+
+    setBusy(true)
 
     try {
       if (mode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
+        if (error) {
+          // Unconfirmed email → guide the user to verify, not a generic error
+          if (error.code === 'email_not_confirmed' || /email not confirmed/i.test(error.message)) {
+            setNotice('Your email isn’t confirmed yet — check your inbox for the confirmation link, then sign in.')
+            return
+          }
+          throw error
+        }
+        navigate('/', { replace: true })
       } else {
-        const { error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
+        // Existing signUp path — surfaced, not rewritten.
+        const { data, error } = await supabase.auth.signUp({ email, password })
+        if (error) {
+          if (/already registered|already exists/i.test(error.message)) {
+            setError('An account with this email already exists — sign in instead.')
+            return
+          }
+          throw error  // surfaces weak-password and other Supabase errors inline
+        }
+        // With email confirmation on, Supabase returns an obfuscated user with no
+        // identities when the email is already registered (no error, to prevent
+        // enumeration). Treat that as "account exists".
+        if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          setError('An account with this email already exists — sign in instead.')
+          return
+        }
+        // Email confirmation required → no session is returned. Do NOT log in;
+        // tell the user to confirm via email, then switch back to sign-in.
+        setMode('signin')
+        setPassword('')
+        setConfirmPw('')
+        setNotice('Check your email to confirm your account, then sign in.')
       }
-      navigate('/', { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -56,8 +102,12 @@ export default function LoginPage() {
           </div>
 
           {/* Heading */}
-          <h1 className="text-2xl font-bold text-primary tracking-tight">Welcome back.</h1>
-          <p className="text-secondary text-sm mt-1.5 mb-8">Sign in to the screener.</p>
+          <h1 className="text-2xl font-bold text-primary tracking-tight">
+            {isSignup ? 'Create your account.' : 'Welcome back.'}
+          </h1>
+          <p className="text-secondary text-sm mt-1.5 mb-8">
+            {isSignup ? 'Sign up to access the screener.' : 'Sign in to the screener.'}
+          </p>
 
           {/* Form — same handlers as before */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -92,7 +142,7 @@ export default function LoginPage() {
                   required
                   disabled={busy}
                   placeholder="••••••••"
-                  autoComplete="current-password"
+                  autoComplete={isSignup ? 'new-password' : 'current-password'}
                   className="w-full h-[42px] bg-surface-raised text-primary border border-subtle rounded-md pl-3 pr-16
                              text-sm placeholder-tertiary transition-colors
                              focus:outline-none focus:border-accent disabled:opacity-50"
@@ -109,9 +159,36 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Confirm password — sign-up only */}
+            {isSignup && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="confirm-password" className="text-[11px] font-medium text-secondary">Confirm password</label>
+                <input
+                  id="confirm-password"
+                  type={showPw ? 'text' : 'password'}
+                  value={confirmPw}
+                  onChange={e => setConfirmPw(e.target.value)}
+                  required
+                  disabled={busy}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="h-[42px] bg-surface-raised text-primary border border-subtle rounded-md px-3
+                             text-sm placeholder-tertiary transition-colors
+                             focus:outline-none focus:border-accent disabled:opacity-50"
+                />
+              </div>
+            )}
+
             {/* Inline error — muted loss-red */}
             {error && (
               <p className="text-loss text-xs -mt-0.5">{error}</p>
+            )}
+
+            {/* On-brand confirmation / info notice */}
+            {notice && (
+              <p className="text-xs -mt-0.5 rounded-md border border-accent/40 bg-accent/10 text-secondary px-3 py-2">
+                {notice}
+              </p>
             )}
 
             {/* Primary action — accent purple */}
@@ -121,9 +198,23 @@ export default function LoginPage() {
               className="mt-2 h-[42px] bg-accent hover:bg-accent-hover text-primary text-sm font-semibold
                          rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy
+                ? (isSignup ? 'Creating account…' : 'Signing in…')
+                : (isSignup ? 'Create account' : 'Sign in')}
             </button>
           </form>
+
+          {/* Mode toggle */}
+          <p className="text-tertiary text-xs mt-6 text-center">
+            {isSignup ? 'Already have an account? ' : 'New here? '}
+            <button
+              type="button"
+              onClick={switchMode}
+              className="font-medium text-accent hover:text-accent-hover transition-colors"
+            >
+              {isSignup ? 'Sign in' : 'Create an account'}
+            </button>
+          </p>
         </div>
 
         {/* Footer */}
