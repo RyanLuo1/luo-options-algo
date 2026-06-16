@@ -1,0 +1,153 @@
+{
+  "metadata": {
+    "generated_at": "2026-06-16T23:31:28.520859+00:00",
+    "source": "S&P 500 constituents via Wikipedia (https://en.wikipedia.org/wiki/List_of_S%26P_500_companies)",
+    "threshold": 100000000000,
+    "threshold_label": "$100B market cap",
+    "candidates_evaluated": 503,
+    "total_tickers": 118,
+    "sector_count": 11
+  },
+  "sectors": {
+    "Basic Materials": [
+      "FCX",
+      "LIN",
+      "NEM"
+    ],
+    "Communication Services": [
+      "APP",
+      "DIS",
+      "GOOG",
+      "GOOGL",
+      "META",
+      "NFLX",
+      "T",
+      "TMUS",
+      "VZ"
+    ],
+    "Consumer Cyclical": [
+      "AMZN",
+      "BKNG",
+      "HD",
+      "LOW",
+      "MAR",
+      "MCD",
+      "SBUX",
+      "TJX",
+      "TSLA"
+    ],
+    "Consumer Defensive": [
+      "COST",
+      "KO",
+      "MO",
+      "PEP",
+      "PG",
+      "PM",
+      "WMT"
+    ],
+    "Energy": [
+      "COP",
+      "CVX",
+      "XOM"
+    ],
+    "Financial Services": [
+      "AXP",
+      "BAC",
+      "BLK",
+      "BRK-B",
+      "BX",
+      "C",
+      "CB",
+      "COF",
+      "GS",
+      "IBKR",
+      "JPM",
+      "MA",
+      "MS",
+      "PGR",
+      "SCHW",
+      "SPGI",
+      "V",
+      "WFC"
+    ],
+    "Healthcare": [
+      "ABBV",
+      "ABT",
+      "AMGN",
+      "BMY",
+      "CVS",
+      "DHR",
+      "GILD",
+      "ISRG",
+      "JNJ",
+      "LLY",
+      "MDT",
+      "MRK",
+      "PFE",
+      "SYK",
+      "TMO",
+      "UNH",
+      "VRTX"
+    ],
+    "Industrials": [
+      "BA",
+      "CAT",
+      "DE",
+      "ETN",
+      "GE",
+      "GEV",
+      "HON",
+      "HWM",
+      "LMT",
+      "PH",
+      "PWR",
+      "RTX",
+      "TT",
+      "UNP",
+      "VRT"
+    ],
+    "Real Estate": [
+      "EQIX",
+      "PLD",
+      "WELL"
+    ],
+    "Technology": [
+      "AAPL",
+      "ACN",
+      "ADI",
+      "AMAT",
+      "AMD",
+      "ANET",
+      "APH",
+      "AVGO",
+      "CDNS",
+      "CRM",
+      "CRWD",
+      "CSCO",
+      "DELL",
+      "FTNT",
+      "GLW",
+      "IBM",
+      "INTC",
+      "KLAC",
+      "LRCX",
+      "MSFT",
+      "MU",
+      "NOW",
+      "NVDA",
+      "ORCL",
+      "PANW",
+      "PLTR",
+      "QCOM",
+      "SNDK",
+      "STX",
+      "TXN",
+      "UBER",
+      "WDC"
+    ],
+    "Utilities": [
+      "NEE",
+      "SO"
+    ]
+  }
+}

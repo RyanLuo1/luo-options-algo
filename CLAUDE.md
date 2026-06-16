@@ -275,8 +275,35 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 
 | Script                              | Effect      | Use when                                              |
 |-------------------------------------|-------------|-------------------------------------------------------|
+| `scripts/build_universe.py`         | Writes JSON | Periodically — regenerate `data/universe.json` (sector → large-cap tickers) |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
+
+### Universe Builder — `scripts/build_universe.py` → `data/universe.json`
+
+Produces the **sector → large-cap-ticker map** that the daily sector scan reads. It is a **standalone, periodically-run** script — **NOT** invoked on every scan, and it does **not** touch Massive, scan options, or change the app. Run it occasionally (e.g. monthly, or when index membership / market caps shift) to refresh the universe the sector scan consumes.
+
+- Run with `python3 scripts/build_universe.py` from the project root. Optional flags: `--limit N` (only evaluate the first N candidates — for a quick smoke test) and `--sleep S` (seconds between tickers, default `0.25`).
+- **Candidate pool:** the **S&P 500 constituent list, scraped from Wikipedia** (`List_of_S&P_500_companies`, the `id="constituents"` table). Nearly every US company over $100B is in the index, so it's a stable, reproducible starting universe. Wikipedia share-class dots are normalized to yfinance dashes (`BRK.B` → `BRK-B`). The Wikipedia fetch is retried with backoff; the source URL is recorded in the output metadata.
+- **Per-ticker enrichment:** `sector` and `marketCap` come from `yf.Ticker(t).info` (yfinance, not Massive — this is reference data, not options/historical bars). Tickers are **grouped by whatever sector string yfinance returns** — no custom taxonomy. yfinance's native strings are the GICS-style sectors: `Technology`, `Financial Services`, `Healthcare`, `Consumer Cyclical`, `Consumer Defensive`, `Energy`, `Industrials`, `Basic Materials`, `Real Estate`, `Utilities`, `Communication Services`. (These are yfinance's labels and differ slightly from the canonical GICS names — e.g. `Financial Services` not "Financials", `Healthcare` not "Health Care" — and we keep yfinance's exactly.)
+- **Filter:** keep only tickers with `marketCap > $100,000,000,000` ($100B).
+- **Resilience:** yfinance is slow/flaky across hundreds of tickers. Each `.info` lookup is **retried twice with backoff**; a ticker that still fails (network error, missing `sector`, missing `marketCap`) is **logged to stderr and skipped, never fatal**. Requests are paced by `--sleep`. An unexpected/empty sector string is logged as an outlier (but the ticker is still kept). The summary footer reports counts for each skip reason (below threshold / no sector / no cap / fetch error). Favors correctness over speed.
+- **Output — `data/universe.json`** (`data/` is created if missing):
+  ```json
+  {
+    "metadata": {
+      "generated_at": "2026-06-16T...Z",
+      "source": "S&P 500 constituents via Wikipedia (https://...)",
+      "threshold": 100000000000,
+      "threshold_label": "$100B market cap",
+      "candidates_evaluated": 503,
+      "total_tickers": 84,
+      "sector_count": 11
+    },
+    "sectors": { "Technology": ["AAPL", "AMD", "AVGO", ...], "Financial Services": ["JPM", "V", ...], ... }
+  }
+  ```
+  Tickers within each sector and the sectors themselves are sorted for stable diffs. The script prints a full sector → ticker summary (each sector with its count and tickers) plus the skip-reason counts.
 
 ### `screener.py`
 - Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
