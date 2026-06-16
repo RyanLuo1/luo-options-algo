@@ -85,7 +85,12 @@ def _outcome_style(outcome_type):
 
 def _format_capture(row, *, warn=False):
     """
-    "67.2%", " n/a ", " -14.3%" — the captured-fraction string for one row.
+    "67.2%", " n/a ", "    —" — the captured-fraction string for one row.
+
+    Capture efficiency measures how much of the *available profit* was harvested,
+    so it's only meaningful for profitable trades. For any losing or flat trade
+    (P&L ≤ 0) we print an em-dash rather than a (negative, meaningless) percent —
+    a "−221%" capture reads like a bug and isn't a real concept.
 
     Clamps the displayed value at 100% so an anomalous data point doesn't print
     e.g. "captured 142.0%". Aggregate stats in the summary keep raw values so
@@ -100,6 +105,8 @@ def _format_capture(row, *, warn=False):
     max_p = row['max_potential']
     if max_p <= 0:
         return "  n/a"
+    if row['pnl_contract'] <= 0:                 # capture is undefined for losses
+        return "    —"
     ratio = row['pnl_contract'] / max_p          # raw fraction (1.0 == exactly max profit)
     pct   = ratio * 100.0
     if pct > 100.0:
@@ -208,15 +215,23 @@ def main():
     win_rate        = wins / n * 100 if n else 0.0
     avg_pnl         = total_pnl / n if n else 0.0
 
-    # Aggregate stats use *raw* per-trade ratios (no 100% clamp) so anomalies
-    # surface here instead of being silently capped. Trades with max <= 0 are
-    # excluded from the per-trade average — they'd otherwise be n/a anyway.
-    per_trade_ratios = [
+    # "Average capture per trade" is the mean of per-trade capture ratios — and
+    # capture is only meaningful for *winning* trades (see _format_capture). A
+    # loss has no fraction-of-profit-harvested, and averaging in a large negative
+    # (e.g. a −221% loss) would corrupt the stat. So restrict to wins (pnl > 0).
+    # Uses *raw* ratios (no 100% clamp) so an over-cap anomaly still surfaces here
+    # instead of being silently capped. Trades with max <= 0 can't contribute.
+    win_capture_ratios = [
         r['pnl_contract'] / r['max_potential']
-        for r in rows if r['max_potential'] > 0
+        for r in rows if r['pnl_contract'] > 0 and r['max_potential'] > 0
     ]
-    avg_capture     = sum(per_trade_ratios) / len(per_trade_ratios) * 100 \
-                      if per_trade_ratios else 0.0
+    avg_capture     = sum(win_capture_ratios) / len(win_capture_ratios) * 100 \
+                      if win_capture_ratios else 0.0
+
+    # Aggregate capture efficiency (total P&L ÷ total max) is left as-is — it is
+    # correct because a loss properly reduces the total-P&L numerator. total_max
+    # is a sum of (credit + spread) × 100 terms, each positive by construction,
+    # so the denominator stays positive and the ratio degrades sensibly on losses.
     capture_eff     = total_pnl / total_max * 100 if total_max > 0 else 0.0
 
     best  = max(rows, key=lambda r: r['pnl_contract'])
@@ -240,7 +255,8 @@ def main():
         _emit("  Capture efficiency        : n/a  (no positive max potential)")
     _emit(f"  Average per trade         : ${avg_pnl:+,.2f}",
           _pnl_style(avg_pnl))
-    _emit(f"  Average capture per trade : {avg_capture:.1f}%")
+    _emit(f"  Avg capture per trade (wins): {avg_capture:.1f}%  "
+          f"({len(win_capture_ratios)} win{'s' if len(win_capture_ratios) != 1 else ''})")
     _emit(f"  Best trade                : {best['ticker']:<{ticker_w}}  "
           f"{best['expiration']}  ${best['pnl_contract']:+,.2f}",
           "green")
