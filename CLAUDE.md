@@ -276,6 +276,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | Script                              | Effect      | Use when                                              |
 |-------------------------------------|-------------|-------------------------------------------------------|
 | `scripts/build_universe.py`         | Writes JSON | Periodically — regenerate `data/universe.json` (sector → large-cap tickers) |
+| `scripts/sector_scan.py`            | **Writes**  | Manually (per slot) — scan every sector, log best pick to `ml_dataset` / `sector_scan_runs` |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
 
@@ -304,6 +305,31 @@ Produces the **sector → large-cap-ticker map** that the daily sector scan read
   }
   ```
   Tickers within each sector and the sectors themselves are sorted for stable diffs. The script prints a full sector → ticker summary (each sector with its count and tickers) plus the skip-reason counts.
+
+### Daily Sector Scan — `scripts/sector_scan.py` → `ml_dataset` / `sector_scan_runs`
+
+Reads the sector universe (`data/universe.json`), runs the existing Call Spread Risk Reversal scan on **every ticker in every sector** (~118 names, far more than the app's usual 10), picks the single best setup per sector, and writes the systematic, **unbiased best-per-sector** output to two Supabase tables. This is the forward-looking feed for the ML training set (kept entirely separate from the discretionary `tradebook` / `trade_outcomes`). **MANUAL for now** — run by hand; scheduling (open/close cron) comes later.
+
+- Run from the project root: `python3 scripts/sector_scan.py --slot open` (or `--slot close`).
+  - `--slot {open,close}` (**required**) sets `source` to `live_open` / `live_close`. The DB has **no `slot` column** — the slot is encoded into `source`.
+  - `--source` overrides source (default `live_<slot>`; must be one of `live_open` | `live_close` | `backtest` — enforced by a DB CHECK). Use `backtest` for historical replay later.
+  - Filters use the app defaults but are CLI-overridable: `--weeks-min` (1), `--weeks-max` (12), `--min-premium` (5.00), `--min-p-profit` (0.50).
+  - `--sleep` (0.15s) paces between tickers; `--limit-per-sector N` scans only the first N tickers per sector (testing); `--universe PATH` points at a different universe file; `--dry-run` scans but writes nothing.
+- **Reuses** `screener.scan_ticker` / `get_fair_value` and the Massive client — it does **not** change the app, the algorithm, the tradebook, or `trade_outcomes`. It injects a dedicated Massive `RESTClient` (15s read timeout, 3 retries) into `screener.massive_client` so scan calls fail fast under load (no edit to `screener.py`).
+
+**Flow (per sector):** loop the sector's tickers (using the JSON's yfinance sector keys verbatim — `Financial Services`, `Healthcare`, etc.), scan each, collect all qualifying triplets, rank by score, take the top one (`is_best_in_sector = true`). Then write exactly one `sector_scan_runs` row per sector, by status:
+- `picked` → also insert the best setup into `ml_dataset` (all legs, metrics, `underlying_price_at_scan`, `moneyness_a`, market context `vix`/`spy_price`, event proximity `days_to_earnings`/`days_to_next_fomc`/`days_to_next_cpi`/`days_to_next_macro` + `earnings_before_expiry`, `weeks_to_expiration`/`days_to_expiration`, `scan_date`/`scan_timestamp`, `sector`, `source`). The run row gets `best_ticker`, `best_score`, and `ml_dataset_id` linking to the inserted setup, plus `tickers_scanned`/`tickers_skipped`/`contracts_evaluated`/`setups_qualified`/`elapsed_ms` and the input filters (`min_net_premium`, `min_p_profit`, `weeks_range` text like `W1-W12`).
+- `none_qualified` → sector scanned fine but 0 setups passed filters → run row only.
+- `no_tickers` → sector had no tickers in the universe → run row only.
+- `error` → the sector scan threw unexpectedly → run row with `error_message`; the run continues to the next sector (one bad sector never aborts the whole run).
+
+**Resilience (mandatory at ~118 tickers):** per-request Massive timeout (15s, fail fast); per-ticker retry/backoff with 429/rate-limit detection (mirrors `backfill_outcomes.py`); a ticker that still times out/errors after retries is logged, counted in `tickers_skipped`, and **skipped** (never kills the sector or run); requests paced by `--sleep`; output is line-buffered + flushed so a long run shows live progress. Market context (`vix`/`spy` via yfinance) and macro proximity (FOMC/CPI/PPI/NFP via `event_filter`, 26-week look-ahead) are fetched **once per run**; `days_to_earnings` is fetched per picked ticker only.
+
+**De-dup / idempotency** — unique indexes are `uniq_ssr_run (source, scan_date, sector)` and `uniq_ml_dataset_observation (source, scan_date, sector, ticker, expiration, leg_a/b/c_strike)`. Re-running the same slot **upserts** rather than duplicating. Because `sector_scan_runs.ml_dataset_id → ml_dataset(id)` has no `ON DELETE`, each write path first upserts the run row with `ml_dataset_id = NULL` (releasing any prior reference), then deletes stale `ml_dataset` rows for the slot, then (if `picked`) inserts the fresh row and points the run row at it — so re-runs and status transitions (e.g. `picked` → `none_qualified`) stay clean.
+
+**Auth** — uses `SUPABASE_SERVICE_KEY` (both tables have RLS enabled with **no public policies**; only the service role can read/write). DDL: `docs/ml_dataset_schema.sql` and `docs/sector_scan_schema.sql` (create `ml_dataset` first — `sector_scan_runs` FKs into it). The `outcome_*` columns on `ml_dataset` are populated **later** by a separate at-expiration backfill job (a sibling of `backfill_outcomes.py` that writes here, not to `trade_outcomes`); `sector_scan.py` leaves them null (`outcome_filled = false`).
+
+**End-of-run summary** prints every sector with its status and best pick (or status reason), total picks logged, total tickers skipped, total elapsed, and rows written. **Runtime note:** a full default run (all 11 sectors × all tickers × weeks 1–12, two Massive calls per ticker-expiration) is on the order of tens of minutes; a trimmed validation run (3 tickers/sector, weeks 4–9) is ~50s.
 
 ### `screener.py`
 - Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
