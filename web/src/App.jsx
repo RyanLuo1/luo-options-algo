@@ -262,16 +262,16 @@ export default function App() {
     // An unknown @name surfaces an inline error and aborts (no scan).
     const { tickers, error } = resolveScanTickers(tickerInput, watchlists)
     if (error) { setScanInputError(error); return }
+    // Empty input (blank / whitespace / separators only) does NOT scan — there
+    // is no implicit default-watchlist fallback anymore. Show a hint instead.
+    if (tickers.length === 0) {
+      setScanInputError('Enter one or more tickers or a @watchlist to scan.')
+      return
+    }
     setScanInputError(null)
     // Auto-close the controls drawer so the user drops straight into results.
     setDrawerOpen(false)
-    runScan({
-      tickers:    tickers.length > 0 ? tickers : undefined,  // blank → default watchlist
-      weeksMin,
-      weeksMax,
-      minPremium,
-      minPProfit,
-    })
+    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit })
   }
 
   // ── Handlers ───────────────────────────────────────────────────────────────

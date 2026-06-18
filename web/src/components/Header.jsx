@@ -72,8 +72,8 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
               value={tickerInput ?? ''}
               onChange={e => setTickerInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !loading && onRun()}
-              placeholder="Enter a ticker or tickers to scan"
-              title="Tickers (NVDA, META) or @watchlist (@semis) · blank = default watchlist"
+              placeholder="Enter tickers or a @watchlist to scan"
+              title="Tickers (NVDA, META) or @watchlist (@semis)"
               disabled={loading}
               className={`flex-1 min-w-0 h-[34px] bg-surface-raised text-gray-100 border rounded-md px-3
                           text-sm font-mono placeholder-gray-600 focus:outline-none disabled:opacity-50
@@ -117,7 +117,7 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
                            group-focus-within:opacity-100 group-focus-within:visible"
               >
                 Enter tickers separated by commas or spaces (NVDA, META). Use @name to scan a
-                saved watchlist (e.g. @semis). Manage watchlists in Controls. Blank = default watchlist.
+                saved watchlist (e.g. @semis). Manage watchlists in Controls.
               </div>
             </div>
           </div>
