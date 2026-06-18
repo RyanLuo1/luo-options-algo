@@ -108,6 +108,20 @@ RUN_CONFLICT = "source,scan_date,sector"
 # it's more than the app's default 4-week window away (FOMC meets ~6w apart).
 MACRO_WEEKS = 26
 
+# How many distinct setups to log per sector (the best + runners-up). The #1 is
+# flagged is_best_in_sector=True; the rest False. Tunable via --top-n. Logging
+# runners-up enriches ml_dataset with marginal/weaker examples (negative cases)
+# so a future model can learn the boundary between strong and weak setups —
+# instead of only ever seeing the single setup the algorithm already liked.
+DEFAULT_TOP_N = 5
+
+# Cap on how many rows a single ticker may contribute to one sector's top-N, so
+# a high-volume name (e.g. MU produced ~9,900 near-identical adjacent-strike
+# setups) can't fill the quota with clones. With cap=2 and N=5 the quota spans
+# at least three tickers when available, while a thin sector whose only
+# qualifying setups share a ticker still logs both (no padding, no over-filter).
+MAX_PER_TICKER = 2
+
 # Per-ticker retry backoff schedule (seconds between attempts). len+1 attempts.
 TICKER_DELAYS = (2, 5)
 
@@ -210,6 +224,36 @@ def load_macro_proximity(scan_date):
     return d_fomc, d_cpi, d_macro
 
 
+# ── Runner-up selection ────────────────────────────────────────────────────────
+
+def select_top_n(ranked, top_n, max_per_ticker=MAX_PER_TICKER):
+    """
+    Pick up to `top_n` DISTINCT setups from a sector's already-ranked triplets.
+
+    `ranked` is the in-memory list scan_ticker already produced for the sector,
+    sorted by score descending — so this is PURE selection: it makes ZERO
+    additional Massive/network calls, it just chooses more rows from results we
+    already have. ranked[0] (the global best) is always taken first, so the
+    returned list[0] is the best (→ is_best_in_sector=True).
+
+    A per-ticker cap stops one high-volume ticker from filling the quota with
+    near-identical adjacent-strike clones; the quota then spreads across the
+    sector's strongest tickers. If fewer than `top_n` distinct setups exist
+    (within the cap), returns what exists — no padding.
+    """
+    from collections import Counter
+    per_ticker = Counter()
+    selected = []
+    for t in ranked:
+        if per_ticker[t["ticker"]] >= max_per_ticker:
+            continue
+        selected.append(t)
+        per_ticker[t["ticker"]] += 1
+        if len(selected) >= top_n:
+            break
+    return selected
+
+
 # ── Supabase writes (service role) ─────────────────────────────────────────────
 # Idempotent on re-run. Notes on the foreign key:
 #   sector_scan_runs.ml_dataset_id → ml_dataset(id) has NO ON DELETE clause, so
@@ -234,22 +278,33 @@ def _delete_ml(supabase, source, scan_date, sector):
         .execute()
 
 
-def write_picked(supabase, run_row, ml_row, source, scan_date, sector):
-    """Persist a 'picked' sector: run row + its ml_dataset row, linked. Returns ml_id."""
-    # 1. Upsert run row with the link cleared so any prior ml row is freed.
+def write_picked(supabase, run_row, ml_rows, source, scan_date, sector):
+    """
+    Persist a 'picked' sector: the run row plus the top-N ml_dataset rows
+    (exactly one with is_best_in_sector=True, the rest runners-up). The run row
+    is linked to the BEST row only. Returns the best row's id.
+
+    `ml_rows` is an ordered list; ml_rows[0] is the best (is_best_in_sector=True).
+    Idempotent: deletes ALL ml rows for this slot/sector first, so a re-run
+    replaces the whole N-row set rather than accumulating or orphaning runners-up.
+    """
+    # 1. Upsert run row with the link cleared so any prior ml rows are freed
+    #    (the FK has no ON DELETE, so the reference must be released before delete).
     run_row = {**run_row, "ml_dataset_id": None}
     supabase.table("sector_scan_runs").upsert(run_row, on_conflict=RUN_CONFLICT).execute()
-    # 2. Drop any stale ml row(s) for this slot (now unreferenced).
+    # 2. Drop ALL stale ml rows for this slot (old best + old runners-up).
     _delete_ml(supabase, source, scan_date, sector)
-    # 3. Insert the fresh best-in-sector row.
-    resp = supabase.table("ml_dataset").insert(ml_row).execute()
-    ml_id = resp.data[0]["id"] if resp.data else None
-    # 4. Point the run row at it.
-    if ml_id:
-        supabase.table("sector_scan_runs").update({"ml_dataset_id": ml_id}) \
+    # 3. Batch-insert the fresh N rows (cheap — pure DB, no Massive/network scan).
+    resp = supabase.table("ml_dataset").insert(ml_rows).execute()
+    # 4. Point the run row at the BEST row (the one flagged is_best_in_sector).
+    best_id = next((r["id"] for r in (resp.data or []) if r.get("is_best_in_sector")), None)
+    if best_id is None and resp.data:        # defensive fallback
+        best_id = resp.data[0]["id"]
+    if best_id:
+        supabase.table("sector_scan_runs").update({"ml_dataset_id": best_id}) \
             .eq("source", source).eq("scan_date", scan_date).eq("sector", sector) \
             .execute()
-    return ml_id
+    return best_id
 
 
 def write_nonpicked(supabase, run_row, source, scan_date, sector):
@@ -338,6 +393,9 @@ def main():
                         help="pause between tickers, seconds (default 0.15)")
     parser.add_argument("--limit-per-sector", type=int, default=None,
                         help="only scan the first N tickers per sector (testing)")
+    parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N,
+                        help=f"distinct setups to log per sector — #1 is best, "
+                             f"rest are runners-up (default {DEFAULT_TOP_N})")
     parser.add_argument("--universe", default=os.path.join(_PROJECT_ROOT, "data", "universe.json"))
     parser.add_argument("--dry-run", action="store_true",
                         help="scan but write nothing to Supabase")
@@ -358,6 +416,7 @@ def main():
     min_premium = args.min_premium
     min_pp      = args.min_p_profit
     sleep_s     = args.sleep
+    top_n       = max(1, args.top_n)
     weeks_range = f"W{weeks_min}-W{weeks_max}"
 
     if source not in ("live_open", "live_close", "backtest"):
@@ -438,19 +497,76 @@ def main():
             "weeks_range":     weeks_range,
         }
 
-    def commit_run(run_row, ml_row=None):
-        """Write one sector's row(s). Returns ml_id (or None). Honors --dry-run."""
+    # Memoized per-ticker earnings lookup — each distinct logged ticker (best or
+    # runner-up) is fetched at most once per run. Macro proximity is run-wide
+    # (already fetched once above), so building runner-up rows adds no Massive
+    # calls and at most a few cached yfinance earnings reads.
+    _earnings_cache = {}
+
+    def earnings_days(ticker):
+        if ticker not in _earnings_cache:
+            _earnings_cache[ticker] = _days_to_earnings(ticker, scan_date_obj)
+        return _earnings_cache[ticker]
+
+    def build_ml_row(t, is_best, sector):
+        """Build one ml_dataset row from an already-scanned triplet `t`."""
+        price = price_by_ticker.get(t["ticker"])
+        exp_date = datetime.strptime(t["expiration"], "%Y-%m-%d").date()
+        dte = (exp_date - scan_date_obj).days
+        d_earn = earnings_days(t["ticker"])
+        fv = t.get("fair_value")
+        return {
+            "source":         source,
+            "scan_date":      scan_date,
+            "scan_timestamp": scan_timestamp,
+            "sector":         sector,
+            "ticker":         t["ticker"],
+            "is_best_in_sector": is_best,
+            "expiration":     t["expiration"],
+            "weeks_to_expiration": int(t["week"]),
+            "days_to_expiration":  int(dte),
+            "leg_a_strike":   float(t["leg_a_strike"]),
+            "leg_a_prem":     float(t["leg_a_prem"]),
+            "leg_a_delta":    float(t["leg_a_delta"]),
+            "leg_b_strike":   float(t["leg_b_strike"]),
+            "leg_b_prem":     float(t["leg_b_prem"]),
+            "leg_b_delta":    float(t["leg_b_delta"]),
+            "leg_c_strike":   float(t["leg_c_strike"]),
+            "leg_c_prem":     float(t["leg_c_prem"]),
+            "leg_c_delta":    float(t["leg_c_delta"]),
+            "net_premium":    float(t["net_premium"]),
+            "spread_width":   float(t["spread_width"]),
+            "score":          float(t["score"]),
+            "p_max_profit":   float(t["p_max_profit"]),
+            "underlying_price_at_scan": float(price) if price is not None else None,
+            "fair_value":     float(fv) if fv is not None else None,
+            "moneyness_a":    (round(price / t["leg_a_strike"], 6)
+                               if price and t["leg_a_strike"] else None),
+            "vix":            vix,
+            "spy_price":      spy,
+            "days_to_earnings":   d_earn,
+            "days_to_next_fomc":  days_to_fomc,
+            "days_to_next_cpi":   days_to_cpi,
+            "days_to_next_macro": days_to_macro,
+            "earnings_before_expiry": (d_earn is not None and d_earn <= dte),
+            "outcome_filled": False,
+            "notes":          "sector scan (manual)",
+        }
+
+    def commit_run(run_row, ml_rows=None):
+        """Write one sector's row(s). Returns best ml_id (or None). Honors --dry-run."""
         nonlocal runs_written, ml_written
         sector = run_row["sector"]
         if args.dry_run:
-            print(f"  [dry-run] sector_scan_runs: {sector} status={run_row['status']}"
-                  + (f" + ml_dataset {ml_row['ticker']} {ml_row['expiration']}"
-                     if ml_row else ""), flush=True)
+            extra = (f" + {len(ml_rows)} ml_dataset row(s) "
+                     f"[best={ml_rows[0]['ticker']}]" if ml_rows else "")
+            print(f"  [dry-run] sector_scan_runs: {sector} "
+                  f"status={run_row['status']}{extra}", flush=True)
             return None
-        if ml_row is not None:
-            ml_id = write_picked(supabase, run_row, ml_row, source, scan_date, sector)
+        if ml_rows:
+            ml_id = write_picked(supabase, run_row, ml_rows, source, scan_date, sector)
             runs_written += 1
-            ml_written += 1
+            ml_written += len(ml_rows)
             return ml_id
         write_nonpicked(supabase, run_row, source, scan_date, sector)
         runs_written += 1
@@ -515,54 +631,16 @@ def main():
                                 scanned, skipped, 0, elapsed_ms))
                 continue
 
-            # status='picked' — rank and take the single best setup in sector.
+            # status='picked' — rank, then select the top-N DISTINCT setups
+            # (best + runners-up) from the already-scanned in-memory results.
+            # PURE selection: zero additional Massive/network calls — we just
+            # take more rows from `ranked`, which scan_ticker already produced.
             ranked = sorted(sector_triplets, key=lambda t: t["score"], reverse=True)
-            best = ranked[0]
-            best_price = price_by_ticker.get(best["ticker"])
-            exp_date = datetime.strptime(best["expiration"], "%Y-%m-%d").date()
-            dte = (exp_date - scan_date_obj).days
-            d_earn = _days_to_earnings(best["ticker"], scan_date_obj)
-            earnings_before_expiry = (d_earn is not None and d_earn <= dte)
-            moneyness_a = (round(best_price / best["leg_a_strike"], 6)
-                           if best_price and best["leg_a_strike"] else None)
-            fv = best.get("fair_value")
+            selected = select_top_n(ranked, top_n)   # selected[0] is the global best
+            best = selected[0]
 
-            ml_row = {
-                "source":         source,
-                "scan_date":      scan_date,
-                "scan_timestamp": scan_timestamp,
-                "sector":         sector,
-                "ticker":         best["ticker"],
-                "is_best_in_sector": True,
-                "expiration":     best["expiration"],
-                "weeks_to_expiration": int(best["week"]),
-                "days_to_expiration":  int(dte),
-                "leg_a_strike":   float(best["leg_a_strike"]),
-                "leg_a_prem":     float(best["leg_a_prem"]),
-                "leg_a_delta":    float(best["leg_a_delta"]),
-                "leg_b_strike":   float(best["leg_b_strike"]),
-                "leg_b_prem":     float(best["leg_b_prem"]),
-                "leg_b_delta":    float(best["leg_b_delta"]),
-                "leg_c_strike":   float(best["leg_c_strike"]),
-                "leg_c_prem":     float(best["leg_c_prem"]),
-                "leg_c_delta":    float(best["leg_c_delta"]),
-                "net_premium":    float(best["net_premium"]),
-                "spread_width":   float(best["spread_width"]),
-                "score":          float(best["score"]),
-                "p_max_profit":   float(best["p_max_profit"]),
-                "underlying_price_at_scan": float(best_price),
-                "fair_value":     float(fv) if fv is not None else None,
-                "moneyness_a":    moneyness_a,
-                "vix":            vix,
-                "spy_price":      spy,
-                "days_to_earnings":   d_earn,
-                "days_to_next_fomc":  days_to_fomc,
-                "days_to_next_cpi":   days_to_cpi,
-                "days_to_next_macro": days_to_macro,
-                "earnings_before_expiry": earnings_before_expiry,
-                "outcome_filled": False,
-                "notes":          "sector scan (manual)",
-            }
+            # One ml_dataset row per selected setup; only index 0 is the best.
+            ml_rows = [build_ml_row(t, i == 0, sector) for i, t in enumerate(selected)]
 
             row = base_run_row(sector)
             row.update(status="picked", best_ticker=best["ticker"],
@@ -570,11 +648,15 @@ def main():
                        tickers_scanned=scanned, tickers_skipped=skipped,
                        contracts_evaluated=evaluated_total,
                        setups_qualified=len(ranked), elapsed_ms=elapsed_ms)
-            commit_run(row, ml_row=ml_row)
+            commit_run(row, ml_rows=ml_rows)
 
+            n_runners = len(ml_rows) - 1
             print(f"  PICKED {best['ticker']} {best['expiration']} "
-                  f"score={best['score']:.4f}  ({len(ranked)} qualified, "
-                  f"{scanned} scanned, {skipped} skipped)", flush=True)
+                  f"score={best['score']:.4f}  (logged {len(ml_rows)} setups: "
+                  f"1 best + {n_runners} runner-up(s) across "
+                  f"{len({m['ticker'] for m in ml_rows})} ticker(s); "
+                  f"{len(ranked)} qualified, {scanned} scanned, {skipped} skipped)",
+                  flush=True)
             summary.append((sector, "picked", best["ticker"], float(best["score"]),
                             scanned, skipped, len(ranked), elapsed_ms))
 
