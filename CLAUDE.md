@@ -277,6 +277,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 |-------------------------------------|-------------|-------------------------------------------------------|
 | `scripts/build_universe.py`         | Writes JSON | Periodically — regenerate `data/universe.json` (sector → large-cap tickers) |
 | `scripts/sector_scan.py`            | **Writes**  | Manually (per slot) — scan every sector, log best pick to `ml_dataset` / `sector_scan_runs` |
+| `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
 
@@ -330,6 +331,16 @@ Reads the sector universe (`data/universe.json`), runs the existing Call Spread 
 **Auth** — uses `SUPABASE_SERVICE_KEY` (both tables have RLS enabled with **no public policies**; only the service role can read/write). DDL: `docs/ml_dataset_schema.sql` and `docs/sector_scan_schema.sql` (create `ml_dataset` first — `sector_scan_runs` FKs into it). The `outcome_*` columns on `ml_dataset` are populated **later** by a separate at-expiration backfill job (a sibling of `backfill_outcomes.py` that writes here, not to `trade_outcomes`); `sector_scan.py` leaves them null (`outcome_filled = false`).
 
 **End-of-run summary** prints every sector with its status and best pick (or status reason), total picks logged, total tickers skipped, total elapsed, and rows written. **Runtime note:** a full default run (all 11 sectors × all tickers × weeks 1–12, two Massive calls per ticker-expiration) is on the order of tens of minutes; a trimmed validation run (3 tickers/sector, weeks 4–9) is ~50s.
+
+### Sector Scan Review — `scripts/view_sector_scans.py` (read-only)
+
+Read-only report over `sector_scan_runs` + `ml_dataset` — the sector-scan analogue of `view_outcomes.py`. Prints a clean per-day, per-slot summary of what the daily sector scan produced. Performs **zero writes**; safe to run any time.
+
+- Run with `python3 scripts/view_sector_scans.py` (defaults to **today**, ET). `--date YYYY-MM-DD` views a specific day; `--slot open|close` restricts to one slot (default: show all slots present). Reads `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` from `.env` — the **service-role** key is required (both tables are RLS-locked with no public policies).
+- **Per slot** (open and close are distinct observations via `source` = `live_open` / `live_close`; any `backtest`-source rows for the day render as their own section): a header with the slot, **market context (VIX/SPY)** and the filter snapshot (min premium / min P / weeks), then **one row per sector** that has a `sector_scan_runs` record that day — status-colored (green=picked, dim=none_qualified, yellow=no_tickers, red=error). Each row shows the **diagnostic counts** `scan / skip / qual` (tickers_scanned / tickers_skipped / setups_qualified) so you can see how competitive a pick was (AMAT out of 8080 qualified vs LLY out of 2). For `picked` sectors the pick detail is **joined from `ml_dataset` via `run.ml_dataset_id`** — ticker, expiration, `W{weeks_to_expiration}`, score, per-contract net premium (`net_premium × 100`), max profit (`(net_premium + spread_width) × 100`), and P(profit). Non-picked rows show the reason; `error` rows show the (truncated) `error_message`. Rows are ordered picks-first (by score desc), then none_qualified / no_tickers / error.
+- **Market context note:** `vix`/`spy_price` live on `ml_dataset` (not `sector_scan_runs`), so context is read from the slot's picked rows; if a slot has no picks it shows `n/a`.
+- **Per-slot summary:** status counts (picked / none_qualified / no_tickers / error), picks logged, total tickers scanned, total skipped, total elapsed (Σ `elapsed_ms`). When both slots are present a closing line compares picks-by-slot (open vs close are different observations).
+- **Edge cases handled:** a date with no scans → friendly `No sector scans found for {date}` (also when a `--slot` filter matches nothing); a `picked` run whose `ml_dataset` row is missing/unlinked is flagged (`⚠ pick detail missing`) rather than crashing; bad `--date` format errors out cleanly. Uses `rich` for color when importable; falls back to plain text otherwise (`soft_wrap` prevents rich from reflowing the fixed-width rows).
 
 ### `screener.py`
 - Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
