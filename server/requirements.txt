@@ -9,6 +9,10 @@ reportlab
 # Options data
 massive
 
+# Market calendar — NYSE trading-day guard for the scheduled sector scan
+# (scripts/sector_scan.py). Requires Python >= 3.10 (server runs 3.12).
+pandas_market_calendars==5.4.0
+
 # Web server
 flask
 flask-cors

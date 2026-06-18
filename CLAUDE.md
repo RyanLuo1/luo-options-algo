@@ -278,6 +278,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/build_universe.py`         | Writes JSON | Periodically — regenerate `data/universe.json` (sector → large-cap tickers) |
 | `scripts/sector_scan.py`            | **Writes**  | Manually (per slot) — scan every sector, log best pick to `ml_dataset` / `sector_scan_runs` |
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
+| `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
 
@@ -330,7 +331,33 @@ Reads the sector universe (`data/universe.json`), runs the existing Call Spread 
 
 **Auth** — uses `SUPABASE_SERVICE_KEY` (both tables have RLS enabled with **no public policies**; only the service role can read/write). DDL: `docs/ml_dataset_schema.sql` and `docs/sector_scan_schema.sql` (create `ml_dataset` first — `sector_scan_runs` FKs into it). The `outcome_*` columns on `ml_dataset` are populated **later** by a separate at-expiration backfill job (a sibling of `backfill_outcomes.py` that writes here, not to `trade_outcomes`); `sector_scan.py` leaves them null (`outcome_filled = false`).
 
-**End-of-run summary** prints every sector with its status and best pick (or status reason), total picks logged, total tickers skipped, total elapsed, and rows written. **Runtime note:** a full default run (all 11 sectors × all tickers × weeks 1–12, two Massive calls per ticker-expiration) is on the order of tens of minutes; a trimmed validation run (3 tickers/sector, weeks 4–9) is ~50s.
+**End-of-run summary** prints every sector with its status and best pick (or status reason), total picks logged, total tickers skipped, total elapsed, and rows written. **Runtime note:** a full default run (all 11 sectors × all tickers × weeks 1–12, two Massive calls per ticker-expiration) is on the order of tens of minutes; a trimmed validation run (3 tickers/sector, weeks 4–9) is ~50s. (A full production run on the EC2 box measured ~2.5 min.)
+
+**Market-day guard (in-script)** — at the top of a scan (before any context fetch or DB write) `sector_scan.py` checks the **NYSE calendar** via **`pandas_market_calendars`** (pinned `==5.4.0` in `server/requirements.txt`; **new dependency** — must be `pip install`ed into the server venv after pulling, it does NOT auto-install). If today isn't a US equity trading day it prints `market closed today (YYYY-MM-DD), skipping scan` and `exit(0)` without scanning/writing. **Weekends and NYSE holidays skip; half-days / early closes count as trading days** (logged as `early close HH:MM`). The guard protects **manual runs too**, not just cron. If the library is missing it exits non-zero with a clear install message rather than guessing. Test it without scanning via `--check-market-day [YYYY-MM-DD]` (defaults to today), which prints the trading-day decision and exits — e.g. `--check-market-day 2026-11-26` → `CLOSED` (Thanksgiving), `--check-market-day 2026-11-27` → `TRADING DAY — early close 13:00`. To refresh holiday rules, bump the pinned `pandas_market_calendars` version.
+
+**Scheduling (production, EC2)** — the scan runs automatically **twice per trading day**: `--slot open` at ~10:00 AM ET (≈30 min after the 09:30 open) and `--slot close` at ~3:30 PM ET (≈30 min before the 16:00 close). The data is 15-min delayed (Options Starter plan), so these capture ~15-min-old quotes — fine for this research dataset. Cron invokes `scripts/run_sector_scan.sh <open|close>`, a wrapper that handles cwd, the venv python, logging, and the DST gate. **DST handling without `CRON_TZ`:** the EC2 box is UTC and its cron build doesn't support `CRON_TZ`, and changing the server timezone would affect the live app. So each slot is scheduled at **both** its EDT and EST UTC times (4 cron lines), and the wrapper gates on the **actual Eastern-time clock** (`TZ=America/New_York`), proceeding only inside the slot's ET window (open 09:45–10:30, close 15:15–15:45). Exactly one of each slot's two fires runs per day in either DST period — **no twice-a-year edits, no server-TZ change**. ET→UTC reference: EDT (UTC−4) → open 14:00 / close 19:30 UTC; EST (UTC−5) → open 15:00 / close 20:30 UTC. The crontab uses `1-5` (Mon–Fri); the in-script guard handles holidays. Pass a second arg `force` to the wrapper to bypass the time gate for manual/off-hours testing (the market-day guard still applies).
+
+**Logging & resilience** — the wrapper appends all stdout+stderr (with UTC `START`/`END rc=…` timestamps) to `/home/ubuntu/luo-options-algo/logs/sector_scan.log`. The log is **size-capped in the wrapper** (rotates to `.log.1` past 5 MB → ~10 MB max; no system logrotate needed). The wrapper always `exit 0` so a failed scan is logged but never mails cron or blocks the next run (cron invocations are independent regardless). `options_screener.load_dotenv()` finds `.env` because the wrapper `cd`s to the project root first; the explicit venv-python path covers cron's minimal env/PATH.
+
+**Crontab (ubuntu user, `crontab -e`):**
+```cron
+# Luo Capital sector scan — UTC schedule; run_sector_scan.sh gates on real ET time (DST-safe).
+# open  slot -> 10:00 ET : 14:00 UTC (EDT) + 15:00 UTC (EST)
+0 14 * * 1-5 /home/ubuntu/luo-options-algo/scripts/run_sector_scan.sh open
+0 15 * * 1-5 /home/ubuntu/luo-options-algo/scripts/run_sector_scan.sh open
+# close slot -> 15:30 ET : 19:30 UTC (EDT) + 20:30 UTC (EST)
+30 19 * * 1-5 /home/ubuntu/luo-options-algo/scripts/run_sector_scan.sh close
+30 20 * * 1-5 /home/ubuntu/luo-options-algo/scripts/run_sector_scan.sh close
+```
+A full scan is ~2.5–4.5 min sustained and **shares the Massive rate limit with the live app** (luo-capital.com); 10:00 AM and 3:30 PM ET deliberately avoid the open/close volatility spikes.
+
+**Server install step (after a `git pull` that includes this dependency):**
+```bash
+cd /home/ubuntu/luo-options-algo
+git pull
+venv/bin/pip install -r server/requirements.txt   # installs pandas_market_calendars==5.4.0
+venv/bin/python scripts/sector_scan.py --check-market-day   # sanity-check the guard
+```
 
 ### Sector Scan Review — `scripts/view_sector_scans.py` (read-only)
 
@@ -608,6 +635,7 @@ Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`
 - **Gunicorn** with 2 workers, 120s timeout, runs `server.app:app`
 - **systemd service:** `luocapital.service` — auto-starts on boot, auto-restarts on crash
 - **Python venv:** `/home/ubuntu/luo-options-algo/venv`
+- **cron (ubuntu user):** the daily **sector scan** runs twice per trading day via `scripts/run_sector_scan.sh` (open ~10:00 ET, close ~3:30 PM ET), logging to `logs/sector_scan.log`. See the "Scheduling (production, EC2)" notes under the sector-scan section for the crontab, DST handling, and the market-day guard. New deploys that touch `server/requirements.txt` must re-run `venv/bin/pip install -r server/requirements.txt` (the scan needs `pandas_market_calendars`).
 
 ### Environment files on server
 - `/home/ubuntu/luo-options-algo/.env` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `MASSIVE_API_KEY`

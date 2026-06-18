@@ -260,6 +260,61 @@ def write_nonpicked(supabase, run_row, source, scan_date, sector):
     _delete_ml(supabase, source, scan_date, sector)
 
 
+# ── Market-day guard ──────────────────────────────────────────────────────────
+# The scan only runs on US equity trading days. This lives in the script (not
+# cron-only) so it protects manual runs too: a manual weekend/holiday run skips
+# cleanly without scanning or writing any rows. Half-days / early closes count
+# as trading days. Source of truth is the NYSE calendar from
+# pandas_market_calendars (a pinned dependency — see server/requirements.txt);
+# its holiday rules update when the library is upgraded.
+
+def market_day_status(d):
+    """
+    Return (is_trading_day: bool, info: str) for date `d` (datetime.date), per
+    the NYSE calendar. Early-close / half-days count as trading days. Raises
+    RuntimeError if pandas_market_calendars isn't installed (so the caller can
+    surface a clear 'pip install' message instead of guessing).
+    """
+    try:
+        import pandas_market_calendars as mcal
+    except ImportError as e:
+        raise RuntimeError(
+            "pandas_market_calendars not installed — run "
+            "`venv/bin/pip install -r server/requirements.txt` "
+            "(or `pip install pandas_market_calendars`). "
+            "Cannot determine whether today is a trading day."
+        ) from e
+
+    nyse = mcal.get_calendar("NYSE")
+    sched = nyse.schedule(start_date=d.isoformat(), end_date=d.isoformat())
+    if sched.empty:
+        return False, "NYSE closed (weekend or holiday)"
+
+    info = "NYSE open (regular session)"
+    try:  # flag early-close half-days for the log, but still treat as trading
+        close_et = sched.iloc[0]["market_close"].tz_convert("America/New_York")
+        if (close_et.hour, close_et.minute) < (16, 0):
+            info = f"NYSE open (early close {close_et.strftime('%H:%M %Z')})"
+    except Exception:
+        pass
+    return True, info
+
+
+def _run_market_day_check(arg):
+    """Handle --check-market-day: evaluate the guard for a date and exit."""
+    if arg == "__today__":
+        d = datetime.now(ZoneInfo("America/New_York")).date()
+    else:
+        d = datetime.strptime(arg, "%Y-%m-%d").date()
+    try:
+        is_trading, info = market_day_status(d)
+    except RuntimeError as e:
+        print(f"[guard] {e}", file=sys.stderr)
+        sys.exit(1)
+    label = "TRADING DAY" if is_trading else "CLOSED"
+    print(f"{d.isoformat()} ({d.strftime('%A')}): {label} — {info}")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -267,8 +322,12 @@ def main():
         description="Daily sector scan (manual) — Luo Capital",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--slot", required=True, choices=["open", "close"],
-                        help="scan slot; sets source to live_open / live_close")
+    parser.add_argument("--slot", choices=["open", "close"], default=None,
+                        help="scan slot (required for a scan); sets source to live_open / live_close")
+    parser.add_argument("--check-market-day", nargs="?", const="__today__",
+                        default=None, metavar="YYYY-MM-DD",
+                        help="evaluate the market-day guard for a date "
+                             "(default today) and exit, without scanning/writing")
     parser.add_argument("--source", default=None,
                         help="override source (default live_<slot>; backtest allowed)")
     parser.add_argument("--weeks-min", type=int, default=1)
@@ -284,6 +343,14 @@ def main():
                         help="scan but write nothing to Supabase")
     args = parser.parse_args()
 
+    # --check-market-day: just report the guard decision for a date and exit.
+    if args.check_market_day is not None:
+        _run_market_day_check(args.check_market_day)
+        return
+
+    if args.slot is None:
+        parser.error("--slot is required (open|close) for a scan")
+
     slot        = args.slot
     source      = args.source or f"live_{slot}"
     weeks_max   = max(1, min(12, args.weeks_max))
@@ -298,6 +365,20 @@ def main():
               f"(got {source!r}) — DB CHECK constraint.", file=sys.stderr)
         sys.exit(1)
 
+    # ── Market-day guard — skip weekends/holidays before any heavy work ───────
+    scan_date_obj = datetime.now(ZoneInfo("America/New_York")).date()
+    scan_date     = scan_date_obj.isoformat()
+    try:
+        is_trading, mkt_info = market_day_status(scan_date_obj)
+    except RuntimeError as e:
+        print(f"[guard] {e}", file=sys.stderr)
+        sys.exit(1)
+    if not is_trading:
+        print(f"market closed today ({scan_date}), skipping scan — {mkt_info}",
+              flush=True)
+        sys.exit(0)
+    print(f"[guard] trading day ({scan_date}) — {mkt_info}; proceeding", flush=True)
+
     # ── Load universe ────────────────────────────────────────────────────────
     try:
         with open(args.universe) as f:
@@ -310,8 +391,6 @@ def main():
         print(f"error: universe {args.universe} has no sectors", file=sys.stderr)
         sys.exit(1)
 
-    scan_date_obj  = datetime.now(ZoneInfo("America/New_York")).date()
-    scan_date      = scan_date_obj.isoformat()
     scan_timestamp = datetime.now(timezone.utc).isoformat()
 
     total_tickers = sum(len(t) for t in sectors.values())
