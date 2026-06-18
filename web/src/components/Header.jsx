@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { clearScreenerSession } from '../lib/sessionState'
 
-export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale, onToggleControls, controlsOpen }) {
+export default function Header({ marketOpen, lastRun, onRun, onClear, loading, isStale, onToggleControls, controlsOpen, tickerInput, setTickerInput, tickersError }) {
   const location = useLocation()
   const navigate  = useNavigate()
   const path      = location.pathname
@@ -48,9 +48,10 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
   }
 
   // ── Screener: full header in a contained surface panel ─────────────────────
-  // Two zones: lockup (left) and controls (right), with an empty center. The
-  // outer flex uses justify-between so the controls pin right and the middle
-  // stays calm/empty.
+  // Three zones: lockup (left), the scan-Tickers input (center, flex-1), and
+  // controls (right). Lockup + controls are flex-shrink-0 so they keep their
+  // space; the center input absorbs the remaining width and shrinks first on
+  // narrower windows.
   return (
     <header className="shrink-0 px-3 pt-3">
       <div className="bg-surface border border-subtle rounded-lg px-5 py-3 flex items-center justify-between gap-4">
@@ -59,6 +60,67 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
         <div className="flex-shrink-0 leading-tight">
           <div className="text-primary font-bold text-xl tracking-tight">Luo Capital</div>
           <div className="text-tertiary text-xs mt-0.5">Options Screener</div>
+        </div>
+
+        {/* Center — scan Tickers input (relocated from the controls drawer)
+            with an adjacent info tooltip. Same state/handler as before: blank =
+            default watchlist; Enter runs the scan, identical to Run Scan. */}
+        <div className="flex-1 min-w-0 flex justify-center px-2">
+          <div className="relative flex items-center gap-2 w-full max-w-md min-w-0">
+            <input
+              type="text"
+              value={tickerInput ?? ''}
+              onChange={e => setTickerInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !loading && onRun()}
+              placeholder="Enter a ticker or tickers to scan"
+              title="Tickers (NVDA, META) or @watchlist (@semis) · blank = default watchlist"
+              disabled={loading}
+              className={`flex-1 min-w-0 h-[34px] bg-surface-raised text-gray-100 border rounded-md px-3
+                          text-sm font-mono placeholder-gray-600 focus:outline-none disabled:opacity-50
+                          ${tickersError ? 'border-loss' : 'border-subtle focus:border-accent'}`}
+            />
+
+            {/* Inline error (e.g. unknown @watchlist) — absolute so the header
+                height doesn't shift; cleared in App when the input changes. */}
+            {tickersError && (
+              <div className="absolute left-0 top-full mt-1 text-[11px] text-loss leading-tight">
+                {tickersError}
+              </div>
+            )}
+
+            {/* Info tooltip — usage hint. Shows on hover AND keyboard focus
+                (group-focus-within). Inline SVG icon (no icon dependency);
+                on-brand dark popover using design tokens. */}
+            <div className="relative group flex-shrink-0">
+              <button
+                type="button"
+                aria-label="How the tickers input works"
+                className="flex items-center justify-center w-6 h-6 rounded-full text-tertiary
+                           hover:text-secondary focus:text-secondary focus:outline-none
+                           focus-visible:ring-1 focus-visible:ring-accent"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                     strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+              </button>
+              <div
+                role="tooltip"
+                className="pointer-events-none absolute right-0 top-full mt-2 w-64 z-50
+                           rounded-md border border-subtle bg-surface-raised px-3 py-2
+                           text-[11px] leading-relaxed text-secondary shadow-xl
+                           opacity-0 invisible transition-opacity duration-150
+                           group-hover:opacity-100 group-hover:visible
+                           group-focus-within:opacity-100 group-focus-within:visible"
+              >
+                Enter tickers separated by commas or spaces (NVDA, META). Use @name to scan a
+                saved watchlist (e.g. @semis). Manage watchlists in Controls. Blank = default watchlist.
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Right — controls, always visible & clickable */}

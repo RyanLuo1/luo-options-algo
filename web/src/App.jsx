@@ -4,6 +4,7 @@ import './index.css'
 import { supabase } from './lib/supabase'
 import useAuth from './hooks/useAuth'
 import { loadScreenerState, saveScreenerState, clearScreenerSession } from './lib/sessionState'
+import { parseTickersUnique, normalizeWatchlistName, validateWatchlistName, resolveScanTickers } from './lib/watchlists'
 
 import useOptionsData    from './hooks/useOptionsData'
 import Header            from './components/Header'
@@ -51,6 +52,33 @@ export default function App() {
   // Left controls drawer — CLOSED by default on load so results get full width;
   // open/closed state is remembered for the session.
   const [drawerOpen,     setDrawerOpen]     = useState(persisted.drawerOpen ?? false)
+
+  // ── Named watchlists (per-user, server-backed — NOT persisted to session) ───
+  // Loaded from Supabase for the current user; drive @name resolution in the
+  // scan input and the management UI in the controls drawer.
+  const [watchlists, setWatchlists] = useState([])
+  // Inline error for the scan-tickers input (e.g. an unknown @name). Shown in
+  // the header under the input; cleared whenever the user edits the input.
+  const [scanInputError, setScanInputError] = useState(null)
+
+  // Load the current user's watchlists (RLS also scopes this to the owner).
+  useEffect(() => {
+    if (!user) { setWatchlists([]); return }
+    let cancelled = false
+    supabase
+      .from('watchlists')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('name', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (!error && data) setWatchlists(data)
+      })
+    return () => { cancelled = true }
+  }, [user])
+
+  // Clear the input error as soon as the user edits the tickers input.
+  useEffect(() => { setScanInputError(null) }, [tickerInput])
 
   // Clicking a table row picks that specific setup (overrides the rank-1 default).
   function selectRow(row) {
@@ -143,21 +171,64 @@ export default function App() {
     }
   }, [ranked])
 
-  // ── Utility functions ──────────────────────────────────────────────────────
-  function parseTickers(raw) {
-    return raw
-      .split(/[,\s]+/)
-      .map(t => t.trim().toUpperCase().replace(/^\$/, ''))
-      .filter(Boolean)
+  // ── Watchlist CRUD (per-user, RLS-scoped via supabase-js; mirrors the
+  //    tradebook client pattern). Each returns `{ error }` on failure (falsy on
+  //    success) and updates `watchlists` in place so @-resolution sees changes
+  //    immediately — no reload. ──────────────────────────────────────────────
+  async function createWatchlist(rawName, rawTickers) {
+    if (!user) return { error: 'Sign in to save watchlists.' }
+    const nameErr = validateWatchlistName(rawName)
+    if (nameErr) return { error: nameErr }
+    const name = normalizeWatchlistName(rawName)
+    const tickers = parseTickersUnique(rawTickers)
+    if (tickers.length === 0) return { error: 'Add at least one ticker.' }
+    if (watchlists.some(w => w.name === name)) return { error: `Watchlist "${name}" already exists.` }
+    const { data, error } = await supabase
+      .from('watchlists')
+      .insert({ user_id: user.id, name, tickers })
+      .select()
+      .single()
+    if (error) return { error: error.code === '23505' ? `Watchlist "${name}" already exists.` : error.message }
+    setWatchlists(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+    return {}
+  }
+
+  async function updateWatchlist(id, rawName, rawTickers) {
+    if (!user) return { error: 'Sign in to edit watchlists.' }
+    const nameErr = validateWatchlistName(rawName)
+    if (nameErr) return { error: nameErr }
+    const name = normalizeWatchlistName(rawName)
+    const tickers = parseTickersUnique(rawTickers)
+    if (tickers.length === 0) return { error: 'Add at least one ticker.' }
+    if (watchlists.some(w => w.name === name && w.id !== id)) return { error: `Watchlist "${name}" already exists.` }
+    const { data, error } = await supabase
+      .from('watchlists')
+      .update({ name, tickers, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) return { error: error.code === '23505' ? `Watchlist "${name}" already exists.` : error.message }
+    setWatchlists(prev => prev.map(w => (w.id === id ? data : w)).sort((a, b) => a.name.localeCompare(b.name)))
+    return {}
+  }
+
+  async function deleteWatchlist(id) {
+    if (!user) return
+    const { error } = await supabase.from('watchlists').delete().eq('id', id)
+    if (!error) setWatchlists(prev => prev.filter(w => w.id !== id))
   }
 
   // ── Staleness detection ────────────────────────────────────────────────────
+  // Resolve @-refs first so a typed @watchlist (or its expanded tickers) is
+  // compared against what the last scan used. An unresolvable @name isn't
+  // counted as "stale" (the scan would error before running anyway).
+  const resolvedStale = resolveScanTickers(tickerInput, watchlists)
   const isStale = hasResult && (
     (weeksMinUsed   !== null && weeksMin   !== weeksMinUsed)   ||
     (weeksMaxUsed   !== null && weeksMax   !== weeksMaxUsed)   ||
     (minPremiumUsed !== null && minPremium !== minPremiumUsed) ||
     (minPProfitUsed !== null && minPProfit !== minPProfitUsed) ||
-    parseTickers(tickerInput).some(t => !tickersUsed.includes(t))
+    (!resolvedStale.error && resolvedStale.tickers.some(t => !tickersUsed.includes(t)))
   )
 
   // ── Clear screener ─────────────────────────────────────────────────────────
@@ -179,17 +250,23 @@ export default function App() {
     setTickerFilter(null)
     setChartFull(false)
     setDrawerOpen(false)
+    setScanInputError(null)
     clearAll()
     clearScreenerSession()
   }
 
   // ── Run scan ───────────────────────────────────────────────────────────────
   function handleRun() {
-    const tickers = parseTickers(tickerInput)
+    // Resolve @watchlist refs → final ticker list BEFORE the scan. The scan
+    // engine is unchanged — it just receives the expanded, deduped tickers.
+    // An unknown @name surfaces an inline error and aborts (no scan).
+    const { tickers, error } = resolveScanTickers(tickerInput, watchlists)
+    if (error) { setScanInputError(error); return }
+    setScanInputError(null)
     // Auto-close the controls drawer so the user drops straight into results.
     setDrawerOpen(false)
     runScan({
-      tickers:    tickers.length > 0 ? tickers : undefined,
+      tickers:    tickers.length > 0 ? tickers : undefined,  // blank → default watchlist
       weeksMin,
       weeksMax,
       minPremium,
@@ -426,8 +503,6 @@ export default function App() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         loading={loading}
-        tickerInput={tickerInput}
-        setTickerInput={setTickerInput}
         onRun={handleRun}
         weeksMin={weeksMin}
         weeksMax={weeksMax}
@@ -445,6 +520,10 @@ export default function App() {
         handleMinPProfitChange={handleMinPProfitChange}
         handleMinPProfitBlur={handleMinPProfitBlur}
         bumpMinPProfit={bumpMinPProfit}
+        watchlists={watchlists}
+        onCreateWatchlist={createWatchlist}
+        onUpdateWatchlist={updateWatchlist}
+        onDeleteWatchlist={deleteWatchlist}
       />
     </>
   )
@@ -463,6 +542,9 @@ export default function App() {
         isStale={isStale}
         onToggleControls={() => setDrawerOpen(o => !o)}
         controlsOpen={drawerOpen}
+        tickerInput={tickerInput}
+        setTickerInput={setTickerInput}
+        tickersError={scanInputError}
       />
       {screenerContent}
       <Toast message="Saved to Tradebook ✓" visible={toastVisible} />

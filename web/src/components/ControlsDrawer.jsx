@@ -1,23 +1,24 @@
 import WeeksRangeSlider from './WeeksRangeSlider'
+import WatchlistManager from './WatchlistManager'
 
 /**
- * ControlsDrawer — the four scan controls (Tickers, Weeks range, Min Net
- * Premium, Min P(Profit)) in a panel that slides in from the LEFT. Opened /
- * closed by the '⚙ Controls' trigger in the header; default CLOSED so the
- * results (table + detail + chart) get full width.
+ * ControlsDrawer — the scan FILTER controls (Weeks range, Min Net Premium,
+ * Min P(Profit)) in a panel that slides in from the LEFT. Opened / closed by
+ * the '⚙ Controls' trigger in the header; default CLOSED so the results
+ * (table + detail + chart) get full width.
  *
- * Run Scan is intentionally NOT in here — it stays in the header so the user
- * can re-scan without opening the drawer. Pressing Enter in any field still
- * runs the scan (via `onRun`).
+ * The scan-Tickers input is NOT here — it lives in the header center (always
+ * visible). Run Scan is also in the header so the user can re-scan without
+ * opening the drawer. Pressing Enter in any filter field still runs the scan
+ * (via `onRun`).
  *
  * Pure presentation + lifted state: every value/handler is owned by App.jsx
- * and threaded through props (mirrors the old inline controls panel exactly,
- * just laid out vertically and full-width).
+ * and threaded through props.
  */
 export default function ControlsDrawer({
   open, onClose, loading,
-  // Tickers
-  tickerInput, setTickerInput, onRun,
+  // Enter-to-run for the filter fields (the Tickers input lives in the header)
+  onRun,
   // Weeks
   weeksMin, weeksMax, setWeeksMin, setWeeksMax,
   // Min Net Premium
@@ -26,6 +27,8 @@ export default function ControlsDrawer({
   // Min P(Profit)
   minPProfit, minPProfitStr, minPProfitValid,
   handleMinPProfitChange, handleMinPProfitBlur, bumpMinPProfit,
+  // Watchlists (per-user; @name resolution lives in App)
+  watchlists, onCreateWatchlist, onUpdateWatchlist, onDeleteWatchlist,
 }) {
   return (
     <>
@@ -59,23 +62,6 @@ export default function ControlsDrawer({
 
         {/* Fields — stacked vertically */}
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-5">
-
-          {/* Tickers */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-secondary">Tickers</label>
-            <input
-              type="text"
-              value={tickerInput}
-              onChange={e => setTickerInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !loading && onRun()}
-              placeholder="NVDA, META, TSLA… · blank = watchlist"
-              title="Comma- or space-separated tickers · blank = default watchlist"
-              disabled={loading}
-              className="w-full h-[34px] bg-surface-raised text-gray-100 border border-subtle rounded-md px-3
-                         text-sm font-mono placeholder-gray-600
-                         focus:outline-none focus:border-accent disabled:opacity-50"
-            />
-          </div>
 
           {/* Weeks range */}
           <div className="flex flex-col gap-1.5">
@@ -162,6 +148,14 @@ export default function ControlsDrawer({
           <p className="text-[11px] text-tertiary mt-1">
             Adjust controls, then Run Scan in the header. Enter in any field runs the scan too.
           </p>
+
+          {/* Named watchlists — manage here, reference with @name in the scan input. */}
+          <WatchlistManager
+            watchlists={watchlists ?? []}
+            onCreate={onCreateWatchlist}
+            onUpdate={onUpdateWatchlist}
+            onDelete={onDeleteWatchlist}
+          />
         </div>
       </aside>
     </>
