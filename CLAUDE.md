@@ -7,6 +7,8 @@ The platform is **single-strategy**: every scan runs the Call Spread Risk Revers
 
 > **History:** Earlier baselines V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) have been removed (see Changelog). The proprietary risk reversal strategy is now the sole algorithm.
 
+**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A is in progress.** Each phase has an exit gate; read the spec before touching anything ranker-related.
+
 ---
 
 ## Data Provider Responsibilities
