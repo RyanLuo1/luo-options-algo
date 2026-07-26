@@ -7,7 +7,7 @@ The platform is **single-strategy**: every scan runs the Call Spread Risk Revers
 
 > **History:** Earlier baselines V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) have been removed (see Changelog). The proprietary risk reversal strategy is now the sole algorithm.
 
-**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A is in progress.** Each phase has an exit gate; read the spec before touching anything ranker-related.
+**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A is complete (validation gate passed 2026-07-26 — see `lib/bs.py` below); Phase B has NOT started.** Each phase has an exit gate; read the spec before touching anything ranker-related.
 
 ---
 
@@ -112,6 +112,14 @@ Shared utilities module — holds the small set of helpers the screener depends 
 - `massive_client` — module-level Massive `RESTClient` initialized from `MASSIVE_API_KEY` env var; imported by `server/app.py` and `screener.py` (the single client for the whole project)
 - `get_next_fridays(n)` — finds the next N Friday expiration targets; used by `screener.py` and `server/app.py`
 - `find_closest_strike(strikes, target)` — snaps a target price to the nearest available chain strike
+
+### `lib/bs.py`
+Black-Scholes IV solver + delta for the learned-ranker backtest (`docs/RANKER_SPEC.md` Phase A). The backtester can't use Massive Greeks (not served historically), so it recomputes delta from historical quote mids via this module. Stdlib-only (no numpy/scipy).
+- `implied_vol(option_type, price, spot, strike, dte_years, r=None)` — solves BS IV from a price (feed it the quote mid). Newton with guaranteed-convergence bisection fallback (price is monotone in vol, bracket [1e-4, 5.0]). **Returns `None` whenever the solve is ill-posed** — price at/below intrinsic, above the no-arb upper bound, non-positive inputs, expired — never a fabricated number.
+- `delta(option_type, spot, strike, dte_years, r, iv)` — signed BS delta (calls +, puts −); the screener convention is `abs()`.
+- **V1 approximations (documented in the module docstring):** constant `RISK_FREE_RATE = 0.045` (no term structure); European exercise with **no dividend adjustment**.
+- Tests: `python3 -m unittest tests.test_bs` (parity, known values, IV round-trip grid, edge cases).
+- **Validation status: Phase A gate PASSED 2026-07-26** — 907 contracts across MU/AAPL/JPM/XOM/KO in/near the leg delta windows, quote-guard-filtered, Friday-close quotes vs same-moment Massive snapshot Greeks: |Δ_ours − Δ_massive| median **0.0021**, p95 **0.0201**, max 0.057 (bar: ≤ 0.02 / ≤ 0.05). Residual error concentrates exactly where the no-dividend approximation predicts: dividend payers (KO, JPM) at long DTE near-ATM (calls overstated, put |Δ| understated). Non-payer MU: median 0.0018, max 0.016. A dividend adjustment is the known fix if the bar ever tightens.
 
 ### `event_filter.py`
 - Fetches and caches earnings dates and macro events for use in the ranked output
