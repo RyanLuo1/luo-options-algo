@@ -13,9 +13,11 @@ The platform is **single-strategy**: every scan runs the Call Spread Risk Revers
 
 The project intentionally uses **two** data providers with a clear division of responsibility. Understanding this split is critical when touching anything that fetches stock prices, options chains, or chart data.
 
-### Massive (Options Starter plan, $30/month) — options data + historical stocks
+### Massive (Options Advanced plan, $199/month) — options data + historical stocks
 
-- All option chains: strikes, premiums, delta, IV, volume, open interest
+> **Upgraded 2026-07** from Options Starter ($30/mo). The Advanced plan adds **real-time options data** (the 15-min delay is gone), **quotes** (`last_quote`: bid, ask, sizes, midpoint, timestamp), and **5+ years of history**. All option pricing now comes from live bid/ask quotes — see "Pricing convention" under The Strategy.
+
+- All option chains: strikes, **live bid/ask quotes**, delta, IV, volume, open interest
 - Pre-calculated Greeks for every contract (no need to compute Black-Scholes ourselves)
 - Historical stock aggregates: daily and hourly bars from **yesterday and earlier**
 - Technical indicators (`get_rsi`) on historical timespans
@@ -27,16 +29,16 @@ The project intentionally uses **two** data providers with a clear division of r
 - **Today's intraday bars** (the Massive Options plan returns `NOT_AUTHORIZED` for any aggregate dated today — see below)
 - **Indices**: the VIX (yfinance symbol `^VIX`) and any other index data the Options plan blocks
 - **Market-context inputs for scan logging**: SPY today's close and VIX today's close, logged into `scan_runs.spy_price` and `scan_runs.vix` so we can correlate scan output with market regime later (`server/app.py` → `_get_market_context()`)
-- **Fundamentals**: forward/trailing EPS, P/E ratios, `targetMeanPrice`, earnings dates — used by the fair-value chain in `screener.get_fair_value`
+- **Fundamentals**: earnings dates (via `event_filter.py`). (EPS / P/E ratios / `targetMeanPrice` were used by the removed fair-value feature — see Changelog)
 - **Stock price input**: the per-ticker price fed to `scan_ticker()` comes from `yf.Ticker(ticker).history(period="1d")["Close"].iloc[-1]`
 
 ### Why the split exists
 
-Massive sells stocks data and options data as **separate** subscriptions. The $30/month Options plan grants:
+Massive sells stocks data and options data as **separate** subscriptions. The Options Advanced plan ($199/month) grants:
 
-- ✅ Today's options data (real-time-ish, ~15-minute delay)
-- ✅ Historical stock data (yesterday and back)
-- ❌ Today's stock data — any aggregate dated today, **even after market close** (requires the Stocks plan, +$30/month)
+- ✅ Today's options data — **real-time**, including live `last_quote` bid/ask on every contract (verified: quote timestamps run to the 16:00:00 ET close, `timeframe='REAL-TIME'`)
+- ✅ Historical stock data (yesterday and back), now 5+ years deep
+- ❌ Today's stock data — any aggregate dated today, **even after market close** (requires a separate Stocks plan). The `underlying_asset` block inside option snapshots still reports `timeframe='DELAYED'` — the stock side remains outside the plan
 - ❌ Indices data of any kind — VIX, SPX, etc. (the `I:` ticker prefix returns `NOT_AUTHORIZED`)
 
 yfinance scrapes Yahoo Finance's public quotes and fills these gaps for free. Treat it as a narrow-purpose fallback for **today's stock data and indices** — everything else uses Massive. yfinance has no SLA, no rate-limit guarantees, and can break when Yahoo changes their HTML; that's acceptable for the data it covers (current price + a few day bars + VIX) but would be a poor fit for the bulk options data Massive serves.
@@ -63,28 +65,38 @@ The ticker universe is fully customizable — the web UI accepts manual input (b
 For each ticker we evaluate weekly expirations (default weeks 1–12) and attempt to build a **three-leg** structure designed to collect a net credit while keeping defined directional exposure:
 
 - **Leg A — Buy ATM call** (delta 0.40–0.60): pay premium
-- **Leg B — Sell OTM call** (delta 0.20–0.40, strike > Leg A; targeted near fair value when available): collect premium
+- **Leg B — Sell OTM call** (delta 0.20–0.40, strike > Leg A; candidates nearest current spot are tried first): collect premium
 - **Leg C — Sell OTM put** (delta 0.15–0.30, strike < current price): collect premium
 
 **Goal:** `Net Premium = (Leg B + Leg C) − Leg A ≥ min_premium` (default $5.00, credit only).
 
+### Pricing convention — conservative / transactable (2026-07)
+
+Leg premiums come from the **live quote**, priced on the side of the book we'd actually transact on:
+
+- **Legs we SELL** (short call B, short put C): priced at the **bid** — what we'd actually receive
+- **Leg we BUY** (long call A): priced at the **ask** — what we'd actually pay
+
+So `net_premium = B_bid + C_bid − A_ask` is the credit we could actually collect. Scores are structurally lower than under the old last-trade pricing — that's correct, not a regression. **History:** premiums used to come from `day.close` (last trade), which can be hours stale; a diagnostic found it violated call-price monotonicity on ~36% of adjacent MU strike pairs (higher strike priced above lower — phantom credits up to $249), which is what inflated pre-migration scores. Under bid/ask pricing those violations are zero.
+
 ### Filters (per leg / per triplet)
 - IV ≤ 0.01 → excluded (placeholder values from a closed market)
-- Volume < 20 → excluded
+- **Liquidity guard:** no live two-sided quote (`bid > 0` and `ask > 0`, `ask ≥ bid`) → excluded — no quote = not tradeable
+- **Spread guard:** `(ask − bid) / mid > MAX_SPREAD_PCT` (default **0.15**, i.e. 15% of the quote midpoint; constant in `screener.py`) → excluded — a quote that wide makes the price meaningless. Chosen from a survey of MU: delta-eligible legs run median 4–7% / p90 6–12% of mid, all ≤ 15%, so liquid names lose nothing while illiquid chains (e.g. GEV, APP) are correctly cut
+- Volume < 20 → excluded. (Now partly redundant: its original job — proxying for a fresh last-trade price — is handled by the quote guards. It still excludes quoted-but-untraded contracts, e.g. many far-week Leg B candidates with fine two-sided quotes. Kept deliberately; revisit if far-week coverage feels thin)
 - Delta must fall within each leg's specified range
+- **Monotonicity sanity check (belt-and-suspenders):** any pairing where `leg_b_prem ≥ leg_a_prem` (higher-strike call priced at or above lower-strike call) is rejected and logged to stderr. With B at bid and A at ask this should never fire — a hit means a crossed/degenerate quote
 - Net premium < `min_premium` → triplet skipped
 - P(max profit) `= (1 − Leg B delta) × (1 − Leg C delta) < min_p_profit` (default 0.50) → triplet skipped
 
 ### Scoring & ranking
 - `score = net_premium / spread_width`, where `spread_width = Leg B strike − Leg A strike`
 - All passing triplets across all tickers/expirations are ranked by `score` descending; the top entries are the trade signals
-- Signal output per triplet: rank, ticker, expiration, week, the three leg strikes/premiums/deltas, net premium, spread width, score, P(max profit), fair value, plus earnings/macro event flags
+- Signal output per triplet: rank, ticker, expiration, week, the three leg strikes/premiums/deltas, net premium, spread width, score, P(max profit), plus earnings/macro event flags
 
-### Fair value (Leg B targeting) — fallback chain
-1. `forwardEps × forwardPE`
-2. `trailingEps × trailingPE`
-3. `targetMeanPrice` (analyst consensus)
-4. `None` — Leg B selected by delta range only
+### Fair value — removed (2026-07)
+
+There used to be a "fair value" feature (a `forwardEps × forwardPE` → `trailingEps × trailingPE` → `targetMeanPrice` fallback chain from yfinance) that "targeted" Leg B near fair value. **It was a no-op**: Yahoo derives `forwardPE` as `price ÷ forwardEps`, so `forwardEps × forwardPE` algebraically reconstructs the current spot price — fair value always equaled spot to the penny (verified across the whole watchlist). Leg B "fair-value targeting" was therefore always spot-relative targeting, and — since the scan evaluates *every* Leg B candidate anyway — the sort only affected iteration order, never which setups were produced. The feature was removed to make the code honest: Leg B candidates now sort by proximity to spot explicitly, and no fair value is computed, returned, or displayed. Removal was verified behavior-neutral (identical setups on identical chain data). See the Changelog entry for what happened to the DB columns.
 
 See the [`screener.py`](#screenerpy) section for the full implementation.
 
@@ -119,7 +131,7 @@ Shared utilities module — holds the small set of helpers the screener depends 
   - `GET /api/events` — returns cached macro events (FOMC, CPI, PPI, NFP, earnings)
   - `POST /api/run` — runs a Call Spread Risk Reversal scan and returns ranked triplets (scans are logged to `scan_runs`/`scan_results` — see Scan History below). This is the sole scan endpoint.
   - `POST /api/tradebook/save` — server-side tradebook insert; attributes user_id from JWT, links to source scan, flips `was_saved=true` on `scan_results`
-  - `GET /api/chain` — returns a filtered options chain for a ticker/expiration/side with BS delta computed
+  - `GET /api/chain` — returns a filtered options chain for a ticker/expiration/side with live `bid`/`ask`/`mid` quotes (same liquidity guards as the scanner; see below)
 - `/api/run` request body (all optional):
   - `tickers`: list of strings — leading `$` is stripped automatically
   - `weeks_min`: integer 1–12; defaults to 1; must be ≤ `weeks_max`
@@ -127,12 +139,12 @@ Shared utilities module — holds the small set of helpers the screener depends 
   - `min_premium`: float ≥ 0; minimum net credit in dollars; defaults to 5.00
   - `min_p_profit`: float 0–1; minimum P(max profit); defaults to 0.50
 - `/api/run` response includes: `ranked`, `by_ticker`, `macro_events`, `total_evaluated`, `tickers_used`, `tickers_skipped`, `tickers_with_results`, `market_open`, `run_at`, `weeks_min_used`, `weeks_max_used`, `min_premium_used`, `min_p_profit_used`, `elapsed_ms`, `scan_id` (uuid; null if logging failed or no auth), and each `ranked[i]` entry carries a `result_id` (uuid; null on logging failure) plus `underlying_price`
-- **`underlying_price`** — the live yfinance current price used for that ticker's scan (`price` fed to `scan_ticker()`), attached to every `ranked` entry and therefore to each `by_ticker[i].best`. It is **distinct from `fair_value`** (the model price): `underlying_price` is the live spot, `fair_value` is the analyst/EPS-derived target. Threaded through from the price already fetched per ticker during the scan — **no new API calls**. Added to the response copies only; the logged `ranked` list and `scan_results` rows are unaffected. (Was used by the per-ticker overview cards' payoff-zone "now" marker; that strip has since been removed from the UI — see below — but the field remains for any future consumer.)
+- **`underlying_price`** — the live yfinance current price used for that ticker's scan (`price` fed to `scan_ticker()`), attached to every `ranked` entry and therefore to each `by_ticker[i].best`. Threaded through from the price already fetched per ticker during the scan — **no new API calls**. Added to the response copies only; the logged `ranked` list and `scan_results` rows are unaffected. (Was used by the per-ticker overview cards' payoff-zone "now" marker; that strip has since been removed from the UI — see below — but the field remains for any future consumer.)
 - **`by_ticker`** / **`tickers_with_results`** — a per-ticker grouping of the results. It is **purely a reorganization** of the flat `ranked` list (same already-scored/ranked triplets — no recomputation): one entry per ticker that produced ≥1 qualifying triplet, each `{ ticker, best, count }` where `best` is that ticker's single highest-score triplet object (same shape as a `ranked` entry, including its `result_id`) and `count` is how many qualifying triplets the ticker produced. Ordered by `best.score` descending. `tickers_with_results` is `len(by_ticker)`. **No longer consumed by the UI** — these powered the per-ticker overview card strip, which was removed (the screener now drives selection purely from the ranked-table rows). The fields are still returned by `/api/run` (cheap, may feed future features); the flat `ranked` list remains the source for the detail table.
 - `/api/chain` query params: `ticker` (str), `expiration` (YYYY-MM-DD), `side` ('call' or 'put')
   - Fetches chain via Massive `list_snapshot_options_chain`; delta and IV are pre-calculated by Massive
-  - Filters to 0.05 ≤ delta ≤ 0.85 and IV > 0.01; premium from `o.day.close`
-  - Returns JSON array sorted by strike ascending; each entry: `strike`, `premium`, `delta`, `volume`, `oi`, `iv`
+  - Filters to 0.05 ≤ delta ≤ 0.85, IV > 0.01, **and the same quote guards the scanner applies** (live two-sided quote; spread ≤ `MAX_SPREAD_PCT` of mid, imported from `screener.py`) — so the editor shows the same tradeable universe the scan drew from
+  - Returns JSON array sorted by strike ascending; each entry: `strike`, `bid`, `ask`, `mid`, `delta`, `volume`, `oi`, `iv`. There is **no `premium` field** anymore — the frontend picks the transactable side per leg (buy → `ask`, sell → `bid`; see TradePage)
 
 ### `/api/chart` endpoint (added in `server/app.py`)
 
@@ -197,7 +209,7 @@ Every scan execution is logged to Supabase so we can train ML models on real alg
 
 **Tables** (full DDL in `docs/scan_history_schema.sql`):
 - `scan_runs` — one row per scan execution: inputs (tickers requested/used/skipped, weeks_min/max, min_premium, min_p_profit), outputs (total_evaluated, total_passed), context (market_open, elapsed_ms, vix, spy_price), and `error_message` (nullable; populated when the scan threw)
-- `scan_results` — one row per produced triplet, linked via `scan_id`. Mirrors the triplet shape (legs, strikes, deltas, premiums, score, P(max profit), fair value) plus `rank`, `was_saved` boolean, and `created_at`
+- `scan_results` — one row per produced triplet, linked via `scan_id`. Mirrors the triplet shape (legs, strikes, deltas, premiums, score, P(max profit)) plus `rank`, `was_saved` boolean, and `created_at`. (The `fair_value`/`fv_available` columns still exist but are written as `null`/`false` since the fair-value removal — see Changelog)
 - RLS: users may only SELECT/INSERT their own rows. `was_saved` is only updatable via the service role (no user UPDATE policy)
 
 **Write path** — `log_scan_run()` in `server/app.py` is called from `/api/run` on **both** success and exception paths:
@@ -279,7 +291,8 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/sector_scan.py`            | **Writes**  | Scheduled/manual (per slot) — scan every sector, log top-N picks to `ml_dataset` / `sector_scan_runs` |
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
-| `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes`     |
+| `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes` (tradebook trades) |
+| `scripts/backfill_ml_outcomes.py`   | **Writes**  | After options expire — fills `ml_dataset` outcome columns (sector-scan setups) |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
 
 ### Universe Builder — `scripts/build_universe.py` → `data/universe.json`
@@ -317,7 +330,7 @@ Reads the sector universe (`data/universe.json`), runs the existing Call Spread 
   - `--source` overrides source (default `live_<slot>`; must be one of `live_open` | `live_close` | `backtest` — enforced by a DB CHECK). Use `backtest` for historical replay later.
   - Filters use the app defaults but are CLI-overridable: `--weeks-min` (1), `--weeks-max` (12), `--min-premium` (5.00), `--min-p-profit` (0.50).
   - `--sleep` (0.15s) paces between tickers; `--limit-per-sector N` scans only the first N tickers per sector (testing); `--universe PATH` points at a different universe file; `--dry-run` scans but writes nothing.
-- **Reuses** `screener.scan_ticker` / `get_fair_value` and the Massive client — it does **not** change the app, the algorithm, the tradebook, or `trade_outcomes`. It injects a dedicated Massive `RESTClient` (15s read timeout, 3 retries) into `screener.massive_client` so scan calls fail fast under load (no edit to `screener.py`).
+- **Reuses** `screener.scan_ticker` and the Massive client — it does **not** change the app, the algorithm, the tradebook, or `trade_outcomes`. It injects a dedicated Massive `RESTClient` (15s read timeout, 3 retries) into `screener.massive_client` so scan calls fail fast under load (no edit to `screener.py`).
 
 **Flow (per sector):** loop the sector's tickers (using the JSON's yfinance sector keys verbatim — `Financial Services`, `Healthcare`, etc.), scan each, collect all qualifying triplets, rank by score, then select the **top-N distinct setups** (default 5; `--top-n`). Then write exactly one `sector_scan_runs` row per sector, by status:
 - `picked` → insert the **top-N setups** into `ml_dataset` — the #1 with `is_best_in_sector = true`, the runners-up with `false`. Every row is a full, identical-shape record (all legs, metrics, `underlying_price_at_scan`, `moneyness_a`, market context `vix`/`spy_price`, event proximity `days_to_earnings`/`days_to_next_fomc`/`days_to_next_cpi`/`days_to_next_macro` + `earnings_before_expiry`, `weeks_to_expiration`/`days_to_expiration`, `scan_date`/`scan_timestamp`, `sector`, `source`). The `sector_scan_runs` row is unchanged in meaning — it still represents the sector's **best** pick: `best_ticker`, `best_score`, and `ml_dataset_id` link to the **`is_best_in_sector=true`** row (never a runner-up), plus `tickers_scanned`/`tickers_skipped`/`contracts_evaluated`/`setups_qualified`/`elapsed_ms` and the input filters (`min_net_premium`, `min_p_profit`, `weeks_range` text like `W1-W12`).
@@ -335,13 +348,13 @@ Reads the sector universe (`data/universe.json`), runs the existing Call Spread 
 
 **De-dup / idempotency** — unique indexes are `uniq_ssr_run (source, scan_date, sector)` and `uniq_ml_dataset_observation (source, scan_date, sector, ticker, expiration, leg_a/b/c_strike)`. Re-running the same slot **replaces** rather than duplicating or accumulating. Because `sector_scan_runs.ml_dataset_id → ml_dataset(id)` has no `ON DELETE`, each write path first upserts the run row with `ml_dataset_id = NULL` (releasing any prior reference), then deletes **all** stale `ml_dataset` rows for the slot/sector (old best **and** runners-up), then (if `picked`) batch-inserts the fresh N-row set and points the run row at the `is_best_in_sector=true` row — so re-runs and status transitions (e.g. `picked` → `none_qualified`) leave no orphan runners-up. (Verified: a sector with 13 ml rows across two `--top-n 5` re-runs stayed at 13, not 26.)
 
-**Auth** — uses `SUPABASE_SERVICE_KEY` (both tables have RLS enabled with **no public policies**; only the service role can read/write). DDL: `docs/ml_dataset_schema.sql` and `docs/sector_scan_schema.sql` (create `ml_dataset` first — `sector_scan_runs` FKs into it). The `outcome_*` columns on `ml_dataset` are populated **later** by a separate at-expiration backfill job (a sibling of `backfill_outcomes.py` that writes here, not to `trade_outcomes`); `sector_scan.py` leaves them null (`outcome_filled = false`).
+**Auth** — uses `SUPABASE_SERVICE_KEY` (both tables have RLS enabled with **no public policies**; only the service role can read/write). DDL: `docs/ml_dataset_schema.sql` and `docs/sector_scan_schema.sql` (create `ml_dataset` first — `sector_scan_runs` FKs into it). The `outcome_*` columns on `ml_dataset` are populated **later** by `scripts/backfill_ml_outcomes.py` (see its section below — a sibling of `backfill_outcomes.py` that writes here, not to `trade_outcomes`); `sector_scan.py` leaves them null (`outcome_filled = false`).
 
 **End-of-run summary** prints every sector with its status and best pick (or status reason), total picks logged, total tickers skipped, total elapsed, and rows written. **Runtime note:** a full default run (all 11 sectors × all tickers × weeks 1–12, two Massive calls per ticker-expiration) is on the order of tens of minutes; a trimmed validation run (3 tickers/sector, weeks 4–9) is ~50s. (A full production run on the EC2 box measured ~2.5 min.)
 
 **Market-day guard (in-script)** — at the top of a scan (before any context fetch or DB write) `sector_scan.py` checks the **NYSE calendar** via **`pandas_market_calendars`** (pinned `==5.4.0` in `server/requirements.txt`; **new dependency** — must be `pip install`ed into the server venv after pulling, it does NOT auto-install). If today isn't a US equity trading day it prints `market closed today (YYYY-MM-DD), skipping scan` and `exit(0)` without scanning/writing. **Weekends and NYSE holidays skip; half-days / early closes count as trading days** (logged as `early close HH:MM`). The guard protects **manual runs too**, not just cron. If the library is missing it exits non-zero with a clear install message rather than guessing. Test it without scanning via `--check-market-day [YYYY-MM-DD]` (defaults to today), which prints the trading-day decision and exits — e.g. `--check-market-day 2026-11-26` → `CLOSED` (Thanksgiving), `--check-market-day 2026-11-27` → `TRADING DAY — early close 13:00`. To refresh holiday rules, bump the pinned `pandas_market_calendars` version.
 
-**Scheduling (production, EC2)** — the scan runs automatically **twice per trading day**: `--slot open` at ~10:00 AM ET (≈30 min after the 09:30 open) and `--slot close` at ~3:30 PM ET (≈30 min before the 16:00 close). The data is 15-min delayed (Options Starter plan), so these capture ~15-min-old quotes — fine for this research dataset. Cron invokes `scripts/run_sector_scan.sh <open|close>`, a wrapper that handles cwd, the venv python, logging, and the DST gate. **DST handling without `CRON_TZ`:** the EC2 box is UTC and its cron build doesn't support `CRON_TZ`, and changing the server timezone would affect the live app. So each slot is scheduled at **both** its EDT and EST UTC times (4 cron lines), and the wrapper gates on the **actual Eastern-time clock** (`TZ=America/New_York`), proceeding only inside the slot's ET window (open 09:45–10:30, close 15:15–15:45). Exactly one of each slot's two fires runs per day in either DST period — **no twice-a-year edits, no server-TZ change**. ET→UTC reference: EDT (UTC−4) → open 14:00 / close 19:30 UTC; EST (UTC−5) → open 15:00 / close 20:30 UTC. The crontab uses `1-5` (Mon–Fri); the in-script guard handles holidays. Pass a second arg `force` to the wrapper to bypass the time gate for manual/off-hours testing (the market-day guard still applies).
+**Scheduling (production, EC2)** — the scan runs automatically **twice per trading day**: `--slot open` at ~10:00 AM ET (≈30 min after the 09:30 open) and `--slot close` at ~3:30 PM ET (≈30 min before the 16:00 close). The data is real-time (Options Advanced plan; it was 15-min delayed under Options Starter — pre-2026-07 rows captured ~15-min-old prices). Cron invokes `scripts/run_sector_scan.sh <open|close>`, a wrapper that handles cwd, the venv python, logging, and the DST gate. **DST handling without `CRON_TZ`:** the EC2 box is UTC and its cron build doesn't support `CRON_TZ`, and changing the server timezone would affect the live app. So each slot is scheduled at **both** its EDT and EST UTC times (4 cron lines), and the wrapper gates on the **actual Eastern-time clock** (`TZ=America/New_York`), proceeding only inside the slot's ET window (open 09:45–10:30, close 15:15–15:45). Exactly one of each slot's two fires runs per day in either DST period — **no twice-a-year edits, no server-TZ change**. ET→UTC reference: EDT (UTC−4) → open 14:00 / close 19:30 UTC; EST (UTC−5) → open 15:00 / close 20:30 UTC. The crontab uses `1-5` (Mon–Fri); the in-script guard handles holidays. Pass a second arg `force` to the wrapper to bypass the time gate for manual/off-hours testing (the market-day guard still applies).
 
 **Logging & resilience** — the wrapper appends all stdout+stderr (with UTC `START`/`END rc=…` timestamps) to `/home/ubuntu/luo-options-algo/logs/sector_scan.log`. The log is **size-capped in the wrapper** (rotates to `.log.1` past 5 MB → ~10 MB max; no system logrotate needed). The wrapper always `exit 0` so a failed scan is logged but never mails cron or blocks the next run (cron invocations are independent regardless). `options_screener.load_dotenv()` finds `.env` because the wrapper `cd`s to the project root first; the explicit venv-python path covers cron's minimal env/PATH.
 
@@ -375,39 +388,53 @@ Read-only report over `sector_scan_runs` + `ml_dataset` — the sector-scan anal
 - **Per-slot summary:** status counts (picked / none_qualified / no_tickers / error), picks logged, total tickers scanned, total skipped, total elapsed (Σ `elapsed_ms`). When both slots are present a closing line compares picks-by-slot (open vs close are different observations).
 - **Edge cases handled:** a date with no scans → friendly `No sector scans found for {date}` (also when a `--slot` filter matches nothing); a `picked` run whose `ml_dataset` row is missing/unlinked is flagged (`⚠ pick detail missing`) rather than crashing; bad `--date` format errors out cleanly. Uses `rich` for color when importable; falls back to plain text otherwise (`soft_wrap` prevents rich from reflowing the fixed-width rows).
 
+### ML Outcome Backfill — `scripts/backfill_ml_outcomes.py`
+
+Fills the `outcome_*` columns on **`ml_dataset`** for rows whose expiration has passed. It is the **sibling of `scripts/backfill_outcomes.py`** — same payoff math, same resilience — but it writes to `ml_dataset`'s own outcome columns and **never touches `trade_outcomes`, `tradebook`, `sector_scan.py`, or the scan algorithm**. The two datasets stay entirely separate: `tradebook`/`trade_outcomes` = discretionary trades; `ml_dataset` = the systematic sector-scan feed.
+
+- Run with `python3 scripts/backfill_ml_outcomes.py` from the project root (no arguments). Reads `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `MASSIVE_API_KEY` from `.env` (loaded transitively via `options_screener`). Service-role key required — `ml_dataset` is RLS-locked with no public policies.
+- **Shared machinery, not mirrored** — it imports `compute_outcome()` (the Call Spread Risk Reversal payoff formulas + payoff-zone classification) and `fetch_close_price()` (Massive close fetch with retry/backoff, 429 detection, and the per-`(ticker, date)` memo cache) **directly from `backfill_outcomes.py`**, so the two backfills can never diverge. Same six `expired_*` outcome labels, same classification order.
+- **Scope** — processes **ALL** unfilled expired rows, winners **and** runners-up (no `is_best_in_sector` filter). Runners-up exist precisely so a model can learn what weaker setups do; they get labels too.
+- **Columns written**: `outcome_type`, `stock_price_at_expiration`, `realized_pnl` (per share), `pnl_per_contract` (× 100), `max_profit_per_contract`, `capture_pct`, `outcome_filled = true`, `outcome_filled_at = now()`.
+- **`max_profit_per_contract` = `(net_premium + (leg_b_strike − leg_a_strike)) × 100`** — the spread is **derived from the strikes**, NOT read from the stored `spread_width` column, so realized P&L and max profit always share the same basis (the convention fixed in `view_outcomes.py`).
+- **`capture_pct`** = `pnl_per_contract / max_profit_per_contract` stored as a **fraction (0–1)**, and **NULL when `realized_pnl ≤ 0`** — capture efficiency only means something for winning trades (matches the corrected `view_outcomes.py` convention). Also NULL defensively if max ≤ 0.
+- **Price fetching** — memoized per `(ticker, expiration)`: the many rows sharing a pair (all the MU setups expiring the same Friday, winners and runners-up alike) collapse to one Massive lookup each (e.g. first production run: 141 rows → 30 distinct lookups). Pre-fetch pass over unique pairs, then a longer-delay retry pass for failures, then a process pass that reads only from the cache — same three-pass structure as `backfill_outcomes.py`.
+- **Rate-limit resilience** — a `(ticker, date)` that still fails after all retries causes its rows to be **skipped with a log line and left unfilled** for a later run; the script never crashes or writes a partial outcome. Recent expirations can 429 until Massive treats them as historical (typically a day) — skipping is correct; just re-run later. (Observed in practice: a first run filled 108/141 with 4 pairs rate-limited; a re-run 20 minutes later recovered all 33 remaining rows.)
+- **Idempotent** — only rows with `outcome_filled = false` are considered, and the UPDATE also matches `.eq('outcome_filled', False)` so a concurrent/duplicate run is a no-op on already-filled rows. Re-runs never recompute or change filled values; rows whose expiration hasn't passed are left alone. A run with nothing expired prints `No expired unfilled rows to backfill … exiting cleanly` without touching Massive.
+- **Output** — one progress line per filled row (`[ml-backfill] {sector} {ticker} {expiration} S=… P&L=… ({outcome_type}) [best|runner-up]`, per-contract dollars), then a summary: rows processed / filled (split best vs runners-up) / skipped (by reason), distinct price lookups (+ failures), win rate, total & average P&L, breakdown by `outcome_type`, and how many rows remain unfilled.
+- **When to re-run** — same cadence as `backfill_outcomes.py`: after each Friday's expirations (or Monday). Not yet scheduled; manual run today.
+
 ### `screener.py`
 - Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)
 - Run with `python3 screener.py` or with optional arguments (see below)
 - Imports `get_next_fridays` and `massive_client` from `options_screener.py` — no duplicate client initialization
-- `scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None)` — uses Massive for options chains; delta comes pre-calculated; accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None)
-- `_parse_massive_contracts(raw)` — filters and normalizes Massive snapshot objects; applies IV ≤ 0.01 and volume < 20 exclusions; returns list of `{strike, premium, delta, volume}` dicts
+- `scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None)` — uses Massive for options chains; delta comes pre-calculated; accepts `min_p_profit` as a parameter so the web API can override it per-request (defaults to module-level `MIN_P_MAX_PROFIT = 0.50` when None). Prices each leg on its transactable side at candidate-segmentation time (`premium = ask` for Leg A, `= bid` for Legs B/C) and applies the monotonicity sanity check (reject + stderr-log any `leg_b_prem ≥ leg_a_prem` pairing)
+- `_parse_massive_contracts(raw)` — filters and normalizes Massive snapshot objects; applies IV ≤ 0.01, the two-sided-quote + `MAX_SPREAD_PCT` (0.15 of mid) guards, and volume < 20 exclusions; returns list of `{strike, bid, ask, mid, delta, volume}` dicts (no role-priced `premium` yet — `scan_ticker` assigns that per leg)
 - `week_exps` is built directly from `get_next_fridays()` target Fridays as `(week_num, YYYY-MM-DD)` tuples — no yfinance expiration matching needed
 
 **Strategy (3 legs):**
 - **Leg A**: Buy ATM call (delta 0.40–0.60) — pay premium
-- **Leg B**: Sell OTM call (delta 0.20–0.40, strike > Leg A) — collect premium; strike targeted near fair value when available
+- **Leg B**: Sell OTM call (delta 0.20–0.40, strike > Leg A) — collect premium; candidates nearest spot tried first
 - **Leg C**: Sell OTM put (delta 0.15–0.30, strike < current price) — collect premium
 - **Goal**: Net Premium = (Leg B + Leg C) − Leg A ≥ $5.00 (credit only)
 
-**Fair value fallback chain** (for Leg B targeting):
-1. `forwardEps × forwardPE` from `yf.Ticker(ticker).info`
-2. `trailingEps × trailingPE`
-3. `targetMeanPrice` (analyst consensus)
-4. `None` — Leg B selected by delta range only
+**Leg B ordering:** candidates are sorted by proximity to the current spot price (nearest first). (This was formerly "fair-value targeting" — removed as a no-op, see the Fair value section above.)
 
 **Filters applied per leg:**
 - IV ≤ 0.01 → excluded (placeholder values from closed market)
+- No live two-sided quote (bid > 0 and ask > 0) → excluded (not tradeable)
+- Bid-ask spread > `MAX_SPREAD_PCT` (0.15) of the quote midpoint → excluded
 - Volume < 20 → excluded
 - Delta must fall within each leg's specified range
+- Leg B premium (bid) ≥ Leg A premium (ask) → pairing rejected + stderr log (monotonicity sanity check)
 - Net premium < `--min-premium` → triplet skipped immediately
 - P(max profit) = (1 − Leg B delta) × (1 − Leg C delta) < 0.50 → triplet skipped
 
 **Scoring:** `score = net_premium / spread_width` where `spread_width = Leg B strike − Leg A strike`
 
-**Output columns:** Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Pm, Leg B Strike, Leg B Pm, Leg C Strike, Leg C Pm, Net Prem, Spd Width, Score, P(Profit)%, Fair Value
+**Output columns:** Rank, Ticker, Expiration, Wk, Leg A Strike, Leg A Pm, Leg B Strike, Leg B Pm, Leg C Strike, Leg C Pm, Net Prem, Spd Width, Score, P(Profit)%
 
 **Highlighting:**
-- Yellow rows: fair value unavailable, Leg B chosen by delta only
 - Red rows: P(max profit) between 50–55% (borderline)
 
 **CLI arguments:**
@@ -540,20 +567,20 @@ This pattern is scoped to the screener route. Other pages (`/trade`, `/tradebook
 - **`ControlsDrawer.jsx`** — the scan **filter** controls (Weeks range, Min Net Premium, Min P(Profit)) in a panel that **slides in from the left**, over a click-to-close backdrop. **The scan-Tickers input is NOT here** — it lives in the header center (see Header). **Closed by default** (`drawerOpen` defaults `false`); opened by the header's `⚙ Controls` trigger; auto-closes when a scan runs. Run Scan is **not** in here (it stays in the header). Pure presentation — every value/handler is owned by `App.jsx` and threaded through props. Enter in any filter field calls `onRun`. The drawer also renders **`WatchlistManager.jsx`** (the named-watchlists management UI — see Named Watchlists below).
 - **`WatchlistManager.jsx`** — named-watchlists CRUD UI rendered inside the controls drawer: lists the user's watchlists (`@name`, ticker count + preview), with inline create (name + tickers) / edit / delete. Local form state only; persistence + in-app state live in `App.jsx` via the `onCreate`/`onUpdate`/`onDelete` callbacks (create/update return `{ error }` on failure, falsy on success → form clears). Uses the drawer's design tokens.
 - **`Toast.jsx`** — fixed bottom-right toast notification; accepts `message` and `visible` props; fades in/out over 0.3s; used in App (after saving from the detail panel's Save action) and TradePage (after Save to Tradebook)
-- **`ResultsTable.jsx`** — scannable ranked list of **5 decision columns only**: Rank, Ticker, Expiration (with `W{week}` muted inline), **Net Premium** (collected credit, per contract `net_premium × 100`, `text-profit`, `+$2,044`), **Max Profit** (`(net_premium + spread_width) × 100`, `text-profit`). **Score and P(Profit)% are NOT shown** — score remains the backend sort order (rows arrive sorted by it; default sort key `rank`) but appears nowhere in the table; P(profit), the leg breakdown, spread width, and fair value all live in the detail panel (`SetupDetail`). The row objects still carry all that data; it's just not rendered in the table. There is **no legend** and **no score bar** (both removed).
+- **`ResultsTable.jsx`** — scannable ranked list of **5 decision columns only**: Rank, Ticker, Expiration (with `W{week}` muted inline), **Net Premium** (collected credit, per contract `net_premium × 100`, `text-profit`, `+$2,044`), **Max Profit** (`(net_premium + spread_width) × 100`, `text-profit`). **Score and P(Profit)% are NOT shown** — score remains the backend sort order (rows arrive sorted by it; default sort key `rank`) but appears nowhere in the table; P(profit), the leg breakdown, and spread width all live in the detail panel (`SetupDetail`). The row objects still carry all that data; it's just not rendered in the table. There is **no legend** and **no score bar** (both removed).
   - **No row dropdown / no inline expansion.** Clicking a row calls `onRowSelect(row)` → App's `selectRow` (sets `selectedSetup`), which drives the whole detail panel (chart + `SetupDetail`). Save / open-editor actions live in `SetupDetail`.
   - **Selected-row highlight:** the row matching `selectedKey` (App derives it from the displayed setup to match `rowKey`) gets a distinct bg + a `border-accent` left marker on the Rank cell, so it's obvious which row the panel is showing (on a fresh scan that's the rank-1 row).
   - **Column layout:** the table uses **`table-fixed`** with a `<colgroup>` that pins each column to its `width` (Rank 3 / Ticker 3.5 / Expiration 8 / Net Premium 7.5 / Max Profit 7.5 rem — sized to fit the narrower ~38% table), plus a trailing **spacer `<col>` (no width)** that absorbs ALL leftover space. So the 5 columns sit at fixed widths grouped on the left — identifiers (Rank, Ticker, Expiration — `whitespace-nowrap`) **left-aligned**, numerics (Net Premium, Max Profit) **right-aligned** — with **no stretching and no dead gaps** between them, regardless of panel width (the spacer holds the empty space on the right). This is the robust fix for the auto-layout spacer occasionally letting columns expand.
-  - Row background signals (kept): red bg when P(profit) is borderline (between minPP and minPP+10%); yellow bg when fair value unavailable; alternating gray otherwise; selected overrides all.
+  - Row background signals (kept): red bg when P(profit) is borderline (between minPP and minPP+10%); alternating gray otherwise; selected overrides all. (The yellow no-fair-value signal was removed with the fair-value feature.)
   - Metadata bar shows: algorithm, weeks range, min premium, min P(profit)%, triplets ranked, total evaluated. No legend toggle / no "click a row" hint (removed).
-- **`SetupDetail.jsx`** — the rich detail block for the selected setup, rendered as a compact `shrink-0` **band at the top of the LEFT column**, stacked **above the ranked table** (the table's `flex-1` wrapper fills the height below it). Shows: setup stats (collected / max profit / score 2 dp / P(profit) 1 dp) in a wrapping row, the **full three-leg breakdown** (`leg` / strike / prem / delta per leg, color-coded per convention — **Leg A long call = sky** (you pay), **Leg B short call & Leg C short put = profit token** (you collect)), spread + fair value, and the **Save** / **Open in editor ›** actions (wired to App's `saveToTradebook(displayedSetup)` / `handleEdit(displayedSetup)`). It renders for the `displayedSetup` (rank-1 default, or the row-selected one). Pure presentation; tokens only; per-contract dollars are `× 100`.
-  - **Legend band is collapsed by default** — a `legendOpen` state (default `false`) inside `ResultsTable` gates the color-key band (`Leg A = you pay` / `Leg B & C = you collect` / red = borderline / yellow = no fair value). The `legend` toggle in the metadata bar reveals/hides it; when collapsed that whole band is absent.
+- **`SetupDetail.jsx`** — the rich detail block for the selected setup, rendered as a compact `shrink-0` **band at the top of the LEFT column**, stacked **above the ranked table** (the table's `flex-1` wrapper fills the height below it). Shows: setup stats (collected / max profit / score 2 dp / P(profit) 1 dp) in a wrapping row, the **full three-leg breakdown** (`leg` / strike / prem / delta per leg, color-coded per convention — **Leg A long call = sky** (you pay), **Leg B short call & Leg C short put = profit token** (you collect)), spread width, and the **Save** / **Open in editor ›** actions (wired to App's `saveToTradebook(displayedSetup)` / `handleEdit(displayedSetup)`). It renders for the `displayedSetup` (rank-1 default, or the row-selected one). Pure presentation; tokens only; per-contract dollars are `× 100`.
 - **Per-ticker overview section** — ⚠️ **removed.** A horizontal strip of "top-pick" cards ("Best per ticker") used to sit between the controls and `<main>`, one card per ticker driven by a `by_ticker[i]` entry. It was deleted entirely: the page no longer renders the strip, the `OverviewCard.jsx` component file was deleted, the `byTicker`/`overviewCards` derivation and the `cardFilter` / scroll-helper state were dropped from `App.jsx`, and the `.no-scrollbar` CSS utility (added only for the strip) was removed from `index.css`. Selection is now driven purely by ranked-table row clicks. (`/api/run` still returns `by_ticker` — see that section — but nothing consumes it.)
 - **`Holdings.jsx`** — the "Scanning:" ticker chips, rendered in their **own slim visible row** (a thin `bg-surface` panel) just above the results area — **not** in the controls drawer. Two interactions per chip: the **`×`** button removes that ticker from the scan set (`onRemove`, instantly hides its rows; `e.stopPropagation()` so it never triggers the filter); **double-clicking the chip body** toggles the per-ticker results filter (`onToggleFilter`) — the filtered chip gets the **accent highlight** and the table + chart/detail narrow to that one ticker (defaulting to its rank-1). Double-click again to clear, or a different chip to switch. Only one ticker filtered at a time (`activeFilter` prop drives the highlight).
 - **Macro events — ⚠️ removed from the UI.** The macro-events pill band, its toggle, and the `MacroEvents.jsx` component file were all deleted (the component had been unimported since the macro UI was removed). **Backend is untouched** — `event_filter.py`, the macro/earnings computation, and the `macro_events` field in the `/api/run` response all remain fully intact (the data is retained for future ML model training); `useOptionsData` still exposes `macroEvents`, it's just not consumed by `App.jsx`. The `GET /api/events` endpoint is also unchanged.
 - **`pages/TradePage.jsx`** — trade editor at `/trade`; receives triplet via router state; renders its own `<Header />`
   - Three-column layout: Leg A (long call), Leg B (short call), Leg C (short put)
   - Fetches call and put chains from `/api/chain` on mount; back-fills volume/OI for initial selected strikes
+  - **Each leg column prices on its transactable side of the quote**: Leg A's chain shows (and selects) the **Ask**, Legs B/C show the **Bid** — matching the scanner's pricing convention exactly. `ChainTable`/`LegColumn` take `priceKey` ('ask'|'bid') + `priceLabel` props; `onSelect` stores `c.ask` / `c.bid` into `selected.premium`, so recalculated metrics and tradebook saves stay on the same basis as scan output
   - User clicks a chain row to change the selected contract for that leg (highlighted with indigo ring)
   - Summary bar above columns shows Net Premium, Spread Width, Score, P(Profit)% — updates only on Recalculate
   - Save to Tradebook inserts into Supabase `tradebook` table; shows Toast for 3s
@@ -689,7 +716,9 @@ sudo systemctl restart luocapital
 
 ## Notes
 - The platform runs a single algorithm: the Call Spread Risk Reversal screener (`screener.py`, served by `/api/run`)
-- Leg strikes are targeted by delta range (and Leg B by fair value when available); expirations snap to the nearest available Friday expiration for each target week
+- **Changed (2026-07) — quote-based pricing migration.** Upgraded Massive to Options Advanced ($199/mo: real-time, bid/ask quotes, 5+ yr history) and moved all option pricing from `day.close` (last trade — stale, no-arb-violating) to live quotes: sell legs at the bid, buy leg at the ask (see "Pricing convention" under The Strategy). Added the two-sided-quote and `MAX_SPREAD_PCT` liquidity guards and the B≥A monotonicity sanity check. Touched: `screener.py` (`_parse_massive_contracts` + `scan_ticker`), `server/app.py` (`/api/chain` now returns `bid`/`ask`/`mid`, no `premium`), `web/src/pages/TradePage.jsx` (per-leg Ask/Bid columns); `scripts/sector_scan.py` inherits via `scan_ticker`. Scoring formula, payoff math, and filter thresholds unchanged. **⚠ ML-data comparability:** all `scan_results` / `ml_dataset` / `tradebook` rows logged **before** this change are last-trade-priced and systematically overstate credits (phantom no-arb credits, e.g. scores >10 on MU) — treat pre-migration `ml_dataset` rows as a **pilot dataset**, not comparable to post-migration rows. Expect post-migration qualified counts and scores to be much lower (validation run on the default 10: 3,879 → 1,720 qualified, top score 10.33 → 6.02) and illiquid names (GEV, APP) to qualify rarely or never — that's the guards working.
+- **Removed (2026-07) — the fair-value feature (it was a no-op).** `get_fair_value()` computed `forwardEps × forwardPE` from yfinance, but Yahoo derives `forwardPE` as `price ÷ forwardEps`, so the product algebraically reconstructs the current spot price — "fair value" always equaled spot to the penny (verified across the whole watchlist). Leg B "fair-value targeting" was therefore always spot-relative, and since the scan evaluates every Leg B candidate regardless of order, the sort never even changed which setups were produced. Removed: `get_fair_value()`, the `fair_value` param on `scan_ticker()` (Leg B now sorts by proximity to `price` explicitly), the `fair_value`/`fv_available` triplet fields, the CLI's Fair Value column + yellow highlight, and every frontend display (SetupDetail's fair-value line, ResultsTable's yellow no-FV row signal, TradePage's FV badge and save-payload field). **DB columns kept, written as null**: `scan_results.fair_value`/`fv_available`, `ml_dataset.fair_value`, and `tradebook.fair_value` all remain in the schema (no schema churn) and are written `null`/`false` going forward — existing rows lose nothing since their stored fair_value always equaled the underlying spot anyway. Removal verified behavior-neutral: old and new scan logic produce identical setups (including order) on identical cached chain data across all 10 default tickers. (A naive before/after wall-clock diff shows tiny differences — Massive recomputes greeks continuously as time-to-expiry shrinks, so 6th-decimal delta drift flips borderline contracts across the delta windows; that drift exists between any two scans and is unrelated to this change.)
+- Leg strikes are targeted by delta range (Leg B candidates ordered nearest-to-spot first); expirations snap to the nearest available Friday expiration for each target week
 - This project is being designed with scalability in mind (more stocks, more frequent data, better algorithms later)
 - **Renamed (2026-06):** the scan endpoint `/api/run_v3` → `/api/run` (handler `run_v3()` → `run()`). With V2 gone the `/api/run` name was free again, and the `_v3` suffix was just leftover technical debt. Backend route, frontend fetch URL (`useOptionsData.js`), startup banner, and docs all moved together. There is no compatibility alias — the old `/api/run_v3` path now 404s.
 - **Removed (2026-06):** V1 and V2 algorithms. The platform was refocused on the proprietary Call Spread Risk Reversal strategy as its sole offering. The baseline V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) were retired: deleted `ratio_ranker.py`, `report.py` (V2 PDF generator), and `test_v2.py`; removed the old V2 `/api/run` endpoint; trimmed `options_screener.py` to the shared helpers V3 still uses (`TICKERS`, `massive_client`, `get_next_fridays`, `find_closest_strike`); and removed the web UI's V2/V3 mode toggle (including `RankedTable.jsx` and all V2 state in `useOptionsData.js`/`App.jsx`) so the screener now loads straight into the risk reversal table. The `scan_runs`/`scan_results` tables were already V3-only by design — no schema changes, existing data left intact.

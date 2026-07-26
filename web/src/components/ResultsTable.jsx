@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 // Scannable decision columns only (5). Score is the backend sort order but is
 // NOT shown; P(profit), the full leg breakdown (strikes / prems / deltas),
-// spread width, and fair value all live in the right-hand detail panel
+// and spread width all live in the right-hand detail panel
 // (SetupDetail) — the row objects still carry that data, it's just not rendered
 // inline. `max_profit` is derived: (net_premium + spread_width) × 100.
 //
@@ -156,17 +156,14 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
 
 function ResultsRow({ row, idx, minPP, selected, onRowClick }) {
   const borderline = row.p_max_profit >= minPP && row.p_max_profit <= minPP + 0.10
-  const noFV       = !row.fv_available
 
   const rowBg = selected
     ? 'bg-gray-700/60'
     : borderline
       ? 'bg-red-950/30 hover:bg-red-950/50'
-      : noFV
-        ? 'bg-yellow-950/20 hover:bg-yellow-950/30'
-        : idx % 2 === 0
-          ? 'bg-gray-950 hover:bg-gray-900'
-          : 'bg-gray-900/50 hover:bg-gray-900'
+      : idx % 2 === 0
+        ? 'bg-gray-950 hover:bg-gray-900'
+        : 'bg-gray-900/50 hover:bg-gray-900'
 
   const collected = (row.net_premium ?? 0) * 100
   const maxProfit = ((row.net_premium ?? 0) + spreadOf(row)) * 100

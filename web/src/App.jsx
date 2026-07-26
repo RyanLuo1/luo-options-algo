@@ -379,7 +379,6 @@ export default function App() {
       spread_width:  row.spread_width,
       score:         row.score,
       p_max_profit:  row.p_max_profit,
-      fair_value:    row.fair_value,
     }
 
     // Route saves through the server so user_id is auth-attributed and the

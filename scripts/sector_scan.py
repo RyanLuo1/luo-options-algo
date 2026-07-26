@@ -12,7 +12,7 @@ the results to two Supabase tables:
     sector_scan_runs  — one row per sector per run: status + counts + link
                         (see docs/sector_scan_schema.sql)
 
-This is a STANDALONE job. It reuses screener.scan_ticker / get_fair_value and the
+This is a STANDALONE job. It reuses screener.scan_ticker and the
 Massive client — it does NOT change the app, the algorithm, the discretionary
 tradebook, or trade_outcomes. It is MANUAL for now (run by hand); scheduling
 comes later.
@@ -83,7 +83,7 @@ from massive import RESTClient  # noqa: E402
 # up `massive_client` in screener's module namespace at call time, so reassigning
 # screener.massive_client is enough — no edit to screener.py / the app.
 import screener  # noqa: E402
-from screener import scan_ticker, get_fair_value  # noqa: E402
+from screener import scan_ticker  # noqa: E402
 
 _massive = RESTClient(
     os.getenv("MASSIVE_API_KEY"),
@@ -139,7 +139,7 @@ def _is_rate_limit_error(exc):
 def scan_one_ticker(ticker, week_exps, min_premium, min_p_profit, delays=TICKER_DELAYS):
     """
     Scan a single ticker with retry/backoff. Returns
-    (triplets, evaluated, price, fair_value) on success, or None if the ticker
+    (triplets, evaluated, price) on success, or None if the ticker
     had to be skipped after exhausting retries (caller counts it as skipped).
     """
     max_attempts = len(delays) + 1
@@ -151,12 +151,11 @@ def scan_one_ticker(ticker, week_exps, min_premium, min_p_profit, delays=TICKER_
                 raise ValueError("no price data from yfinance")
             price = round(float(hist["Close"].iloc[-1]), 2)
 
-            fair_value = get_fair_value(ticker)
             triplets, evaluated = scan_ticker(
-                ticker, price, week_exps, fair_value,
+                ticker, price, week_exps,
                 min_premium, min_p_profit=min_p_profit,
             )
-            return triplets, evaluated, price, fair_value
+            return triplets, evaluated, price
         except Exception as e:  # noqa: BLE001 — retry/skip, never fatal
             last_err = e
             if attempt < max_attempts:
@@ -514,7 +513,6 @@ def main():
         exp_date = datetime.strptime(t["expiration"], "%Y-%m-%d").date()
         dte = (exp_date - scan_date_obj).days
         d_earn = earnings_days(t["ticker"])
-        fv = t.get("fair_value")
         return {
             "source":         source,
             "scan_date":      scan_date,
@@ -539,7 +537,9 @@ def main():
             "score":          float(t["score"]),
             "p_max_profit":   float(t["p_max_profit"]),
             "underlying_price_at_scan": float(price) if price is not None else None,
-            "fair_value":     float(fv) if fv is not None else None,
+            # fair_value feature removed 2026-07 (it always equaled spot — see
+            # CLAUDE.md). Column kept for schema stability, written as null.
+            "fair_value":     None,
             "moneyness_a":    (round(price / t["leg_a_strike"], 6)
                                if price and t["leg_a_strike"] else None),
             "vix":            vix,
@@ -605,7 +605,7 @@ def main():
                     total_skipped += 1
                     time.sleep(sleep_s)
                     continue
-                triplets, evaluated, price, _fv = result
+                triplets, evaluated, price = result
                 scanned += 1
                 evaluated_total += evaluated
                 sector_triplets.extend(triplets)

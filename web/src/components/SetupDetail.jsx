@@ -84,15 +84,9 @@ export default function SetupDetail({ setup, onSave, onEdit }) {
         />
       </div>
 
-      {/* ── Spread / fair value + actions ── */}
+      {/* ── Spread + actions ── */}
       <div className="flex items-center gap-x-4 gap-y-1 flex-wrap pt-1 border-t border-subtle">
         <span className="text-tertiary">spread <span className="num text-secondary">{spreadWidth ? spreadWidth.toFixed(2) : '—'}</span></span>
-        <span className="text-tertiary">
-          fair value{' '}
-          <span className="num text-secondary">
-            {setup.fv_available ? `$${setup.fair_value?.toFixed(2)}` : 'N/A'}
-          </span>
-        </span>
         <div className="ml-auto flex items-center gap-3">
           {onSave && (
             <button onClick={onSave} className="text-link font-medium hover:underline">Save</button>

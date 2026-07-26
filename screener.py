@@ -3,7 +3,7 @@ screener.py — Call Spread Risk Reversal Screener
 
 Strategy (3 legs):
   Leg A: Buy  ATM call  (long)  — pay premium
-  Leg B: Sell OTM call  (short) — collect premium (target: near fair value)
+  Leg B: Sell OTM call  (short) — collect premium (candidates nearest spot tried first)
   Leg C: Sell OTM put   (short) — collect premium
   Goal:  Net Premium = (B + C) − A ≥ $5.00  (credit only)
 
@@ -30,6 +30,7 @@ DEFAULT_WEEKS       = 12
 
 MIN_IV              = 0.01
 MIN_VOLUME          = 20
+MAX_SPREAD_PCT      = 0.15   # max bid-ask spread as a fraction of quote midpoint
 
 LEG_A_DELTA_LOW     = 0.40
 LEG_A_DELTA_HIGH    = 0.60
@@ -56,37 +57,6 @@ def market_status():
     return is_open, now_et.strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
-def get_fair_value(ticker):
-    """
-    Compute fair value via fallback chain:
-      1. forwardEps × forwardPE
-      2. trailingEps × trailingPE
-      3. targetMeanPrice  (analyst consensus)
-      4. None
-    Returns a float or None.
-    """
-    try:
-        info = yf.Ticker(ticker).info
-    except Exception:
-        return None
-
-    fwd_eps = info.get("forwardEps")
-    fwd_pe  = info.get("forwardPE")
-    if fwd_eps and fwd_pe and fwd_eps > 0 and fwd_pe > 0:
-        return round(float(fwd_eps) * float(fwd_pe), 2)
-
-    trail_eps = info.get("trailingEps")
-    trail_pe  = info.get("trailingPE")
-    if trail_eps and trail_pe and trail_eps > 0 and trail_pe > 0:
-        return round(float(trail_eps) * float(trail_pe), 2)
-
-    target = info.get("targetMeanPrice")
-    if target and float(target) > 0:
-        return round(float(target), 2)
-
-    return None
-
-
 def match_expirations(available_exps, target_fridays):
     """
     For each target Friday, find the nearest available expiration string.
@@ -110,30 +80,45 @@ def match_expirations(available_exps, target_fridays):
 
 
 def _parse_massive_contracts(raw):
-    """Filter and normalize a list of Massive option snapshot objects."""
+    """Filter and normalize a list of Massive option snapshot objects.
+
+    Prices come from the live quote (Options Advanced plan), not day.close —
+    the last-trade price can be hours stale and violates strike monotonicity.
+    Each contract keeps both sides; the leg role decides which side is the
+    transactable premium (sell → bid, buy → ask).
+    """
     result = []
     for o in raw:
         if o.greeks is None or o.greeks.delta is None:
             continue
         if o.implied_volatility is None or float(o.implied_volatility) <= MIN_IV:
             continue
-        if o.day is None or o.day.close is None:
+        q = o.last_quote
+        if q is None or q.bid is None or q.ask is None:
             continue
-        vol = int(o.day.volume) if o.day.volume is not None else 0
+        bid, ask = float(q.bid), float(q.ask)
+        if bid <= 0 or ask <= 0 or ask < bid:
+            continue          # no live two-sided quote → not tradeable
+        mid = (bid + ask) / 2
+        if (ask - bid) / mid > MAX_SPREAD_PCT:
+            continue          # quote too wide for the price to be meaningful
+        vol = int(o.day.volume) if o.day is not None and o.day.volume is not None else 0
         if vol < MIN_VOLUME:
             continue
         result.append({
-            "strike":  float(o.details.strike_price),
-            "premium": round(float(o.day.close), 4),
-            "delta":   round(abs(float(o.greeks.delta)), 6),
-            "volume":  vol,
+            "strike": float(o.details.strike_price),
+            "bid":    round(bid, 4),
+            "ask":    round(ask, 4),
+            "mid":    round(mid, 4),
+            "delta":  round(abs(float(o.greeks.delta)), 6),
+            "volume": vol,
         })
     return result
 
 
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
-def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=None):
+def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None):
     """
     Builds all valid triplets for one ticker across the provided expirations.
 
@@ -141,7 +126,6 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
         ticker        : str
         price         : float — current stock price
         week_exps     : list of (week_num, exp_str)
-        fair_value    : float or None
         min_premium   : float — minimum net credit required
         min_p_profit  : float or None — minimum P(max profit); defaults to MIN_P_MAX_PROFIT
 
@@ -196,14 +180,16 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
         calls = _parse_massive_contracts(raw_calls)
         puts  = _parse_massive_contracts(raw_puts)
 
-        # Segment by role
-        leg_a_cands = [c for c in calls
+        # Segment by role. Premium is the transactable side of the quote:
+        # legs we buy price at the ask, legs we sell price at the bid — so
+        # net_premium is the credit we could actually collect.
+        leg_a_cands = [{**c, "premium": c["ask"]} for c in calls
                        if LEG_A_DELTA_LOW <= c["delta"] <= LEG_A_DELTA_HIGH]
 
-        leg_b_pool  = [c for c in calls
+        leg_b_pool  = [{**c, "premium": c["bid"]} for c in calls
                        if LEG_B_DELTA_LOW <= c["delta"] <= LEG_B_DELTA_HIGH]
 
-        leg_c_cands = [c for c in puts
+        leg_c_cands = [{**c, "premium": c["bid"]} for c in puts
                        if LEG_C_DELTA_LOW <= c["delta"] <= LEG_C_DELTA_HIGH
                        and c["strike"] < price]
 
@@ -215,10 +201,24 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
             if not leg_b_cands:
                 continue
 
-            if fair_value is not None:
-                leg_b_cands.sort(key=lambda c: abs(c["strike"] - fair_value))
+            # Try Leg B candidates nearest the current spot first. (This was
+            # previously a sort toward "fair value", but that value always
+            # equaled spot — see CLAUDE.md Changelog on the forwardPE
+            # circularity — so this is the same ordering, stated honestly.)
+            leg_b_cands.sort(key=lambda c: abs(c["strike"] - price))
 
             for leg_b in leg_b_cands:
+                # No-arbitrage sanity check: a higher-strike call can never be
+                # worth more than a lower-strike one. With B at bid and A at
+                # ask this should never fire — a hit means a crossed or
+                # degenerate quote slipped through.
+                if leg_b["premium"] >= leg_a["premium"]:
+                    print(f"    [!] monotonicity reject {ticker} {exp}: "
+                          f"B {leg_b['strike']}@{leg_b['premium']} >= "
+                          f"A {leg_a['strike']}@{leg_a['premium']}",
+                          file=sys.stderr)
+                    continue
+
                 for leg_c in leg_c_cands:
                     total_evaluated += 1
 
@@ -252,8 +252,6 @@ def scan_ticker(ticker, price, week_exps, fair_value, min_premium, min_p_profit=
                         "spread_width": round(spread_width, 2),
                         "score":        round(score, 6),
                         "p_max_profit": round(p_max, 4),
-                        "fair_value":   fair_value,
-                        "fv_available": fair_value is not None,
                     })
 
     return triplets, total_evaluated
@@ -265,10 +263,10 @@ _COL = dict(
     rank=4, ticker=6, exp=12, wk=4,
     a_stk=10, a_pm=10, b_stk=10, b_pm=10,
     c_stk=10, c_pm=10, net=10, swd=10,
-    score=10, pp=11, fv=11,
+    score=10, pp=11,
 )
 
-_LINE_WIDTH = 162
+_LINE_WIDTH = 149
 
 
 def _header():
@@ -279,13 +277,12 @@ def _header():
         f"  {'Leg B Stk':>{c['b_stk']}}  {'Leg B Pm':>{c['b_pm']}}"
         f"  {'Leg C Stk':>{c['c_stk']}}  {'Leg C Pm':>{c['c_pm']}}"
         f"  {'Net Prem':>{c['net']}}  {'Spd Width':>{c['swd']}}"
-        f"  {'Score':>{c['score']}}  {'P(Profit)%':>{c['pp']}}  {'Fair Value':>{c['fv']}}"
+        f"  {'Score':>{c['score']}}  {'P(Profit)%':>{c['pp']}}"
     )
 
 
 def _row(rank, t):
     c   = _COL
-    fv  = f"${t['fair_value']:.2f}" if t["fv_available"] else "N/A"
     wk  = f"W{t['week']}"
     return (
         f"{rank:>{c['rank']}}  {t['ticker']:<{c['ticker']}}  {t['expiration']:<{c['exp']}}"
@@ -300,7 +297,6 @@ def _row(rank, t):
         f"  {t['spread_width']:>{c['swd']}.2f}"
         f"  {t['score']:>{c['score']}.6f}"
         f"  {t['p_max_profit']*100:>{c['pp']-1}.2f}%"
-        f"  {fv:>{c['fv']}}"
     )
 
 
@@ -323,7 +319,6 @@ def print_results(ranked, tickers_no_triplets, total_evaluated, min_premium):
         print("\n  No valid triplets found across all tickers and expirations.\n")
     else:
         print(f"\n  {BOLD}Legend:{RESET}  "
-              f"{YELLOW}Yellow{RESET} = no fair value, Leg B by delta only  |  "
               f"{RED}Red{RESET} = P(max profit) 50–55%% (borderline)\n")
         print(f"  {_header()}")
         print(f"  {div}")
@@ -331,12 +326,9 @@ def print_results(ranked, tickers_no_triplets, total_evaluated, min_premium):
         for rank, t in enumerate(ranked, start=1):
             line = _row(rank, t)
             borderline = MIN_P_MAX_PROFIT <= t["p_max_profit"] <= 0.55
-            no_fv      = not t["fv_available"]
 
             if borderline:
                 print(f"  {RED}{line}{RESET}")
-            elif no_fv:
-                print(f"  {YELLOW}{line}{RESET}")
             else:
                 print(f"  {line}")
 
@@ -420,13 +412,9 @@ def main():
             tickers_no_trips.append(ticker)
             continue
 
-        # ── Fair value ─────────────────────────────────────────────
-        fair_value = get_fair_value(ticker)
-        fv_str     = f"${fair_value:.2f}" if fair_value is not None else "N/A"
-
         # ── Scan ───────────────────────────────────────────────────
         triplets, evaluated = scan_ticker(
-            ticker, price, week_exps_template, fair_value, min_premium
+            ticker, price, week_exps_template, min_premium
         )
         total_evaluated += evaluated
         all_triplets.extend(triplets)
@@ -434,10 +422,9 @@ def main():
         count = len(triplets)
         if count:
             plural = "s" if count != 1 else ""
-            print(f"  found {count} triplet{plural}  "
-                  f"(price=${price:.2f}, FV={fv_str})")
+            print(f"  found {count} triplet{plural}  (price=${price:.2f})")
         else:
-            print(f"  no valid triplets  (price=${price:.2f}, FV={fv_str})")
+            print(f"  no valid triplets  (price=${price:.2f})")
             tickers_no_trips.append(ticker)
 
     # ── Rank and display ───────────────────────────────────────────

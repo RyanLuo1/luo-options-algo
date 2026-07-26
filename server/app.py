@@ -19,7 +19,7 @@ import yfinance as yf
 
 from options_screener import get_next_fridays, massive_client, TICKERS as DEFAULT_TICKERS
 from event_filter import load_events, get_macro_events, get_earnings_flag
-from screener import scan_ticker, get_fair_value
+from screener import scan_ticker, MAX_SPREAD_PCT
 
 WEB_DIST = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
@@ -201,8 +201,10 @@ def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
                 "spread_width":  float(r["spread_width"]),
                 "score":         float(r["score"]),
                 "p_max_profit":  float(r["p_max_profit"]),
-                "fair_value":    float(r["fair_value"]) if r.get("fair_value") is not None else None,
-                "fv_available":  bool(r.get("fv_available", r.get("fair_value") is not None)),
+                # fair_value feature removed 2026-07 (it always equaled spot —
+                # see CLAUDE.md). Columns kept, written as null going forward.
+                "fair_value":    None,
+                "fv_available":  False,
             })
 
         # Insert in chunks to stay well under Supabase's per-request payload limit.
@@ -332,11 +334,10 @@ def run():
                 continue
 
             price_by_ticker[ticker] = price
-            fair_value = get_fair_value(ticker)
 
             tickers_scanned.append(ticker)
             triplets, evaluated = scan_ticker(
-                ticker, price, week_exps, fair_value,
+                ticker, price, week_exps,
                 float(requested_min_prem),
                 min_p_profit=float(requested_min_pp),
             )
@@ -368,9 +369,8 @@ def run():
 
         # Attach result_id and the live underlying price to each ranked entry
         # (in same order as logged). underlying_price is the yfinance current
-        # price used for this ticker's scan — distinct from fair_value (the model
-        # price). Added to the response copies only; the logged `ranked` list and
-        # scan_results rows are unaffected.
+        # price used for this ticker's scan. Added to the response copies only;
+        # the logged `ranked` list and scan_results rows are unaffected.
         ranked_with_ids = []
         for i, r in enumerate(ranked):
             row = dict(r)
@@ -513,8 +513,12 @@ def chain():
         side       : str  — 'call' or 'put'
 
     Returns JSON array sorted by strike ascending, each entry:
-        strike, premium, delta, volume, oi, iv
-    Only contracts with 0.05 ≤ delta ≤ 0.85 and IV > 0.01 are returned.
+        strike, bid, ask, mid, delta, volume, oi, iv
+    Only contracts with 0.05 ≤ delta ≤ 0.85, IV > 0.01, a live two-sided
+    quote, and spread ≤ MAX_SPREAD_PCT of mid are returned — the same quote
+    guards the scanner applies, so the editor shows the same tradeable
+    universe. The frontend prices each leg on its transactable side
+    (buy → ask, sell → bid).
     """
     import traceback
     try:
@@ -546,23 +550,32 @@ def chain():
             iv_raw = o.implied_volatility
             if iv_raw is None or float(iv_raw) <= 0.01:
                 continue
-            if o.day is None or o.day.close is None:
+            q = o.last_quote
+            if q is None or q.bid is None or q.ask is None:
                 continue
+            bid, ask = float(q.bid), float(q.ask)
+            if bid <= 0 or ask <= 0 or ask < bid:
+                continue          # no live two-sided quote → not tradeable
+            mid = (bid + ask) / 2
+            if (ask - bid) / mid > MAX_SPREAD_PCT:
+                continue          # quote too wide for the price to be meaningful
 
             delta = round(abs(float(o.greeks.delta)), 4)
             if not (0.05 <= delta <= 0.85):
                 continue
 
-            volume = int(o.day.volume)    if o.day.volume    is not None else 0
+            volume = int(o.day.volume) if o.day is not None and o.day.volume is not None else 0
             oi     = int(o.open_interest) if o.open_interest is not None else 0
 
             contracts.append({
-                "strike":  round(float(o.details.strike_price), 2),
-                "premium": round(float(o.day.close), 4),
-                "delta":   delta,
-                "volume":  volume,
-                "oi":      oi,
-                "iv":      round(float(iv_raw), 4),
+                "strike": round(float(o.details.strike_price), 2),
+                "bid":    round(bid, 4),
+                "ask":    round(ask, 4),
+                "mid":    round(mid, 4),
+                "delta":  delta,
+                "volume": volume,
+                "oi":     oi,
+                "iv":     round(float(iv_raw), 4),
             })
 
         contracts.sort(key=lambda c: c["strike"])

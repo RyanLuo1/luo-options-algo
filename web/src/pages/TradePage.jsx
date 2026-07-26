@@ -32,7 +32,7 @@ function calcMetrics(legA, legB, legC) {
 
 // ── Chain table for one leg ────────────────────────────────────────────────────
 
-function ChainTable({ contracts, selectedStrike, onSelect, loading, error }) {
+function ChainTable({ contracts, selectedStrike, onSelect, loading, error, priceKey, priceLabel }) {
   if (loading) {
     return <div className="text-gray-600 text-xs py-4 text-center">Loading chain…</div>
   }
@@ -49,7 +49,7 @@ function ChainTable({ contracts, selectedStrike, onSelect, loading, error }) {
         <thead className="sticky top-0 bg-gray-900 z-10">
           <tr className="border-b border-gray-700">
             <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Strike</th>
-            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Premium</th>
+            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">{priceLabel}</th>
             <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Delta</th>
             <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Volume</th>
             <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">OI</th>
@@ -73,7 +73,7 @@ function ChainTable({ contracts, selectedStrike, onSelect, loading, error }) {
                   ${c.strike.toFixed(2)}
                 </td>
                 <td className="px-2 py-1.5 text-right text-gray-300">
-                  {c.premium != null ? `$${c.premium.toFixed(4)}` : '—'}
+                  {c[priceKey] != null ? `$${c[priceKey].toFixed(4)}` : '—'}
                 </td>
                 <td className="px-2 py-1.5 text-right text-gray-400">
                   {c.delta?.toFixed(4) ?? '—'}
@@ -95,7 +95,9 @@ function ChainTable({ contracts, selectedStrike, onSelect, loading, error }) {
 
 // ── Leg column ─────────────────────────────────────────────────────────────────
 
-function LegColumn({ label, sublabel, selected, contracts, chainLoading, chainError, onSelect }) {
+// priceKey selects the transactable side of the quote for this leg:
+// 'ask' for the leg we buy (A), 'bid' for the legs we sell (B, C).
+function LegColumn({ label, sublabel, selected, contracts, chainLoading, chainError, onSelect, priceKey, priceLabel }) {
   return (
     <div className="flex flex-col min-w-0 flex-1 bg-gray-900 rounded border border-gray-800">
 
@@ -136,6 +138,8 @@ function LegColumn({ label, sublabel, selected, contracts, chainLoading, chainEr
           onSelect={onSelect}
           loading={chainLoading}
           error={chainError}
+          priceKey={priceKey}
+          priceLabel={priceLabel}
         />
       </div>
 
@@ -259,7 +263,6 @@ export default function TradePage() {
       spread_width:  saveMetrics.spread_width,
       score:         saveMetrics.score,
       p_max_profit:  saveMetrics.p_max_profit,
-      fair_value:    triplet.fair_value,
     }
 
     // Route through the server endpoint — sets user_id from JWT, links to the
@@ -321,9 +324,6 @@ export default function TradePage() {
         <div className="text-xs text-gray-500">
           <span className="font-semibold text-gray-300 text-sm">{triplet.ticker}</span>
           <span className="ml-2">· {triplet.expiration}</span>
-          {triplet.fair_value != null && (
-            <span className="ml-2 text-gray-600">· FV ${triplet.fair_value.toFixed(2)}</span>
-          )}
         </div>
 
         {metrics && (
@@ -340,30 +340,36 @@ export default function TradePage() {
       <div className="flex-1 px-6 py-4 flex gap-4 min-h-0 overflow-auto">
         <LegColumn
           label="Leg A — Long Call"
-          sublabel="Buy ATM call (you pay)"
+          sublabel="Buy ATM call (you pay the ask)"
           selected={selectedA}
           contracts={callChain}
           chainLoading={chainLoading}
           chainError={chainError}
-          onSelect={c => setSelectedA({ strike: c.strike, premium: c.premium, delta: c.delta, volume: c.volume, oi: c.oi })}
+          priceKey="ask"
+          priceLabel="Ask"
+          onSelect={c => setSelectedA({ strike: c.strike, premium: c.ask, delta: c.delta, volume: c.volume, oi: c.oi })}
         />
         <LegColumn
           label="Leg B — Short Call"
-          sublabel="Sell OTM call (you collect)"
+          sublabel="Sell OTM call (you collect the bid)"
           selected={selectedB}
           contracts={callChain}
           chainLoading={chainLoading}
           chainError={chainError}
-          onSelect={c => setSelectedB({ strike: c.strike, premium: c.premium, delta: c.delta, volume: c.volume, oi: c.oi })}
+          priceKey="bid"
+          priceLabel="Bid"
+          onSelect={c => setSelectedB({ strike: c.strike, premium: c.bid, delta: c.delta, volume: c.volume, oi: c.oi })}
         />
         <LegColumn
           label="Leg C — Short Put"
-          sublabel="Sell OTM put (you collect)"
+          sublabel="Sell OTM put (you collect the bid)"
           selected={selectedC}
           contracts={putChain}
           chainLoading={chainLoading}
           chainError={chainError}
-          onSelect={c => setSelectedC({ strike: c.strike, premium: c.premium, delta: c.delta, volume: c.volume, oi: c.oi })}
+          priceKey="bid"
+          priceLabel="Bid"
+          onSelect={c => setSelectedC({ strike: c.strike, premium: c.bid, delta: c.delta, volume: c.volume, oi: c.oi })}
         />
       </div>
 
