@@ -153,13 +153,13 @@ def fetch_ticker_info(ticker, retries=2, backoff=1.5):
 
 # --- main -------------------------------------------------------------------
 
-def build_universe(limit=None, sleep=0.25):
+def build_universe(limit=None, sleep=0.25, threshold=THRESHOLD, out_path=OUTPUT_PATH):
     print(f"[universe] fetching S&P 500 candidate pool from Wikipedia ...")
     symbols = fetch_sp500_symbols()
     if limit:
         symbols = symbols[:limit]
     print(f"[universe] {len(symbols)} candidate tickers; "
-          f"filtering to market cap > ${THRESHOLD:,} ...\n")
+          f"filtering to market cap > ${threshold:,} ...\n")
 
     sectors = defaultdict(list)
     kept = 0
@@ -191,7 +191,7 @@ def build_universe(limit=None, sleep=0.25):
             print(f"[universe] {ticker}: unexpected sector string "
                   f"{sector!r} — keeping but flagging", file=sys.stderr)
 
-        if market_cap > THRESHOLD:
+        if market_cap > threshold:
             sectors[sector].append(ticker)
             kept += 1
             print(f"[universe] [{i}/{len(symbols)}] {ticker:6s} "
@@ -208,8 +208,8 @@ def build_universe(limit=None, sleep=0.25):
         "metadata": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "source": SOURCE_LABEL,
-            "threshold": THRESHOLD,
-            "threshold_label": "$100B market cap",
+            "threshold": threshold,
+            "threshold_label": f"${threshold/1e9:.0f}B market cap",
             "candidates_evaluated": len(symbols),
             "total_tickers": kept,
             "sector_count": len(sectors),
@@ -218,14 +218,14 @@ def build_universe(limit=None, sleep=0.25):
     }
 
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(OUTPUT_PATH, "w") as f:
+    with open(out_path, "w") as f:
         json.dump(payload, f, indent=2)
         f.write("\n")
 
     # --- summary ---
     print("\n" + "=" * 60)
-    print(f"Universe written to {OUTPUT_PATH}")
-    print(f"  {kept} tickers > ${THRESHOLD/1e9:.0f}B across "
+    print(f"Universe written to {out_path}")
+    print(f"  {kept} tickers > ${threshold/1e9:.0f}B across "
           f"{len(sectors)} sectors")
     print(f"  skipped: {skipped_below} below threshold, "
           f"{skipped_no_sector} no sector, {skipped_no_cap} no cap, "
@@ -246,9 +246,14 @@ def main():
                         help="only evaluate the first N candidates (testing)")
     parser.add_argument("--sleep", type=float, default=0.25,
                         help="seconds to pause between tickers (default 0.25)")
+    parser.add_argument("--threshold", type=float, default=THRESHOLD,
+                        help="market-cap floor in dollars (default $100B)")
+    parser.add_argument("--out", default=OUTPUT_PATH,
+                        help="output path (default data/universe.json)")
     args = parser.parse_args()
 
-    build_universe(limit=args.limit, sleep=args.sleep)
+    build_universe(limit=args.limit, sleep=args.sleep,
+                   threshold=args.threshold, out_path=args.out)
 
 
 if __name__ == "__main__":

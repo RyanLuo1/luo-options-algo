@@ -7,7 +7,7 @@ The platform is **single-strategy**: every scan runs the Call Spread Risk Revers
 
 > **History:** Earlier baselines V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) have been removed (see Changelog). The proprietary risk reversal strategy is now the sole algorithm.
 
-**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A is complete (validation gate passed 2026-07-26 — see `lib/bs.py` below); Phase B has NOT started.** Each phase has an exit gate; read the spec before touching anything ranker-related.
+**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A complete (gate passed 2026-07-26 — see `lib/bs.py`). Phase B1a (extraction worker, `scripts/extract_quotes.py`) built; overlap-window extraction validated. B1b replay and the B2 year-scale stream have NOT started.** Each phase has an exit gate; read the spec before touching anything ranker-related.
 
 ---
 
@@ -301,6 +301,8 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/sector_scan.py`            | **Writes**  | Scheduled/manual (per slot) — scan every sector, log top-N picks to `ml_dataset` / `sector_scan_runs` |
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
+| `scripts/extract_quotes.py`         | Writes files| Per trading day — stream the OPRA quotes flat file → `data/extracts/DATE.parquet` (gitignored) |
+| `scripts/validate_extract.py`       | Read-only   | After an extraction — integrity + REST cross-check + ml_dataset comparison |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes` (tradebook trades) |
 | `scripts/backfill_ml_outcomes.py`   | **Writes**  | After options expire — fills `ml_dataset` outcome columns (sector-scan setups) |
 | `scripts/view_outcomes.py`          | Read-only   | Any time — inspect / report on existing outcomes      |
@@ -413,6 +415,17 @@ Fills the `outcome_*` columns on **`ml_dataset`** for rows whose expiration has 
 - **Idempotent** — only rows with `outcome_filled = false` are considered, and the UPDATE also matches `.eq('outcome_filled', False)` so a concurrent/duplicate run is a no-op on already-filled rows. Re-runs never recompute or change filled values; rows whose expiration hasn't passed are left alone. A run with nothing expired prints `No expired unfilled rows to backfill … exiting cleanly` without touching Massive.
 - **Output** — one progress line per filled row (`[ml-backfill] {sector} {ticker} {expiration} S=… P&L=… ({outcome_type}) [best|runner-up]`, per-contract dollars), then a summary: rows processed / filled (split best vs runners-up) / skipped (by reason), distinct price lookups (+ failures), win rate, total & average P&L, breakdown by `outcome_type`, and how many rows remain unfilled.
 - **When to re-run** — same cadence as `backfill_outcomes.py`: after each Friday's expirations (or Monday). Not yet scheduled; manual run today.
+
+### Quote Extraction Worker — `scripts/extract_quotes.py` (RANKER_SPEC Phase B-extract)
+
+Streams a trading day's OPRA quotes flat file (~100–160 GB compressed) from Massive S3 and writes a compact per-day extract for the backtest replay. Full schema + parameter rationale: **`docs/extract_schema.md`**. Key facts:
+
+- **Parameters (spec open question #5, resolved 2026-07-26):** three DST-correct ET windows (`open` 09:30–10:05, `midday` 12:45–13:00, `close` 15:00–15:35); last **10** quotes per contract per window (right-aligned — `q10_*` is always the newest = the replay's slot quote) + summary stats; day-level counters per contract. One-sided quotes captured faithfully (guards are the replay's job).
+- **Extraction universe = `data/universe_extract.json`** — the $75B S&P superset (~169 names; built via `build_universe.py --threshold 75000000000 --out data/universe_extract.json`), a superset of the scan's $100B universe so future point-in-time corrections are replay-side filters, not re-extractions.
+- **⚠ Flat-file layout discovery (2026-07-26):** quotes_v1 day files are a **concatenation of internally-sorted partitions** — NOT one global alphabetical pass (partition 1 of 2026-07-24 runs A→BAC but is missing AMAT/AMD/AMZN; they appear later). The extractor therefore streams to physical EOF (never early-exits) and merges per-contract state in a dict across partitions. `day_aggs_v1` files ARE globally sorted. Any future flat-file consumer must respect this.
+- **Performance (measured, this Mac):** network-bound at ~5–7 MB/s per S3 stream (S3 throughput varies; probes saw up to 18); CPU is ~26 s/GB worst-case (52 s user per 2 GB in the densest stretch) via run-based galloping + binary-searched window slices — only in-window rows of universe contracts are parsed. Run multiple dates in parallel to use the pipe; EC2 sizing for the B2 year-stream should assume CPU is NOT the bottleneck below ~50 MB/s per worker.
+- Output `data/extracts/DATE.parquet` (+ verbatim `day_aggs/DATE.csv.gz`) — **gitignored data**; immutable; re-runs skip existing dates (resumable). `--limit-gb N` smoke-tests to a `.partial.parquet` that is never treated as complete.
+- **Validation:** `scripts/validate_extract.py --date DATE` — duplicate/bounds integrity, REST `list_quotes` exact-match cross-check (nanosecond standard), and the ml_dataset leg-premium comparison (staleness quantification for pre-2026-07-27 dates; the true live-overlap agreement gate for quote-priced cron days after the EC2 deploy).
 
 ### `screener.py`
 - Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)

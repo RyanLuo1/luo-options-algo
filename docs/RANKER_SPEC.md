@@ -261,11 +261,22 @@ The process artifact is valuable independent of the P&L answer.
    cost is identical either way — the decision is replay-side only.)
 4. ~~Concurrency ceiling on Massive REST~~ **MOOT** — flat files remove the
    bulk REST load; REST remains only for live scans and spot cross-checks.
-5. **Extraction window design (decide BEFORE the year-scale stream):** window
-   width per slot (default ≥15 min), how many quotes kept per contract per
-   window (default: last 3–5 + summary stats), and whether to add a third
-   mid-day window for future robustness checks. Wrong choices here cost a
-   full re-stream (~a weekend + tens of dollars) — err generous.
+5. ~~**Extraction window design**~~ **RESOLVED (2026-07-26, B1a build):**
+   three ET windows/day — **09:30–10:05, 12:45–13:00, 15:00–15:35** (slots
+   +5-min tails so the replay can match the live cron's actual scan minutes;
+   midday = frozen optionality, extracted but unused). Per contract per
+   window: **last 10 quote updates** (full rows, right-aligned so q10 is
+   always the newest) + summary stats (update_count, min/max/mean spread,
+   OHLC of mid, sizes at last quote, first/last ts). Per contract per day:
+   counters only (total updates, first/last ts). Extraction universe is the
+   **$75B superset** (`data/universe_extract.json`, ~169 names) so future
+   point-in-time universe corrections are replay-side filters, not
+   re-extractions. Full schema: `docs/extract_schema.md`.
+   **Data-layout discovery:** quotes_v1 day files are a CONCATENATION of
+   internally-sorted partitions, not one global alphabetical pass — the
+   extractor streams to physical EOF and merges per-contract state across
+   partitions (early-exit or flush-on-boundary would silently drop/duplicate
+   data). day_aggs_v1 files ARE globally sorted.
 
 ---
 

@@ -1,0 +1,436 @@
+"""Flat-file quote extraction worker — RANKER_SPEC.md Phase B-extract (B1a).
+
+Streams one trading day's OPRA quotes flat file
+(s3://flatfiles/us_options_opra/quotes_v1/YYYY/MM/YYYY-MM-DD.csv.gz on
+https://files.massive.com) and produces a compact per-day extract for the
+extraction universe (the $75B superset — see load_universe_roots), plus the matching day_aggs_v1 file (contract discovery +
+historical volume filter for the replay).
+
+Extraction parameters (spec open question #5 — RESOLVED, 2026-07-26):
+  - Three ET windows per day: 09:30-10:05, 12:45-13:00, 15:00-15:35
+    (slot times 10:00/15:30 + 5-min tails so the replay can match the live
+    cron's actual scan minutes; midday is frozen optionality — extracted,
+    unused for now).
+  - Per contract per window: the LAST 10 quote updates (full rows) + summary
+    stats (update_count, min/max/mean spread, OHLC of quote mid, sizes at the
+    last quote, first/last quote timestamps).
+  - Per contract per DAY: counters only (total update_count, first/last quote
+    timestamp) — no stored quotes outside the windows.
+  - One-sided quotes (bid or ask price/size 0) are KEPT in the last-10 rows
+    and counted in update_count; they are excluded from spread/mid stats
+    (undefined there). Eligibility is the replay's guards' job, not ours.
+
+Implementation notes (from the 2026-07 probes — see CLAUDE.md):
+  - Files are CONCATENATIONS of internally-sorted partitions (discovered
+    2026-07-26: the first partition runs A→B* with whole root spans missing —
+    e.g. AMAT/AMD/AMZN — which appear in later partitions). Within a
+    partition rows are (ticker, timestamp)-sorted and a contract's rows are
+    contiguous, so run-detection works — but there is NO global alphabetical
+    order: never exit early, always stream to physical EOF, and keep
+    per-contract state in a dict so a contract recurring in a later partition
+    merges instead of duplicating.
+  - gzip is non-seekable: single forward stream, bounded memory (a day is
+    ~100-160 GB compressed; never materialized).
+  - OCC parsing: root = symbol minus the trailing 15 chars (YYMMDD + C/P +
+    8-digit strike). Exact-root match only — O:MU... must not match O:MUR...
+    or the adjusted class O:MU1... (both parse to different roots).
+  - sip timestamps are 19-digit nanoseconds; window bounds are compared as
+    fixed-width byte strings in the hot loop (no int() until a row is kept).
+  - ET windows are computed with zoneinfo for the specific date (DST-correct
+    across the year; never a hardcoded UTC offset).
+
+Output: data/extracts/YYYY-MM-DD.parquet (schema: docs/extract_schema.md;
+window rows + one window='day' counters row per contract). Extracts are
+immutable; already-extracted dates are skipped (resumable). day_aggs land in
+data/extracts/day_aggs/YYYY-MM-DD.csv.gz verbatim.
+
+Usage (from project root):
+  python3 scripts/extract_quotes.py --date 2026-07-24
+  python3 scripts/extract_quotes.py --date 2026-07-20 --date 2026-07-21 ...
+  python3 scripts/extract_quotes.py --date 2026-07-24 --limit-gb 1  # smoke test
+"""
+
+import argparse
+import gzip
+import json
+import os
+import sys
+import time
+import zlib
+from collections import deque
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+import boto3  # noqa: E402
+from botocore.config import Config  # noqa: E402
+
+ENDPOINT = "https://files.massive.com"
+BUCKET = "flatfiles"
+N_LAST_QUOTES = 10
+WINDOWS_ET = [  # (label, start hh:mm, end hh:mm) — end-inclusive
+    ("open",   (9, 30),  (10, 5)),
+    ("midday", (12, 45), (13, 0)),
+    ("close",  (15, 0),  (15, 35)),
+]
+PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..")
+OUT_DIR = os.path.join(PROJECT_ROOT, "data", "extracts")
+CHUNK = 8 * 1024 * 1024
+
+
+def s3_client():
+    return boto3.client(
+        "s3", endpoint_url=ENDPOINT,
+        aws_access_key_id=os.environ["MASSIVE_S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["MASSIVE_S3_SECRET_ACCESS_KEY"],
+        config=Config(signature_version="s3v4"),
+    )
+
+
+UNIVERSE_PATH = os.path.join(PROJECT_ROOT, "data", "universe_extract.json")
+
+
+def load_universe_roots(path=None):
+    """Extraction universe: the $75B SUPERSET (data/universe_extract.json),
+    deliberately wider than the scan's $100B data/universe.json so future
+    point-in-time universe corrections are replay-side filters, not
+    re-extractions. The replay applies the real >$100B logic itself."""
+    with open(path or UNIVERSE_PATH) as f:
+        uni = json.load(f)
+    roots = sorted({t for lst in uni["sectors"].values() for t in lst})
+    return roots
+
+
+def window_bounds_ns(date_str):
+    """DST-correct ET window bounds for the date, as (label, lo_ns, hi_ns)."""
+    et = ZoneInfo("America/New_York")
+    y, m, d = (int(x) for x in date_str.split("-"))
+    out = []
+    for label, (h1, m1), (h2, m2) in WINDOWS_ET:
+        lo = int(datetime(y, m, d, h1, m1, tzinfo=et).timestamp() * 1_000_000_000)
+        hi = int(datetime(y, m, d, h2, m2, tzinfo=et).timestamp() * 1_000_000_000)
+        out.append((label, lo, hi))
+    return out
+
+
+class ContractState:
+    __slots__ = ("ticker", "underlying", "day_count", "day_first_ts",
+                 "day_last_ts", "windows", "widx", "windows_done")
+
+    def __init__(self, ticker, underlying, n_windows):
+        self.ticker = ticker
+        self.underlying = underlying
+        self.day_count = 0
+        self.day_first_ts = None   # bytes
+        self.day_last_ts = None    # bytes
+        # per window: [count, two_sided, sp_min, sp_max, sp_sum, mo, mh, ml, mc, deque, f_ts, l_ts]
+        self.windows = [None] * n_windows
+        self.widx = 0              # window cursor (persists across partitions)
+        self.windows_done = False
+
+
+def extract_day(date_str, limit_bytes=None, log=print):
+    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(os.path.join(OUT_DIR, "day_aggs"), exist_ok=True)
+    # A byte-limited run is a smoke test: name it .partial so it never counts
+    # as a finished (immutable) extract for resume purposes.
+    suffix = ".partial.parquet" if limit_bytes else ".parquet"
+    out_path = os.path.join(OUT_DIR, f"{date_str}{suffix}")
+    if not limit_bytes and os.path.exists(out_path):
+        log(f"[{date_str}] extract exists, skipping (immutable)")
+        return None
+
+    s3 = s3_client()
+    y, m, _d = date_str.split("-")
+
+    # day_aggs first (tiny) — stored verbatim
+    da_path = os.path.join(OUT_DIR, "day_aggs", f"{date_str}.csv.gz")
+    if not os.path.exists(da_path):
+        obj = s3.get_object(Bucket=BUCKET, Key=f"us_options_opra/day_aggs_v1/{y}/{m}/{date_str}.csv.gz")
+        with open(da_path + ".tmp", "wb") as f:
+            f.write(obj["Body"].read())
+        os.rename(da_path + ".tmp", da_path)
+        log(f"[{date_str}] day_aggs saved ({os.path.getsize(da_path)/1e6:.1f} MB)")
+
+    roots = load_universe_roots()
+    roots_set = {r.encode() for r in roots}
+    windows = window_bounds_ns(date_str)
+    w_lo_b = [str(lo).encode() for _, lo, _ in windows]
+    w_hi_b = [str(hi).encode() for _, _, hi in windows]
+    n_win = len(windows)
+
+    key = f"us_options_opra/quotes_v1/{y}/{m}/{date_str}.csv.gz"
+    head = s3.head_object(Bucket=BUCKET, Key=key)
+    total_bytes = head["ContentLength"]
+    rng = f"bytes=0-{limit_bytes-1}" if limit_bytes else None
+    obj = s3.get_object(Bucket=BUCKET, Key=key, **({"Range": rng} if rng else {}))
+    body = obj["Body"]
+    d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+
+    import pandas as pd
+    results = []          # flushed per-contract dicts (built at end of stream)
+    frames = []           # DataFrame batches (memory bound)
+    states = {}           # contract ticker bytes -> ContractState (merges partitions)
+    cur = None            # ContractState of the active contract (None = not universe)
+    cur_prefix = b""      # active contract ticker + b','
+    in_universe = False
+    lines_total = 0
+    kept_rows = 0
+    downloaded = 0
+    next_log = 2 * 1024 ** 3
+    tail = b""
+    t0 = time.time()
+    header_checked = False
+
+    def flush(state):
+        if state is None:
+            return
+        base = dict(underlying=state.underlying.decode(), contract=state.ticker.decode())
+        for wi, wstate in enumerate(state.windows):
+            if wstate is None:
+                continue
+            (count, two_sided, sp_min, sp_max, sp_sum, mo, mh, ml, mc, dq, f_ts, l_ts) = wstate
+            row = dict(base)
+            row.update(
+                window=windows[wi][0], update_count=count, two_sided_count=two_sided,
+                spread_min=sp_min, spread_max=sp_max,
+                spread_mean=(sp_sum / two_sided) if two_sided else None,
+                mid_open=mo, mid_high=mh, mid_low=ml, mid_close=mc,
+                first_ts=int(f_ts), last_ts=int(l_ts),
+            )
+            parts = [raw.split(b",") for raw in dq]   # ≤10 rows; full parse here only
+            last = parts[-1]
+            row["last_bid_size"] = int(last[6]) if last[6] else 0
+            row["last_ask_size"] = int(last[3]) if last[3] else 0
+            # RIGHT-aligned: q10 is ALWAYS the newest quote in the window (the
+            # replay's slot quote); q1..q(10-k) are null when only k were seen.
+            pad = N_LAST_QUOTES - len(parts)
+            for qi in range(N_LAST_QUOTES):
+                if qi >= pad:
+                    p = parts[qi - pad]
+                    row[f"q{qi+1}_ask_exch"] = int(p[1]) if p[1] else 0
+                    row[f"q{qi+1}_ask"] = float(p[2]) if p[2] else 0.0
+                    row[f"q{qi+1}_ask_size"] = int(p[3]) if p[3] else 0
+                    row[f"q{qi+1}_bid_exch"] = int(p[4]) if p[4] else 0
+                    row[f"q{qi+1}_bid"] = float(p[5]) if p[5] else 0.0
+                    row[f"q{qi+1}_bid_size"] = int(p[6]) if p[6] else 0
+                    row[f"q{qi+1}_ts"] = int(p[8])
+                else:
+                    for suf in ("ask_exch", "ask", "ask_size", "bid_exch", "bid", "bid_size", "ts"):
+                        row[f"q{qi+1}_{suf}"] = None
+            results.append(row)
+        if state.day_count:
+            row = dict(base)
+            row.update(window="day", update_count=state.day_count,
+                       first_ts=int(state.day_first_ts), last_ts=int(state.day_last_ts))
+            results.append(row)
+
+    while True:
+        chunk = body.read(CHUNK)
+        if not chunk:
+            break
+        downloaded += len(chunk)
+        data = tail + d.decompress(chunk)
+        rows = data.split(b"\n")
+        tail = rows.pop()
+        if not header_checked and rows:
+            hdr = rows[0]
+            assert hdr.startswith(b"ticker,ask_exchange,ask_price"), f"unexpected header: {hdr!r}"
+            rows = rows[1:]
+            header_checked = True
+        lines_total += len(rows)
+
+        # Run-based processing. The file is (ticker, timestamp)-sorted, so each
+        # contract's rows form one contiguous run (possibly spanning chunks).
+        # At each contract boundary we find the run's end within this chunk by
+        # galloping + binary search on `startswith` (O(log run) probes), then:
+        #   - non-universe runs are skipped whole;
+        #   - universe runs bulk-advance the DAY counters (never per-row);
+        #   - window slices inside a run are located by binary search on the
+        #     19-digit timestamp bytes (time-sorted within a contract), and
+        #     ONLY those rows get fully parsed.
+        i = 0
+        n = len(rows)
+        while i < n:
+            r = rows[i]
+            if not (cur_prefix and r.startswith(cur_prefix)):
+                # contract boundary
+                cur = None
+                ci = r.find(b",")
+                if ci <= 2:                 # empty/malformed line — reset state
+                    cur_prefix = b""
+                    in_universe = False
+                    i += 1
+                    continue
+                sym = r[2:ci]               # strip 'O:'
+                cur_prefix = r[:ci + 1]
+                root = sym[:-15] if len(sym) > 15 else None
+                in_universe = root in roots_set
+                if in_universe:
+                    ticker = cur_prefix[:-1]
+                    cur = states.get(ticker)
+                    if cur is None:
+                        cur = states[ticker] = ContractState(ticker, root, n_win)
+
+            # find last index j of this contract's run within rows[i:]
+            j = i
+            step = 512
+            while j + step < n and rows[j + step].startswith(cur_prefix):
+                j += step
+                step *= 4
+            lo_s, hi_s = j, min(j + step, n)
+            while lo_s + 1 < hi_s:
+                mid = (lo_s + hi_s) // 2
+                if rows[mid].startswith(cur_prefix):
+                    lo_s = mid
+                else:
+                    hi_s = mid
+            j = lo_s
+
+            if not in_universe:
+                i = j + 1
+                continue
+
+            st = cur
+            first_ts = rows[i][-19:]
+            last_ts = rows[j][-19:]
+            st.day_count += j - i + 1
+            if st.day_first_ts is None or first_ts < st.day_first_ts:
+                st.day_first_ts = first_ts
+            if st.day_last_ts is None or last_ts > st.day_last_ts:
+                st.day_last_ts = last_ts
+
+            widx = st.widx
+            windows_done = st.windows_done
+            while not windows_done and widx < n_win:
+                lo_b, hi_b = w_lo_b[widx], w_hi_b[widx]
+                if last_ts < lo_b:
+                    break                   # window opens after this run ends
+                if first_ts > hi_b:
+                    widx += 1               # run starts past this window
+                    if widx >= n_win:
+                        windows_done = True
+                    continue
+                # overlap: binary-search the in-window slice [a, b] by ts bytes
+                a_lo, a_hi = i, j
+                while a_lo < a_hi:
+                    m = (a_lo + a_hi) // 2
+                    if rows[m][-19:] < lo_b:
+                        a_lo = m + 1
+                    else:
+                        a_hi = m
+                a = a_lo
+                if rows[a][-19:] > hi_b:    # nothing actually inside the window
+                    if last_ts > hi_b:
+                        widx += 1
+                        if widx >= n_win:
+                            windows_done = True
+                        continue
+                    break
+                b_lo, b_hi = a, j
+                while b_lo < b_hi:
+                    m = (b_lo + b_hi + 1) // 2
+                    if rows[m][-19:] <= hi_b:
+                        b_lo = m
+                    else:
+                        b_hi = m - 1
+                b = b_lo
+
+                w = st.windows[widx]
+                if w is None:
+                    w = [0, 0, None, None, 0.0, None, None, None, None,
+                         deque(maxlen=N_LAST_QUOTES), rows[a][-19:], rows[b][-19:]]
+                    st.windows[widx] = w
+                w[0] += b - a + 1
+                w[11] = rows[b][-19:]
+                kept_rows += b - a + 1
+                for r2 in rows[a:b + 1]:
+                    p = r2.split(b",", 6)   # only fields 0-5 needed per-row
+                    ask = float(p[2]) if p[2] != b"0" else 0.0
+                    bid = float(p[5]) if p[5] != b"0" else 0.0
+                    if bid > 0 and ask > 0:
+                        w[1] += 1
+                        sp = ask - bid
+                        mid = (ask + bid) / 2
+                        if w[2] is None or sp < w[2]:
+                            w[2] = sp
+                        if w[3] is None or sp > w[3]:
+                            w[3] = sp
+                        w[4] += sp
+                        if w[5] is None:
+                            w[5] = mid
+                        if w[6] is None or mid > w[6]:
+                            w[6] = mid
+                        if w[7] is None or mid < w[7]:
+                            w[7] = mid
+                        w[8] = mid
+                    w[9].append(r2)         # raw row; fully split only at flush
+
+                if last_ts > hi_b:
+                    widx += 1
+                    if widx >= n_win:
+                        windows_done = True
+                else:
+                    break                   # run ends inside this window
+
+            st.widx = widx
+            st.windows_done = windows_done
+            i = j + 1
+
+        if downloaded >= next_log:
+            next_log += 2 * 1024 ** 3
+            el = time.time() - t0
+            log(f"[{date_str}] {downloaded/1e9:.1f}/{total_bytes/1e9:.0f} GB "
+                f"({downloaded/1e6/el:.1f} MB/s, {lines_total/1e6:.0f}M lines, "
+                f"{len(states)} contracts tracked, {el/60:.0f}m)", flush=True)
+
+    # end of stream: flush every tracked contract (partitions merged in `states`)
+    for st in states.values():
+        flush(st)
+        if len(results) > 150_000:      # bound memory: dicts → typed frame
+            frames.append(pd.DataFrame(results))
+            results.clear()
+    el = time.time() - t0
+
+    if results:
+        frames.append(pd.DataFrame(results))
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    df.insert(0, "date", date_str)
+    df.to_parquet(out_path + ".tmp", index=False)
+    os.rename(out_path + ".tmp", out_path)
+    size = os.path.getsize(out_path)
+    log(f"[{date_str}] DONE in {el/60:.1f} min: {downloaded/1e9:.1f} GB streamed "
+        f"({downloaded/1e6/el:.1f} MB/s sustained), {lines_total/1e6:.0f}M lines scanned, "
+        f"{kept_rows/1e6:.1f}M in-window rows, {len(df)} extract rows "
+        f"({df[df.window != 'day'].shape[0]} window + {df[df.window == 'day'].shape[0]} day), "
+        f"{size/1e6:.1f} MB parquet")
+    return dict(date=date_str, seconds=el, bytes=downloaded, mb_s=downloaded / 1e6 / el,
+                lines=lines_total, kept=kept_rows, rows=len(df), parquet_bytes=size)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Extract universe quote windows from OPRA flat files")
+    ap.add_argument("--date", action="append", required=True, help="YYYY-MM-DD (repeatable)")
+    ap.add_argument("--limit-gb", type=float, default=None,
+                    help="Smoke test: stop after N GB downloaded (extract is partial; not renamed final)")
+    ap.add_argument("--universe", default=None,
+                    help="override universe JSON (default data/universe_extract.json)")
+    args = ap.parse_args()
+    if args.universe:
+        global UNIVERSE_PATH
+        UNIVERSE_PATH = args.universe
+    limit = int(args.limit_gb * 1e9) if args.limit_gb else None
+    for date_str in args.date:
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            sys.exit(f"bad date: {date_str}")
+        extract_day(date_str, limit_bytes=limit)
+
+
+if __name__ == "__main__":
+    main()
