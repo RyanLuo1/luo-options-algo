@@ -40,11 +40,14 @@ structurally valid, liquidity-guarded, threshold-passing setups.
 | Data plan | Massive Options Advanced: real-time NBBO quotes; historical tick quotes via REST (verified incl. expired contracts) AND via **flat files** (S3, verified entitled: `us_options_opra/quotes_v1`, 2022-03 → present ≈ 4.4 yrs, ~100 GB/day compressed; cross-validated identical to REST to the nanosecond). Also entitled: trades/minute_aggs/day_aggs flat files back to 2014. **No historical Greeks/IV anywhere** — must be computed (Phase A). |
 | Live collection | Cron on EC2: 2 scans/day (10:00 & 15:30 ET), market-day guarded, 11 sectors × 118 tickers, top-5-distinct per sector (per-ticker cap 2), best flagged. Writes `ml_dataset` + `sector_scan_runs`. |
 | Labels | `backfill_ml_outcomes.py`: fills outcome columns at expiration. Shares payoff code with tradebook backfill. |
-| Dataset | Pre-2026-07-20 rows = **pilot** (last-trade priced, NOT trainable). Post-migration rows = real basis. Live accrual ≈ 60–110 rows/day, labels lag by weeks (W1–W12 expirations). |
+| Dataset | Pre-**2026-07-27** rows = **pilot** (last-trade priced, NOT trainable — the quote migration deployed to EC2 on 2026-07-26 ~16:20 ET, after that week's cron scans; proof: 48/189 of the 07-20→07-24 rows carry the impossible `leg_b_prem ≥ leg_a_prem`). 2026-07-27 is the first clean cron day (fingerprint: 0/25 violations). Live accrual on quote basis ≈ 25 rows/day observed day 1 (vs ~38/day stale — the guards bite), labels lag by weeks (W1–W12 expirations). |
 | Review tooling | `view_sector_scans.py` (per-day), `view_outcomes.py` (tradebook). |
 
 **Data boundary rule:** every analysis/training query on `ml_dataset` includes
-`scan_date >= '2026-07-20'` (quote-basis cutover) OR `source = 'backtest'`.
+`scan_date >= '2026-07-27'` (quote-basis cutover — first cron day on the
+deployed migration commit `892abe1`; the originally-planned 07-20 boundary
+predated the actual deploy, and 48/189 rows from 07-20→07-24 carry the
+impossible `leg_b_prem ≥ leg_a_prem` fingerprint) OR `source = 'backtest'`.
 Pilot rows are documentation of the stale-pricing bug, nothing more.
 
 ---
@@ -150,7 +153,8 @@ works; no random access.
 
 **Validation gate (unchanged, now cheaper):** before extracting the full
 year, extract + replay the **overlap window** — the live quote-priced cron
-days (2026-07-20 onward, ~10 day-files). Backtest picks vs live cron picks
+days (**2026-07-27 onward** — the true cutover; aim for ~a clean week,
+07-27→07-31). Backtest picks vs live cron picks
 must substantially agree (same best ticker per sector on a strong majority of
 sector-slots; disagreements explained by delta drift at window boundaries or
 quote timing). **Do not stream the year until this gate passes.**

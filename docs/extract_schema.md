@@ -51,9 +51,12 @@ One row per (contract, window) that had ≥1 quote update; plus one
 | `two_sided_count` | int | >0 required by the liquidity guard's spirit |
 
 The q-block is **right-aligned**: `q10` is always the newest update; when
-only k<10 updates occurred, `q1..q(10−k)` are null. `q1..q9` (same seven
-fields each: `_bid`, `_bid_size`, `_bid_exch`, `_ask`, `_ask_size`,
-`_ask_exch`, `_ts`) are the preceding updates, oldest first.
+only k<10 updates occurred, `q1..q(10−k)` are **0-sentinels** (`q*_ts == 0`
+marks an absent entry — never null: a null anywhere would make pandas cast
+the column to float64, which silently destroys the low bits of nanosecond
+timestamps > 2^53; discovered via REST cross-check mismatches on 2026-07-27).
+`q1..q9` (same seven fields each: `_bid`, `_bid_size`, `_bid_exch`, `_ask`,
+`_ask_size`, `_ask_exch`, `_ts`) are the preceding updates, oldest first.
 
 **Future-feature bank** (not consumed by the replay; captured because a
 re-stream of the year is the alternative):
@@ -78,7 +81,9 @@ outside windows) — future-feature bank:
 | `update_count` | int | total quote updates for the contract all day |
 | `first_ts`, `last_ts` | int ns | first/last quote timestamp of the day |
 
-All window-stat and q-block columns are null on day rows.
+On day rows, float stat columns (`spread_*`, `mid_*`) are null; all int
+columns (`two_sided_count`, sizes, the whole q-block) are 0-sentinels — same
+int64-preservation rationale as the q-block padding.
 
 ## Flat-file structure note (discovered 2026-07-26)
 

@@ -166,10 +166,55 @@ def extract_day(date_str, limit_bytes=None, log=print):
     key = f"us_options_opra/quotes_v1/{y}/{m}/{date_str}.csv.gz"
     head = s3.head_object(Bucket=BUCKET, Key=key)
     total_bytes = head["ContentLength"]
-    rng = f"bytes=0-{limit_bytes-1}" if limit_bytes else None
-    obj = s3.get_object(Bucket=BUCKET, Key=key, **({"Range": rng} if rng else {}))
-    body = obj["Body"]
+    end_byte = (min(limit_bytes, total_bytes) if limit_bytes else total_bytes) - 1
     d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+
+    class ResumableBody:
+        """S3 stream that survives connection drops on multi-hour GETs.
+
+        gzip state lives in `d` (in-process), so a network failure only needs
+        the HTTP stream re-opened at the current byte offset — decompression
+        continues seamlessly. (This is what turned the 07-20/07-23 overlap
+        runs into rc=1 IncompleteReadError crashes before it existed.)
+        """
+
+        def __init__(s):
+            s.pos = 0
+            s.body = None
+            s.retries = 0
+            s._open()
+
+        def _open(s):
+            nonlocal s3
+            obj = s3.get_object(Bucket=BUCKET, Key=key, Range=f"bytes={s.pos}-{end_byte}")
+            s.body = obj["Body"]
+
+        def read(s, n):
+            if s.pos > end_byte:
+                return b""
+            for attempt in range(8):
+                try:
+                    chunk = s.body.read(n)
+                    if not chunk and s.pos <= end_byte:
+                        raise IOError(f"stream ended early at {s.pos}/{end_byte + 1}")
+                    s.pos += len(chunk)
+                    return chunk
+                except Exception as e:  # noqa: BLE001 — resume on any stream error
+                    s.retries += 1
+                    wait = min(60, 2 ** attempt)
+                    log(f"[{date_str}] stream error at {s.pos/1e9:.1f} GB "
+                        f"({type(e).__name__}: {e}) — resuming in {wait}s "
+                        f"(retry {s.retries})", flush=True)
+                    time.sleep(wait)
+                    try:
+                        s.body.close()
+                    except Exception:
+                        pass
+                    s3 = s3_client()      # fresh client + connection pool
+                    s._open()
+            raise IOError(f"[{date_str}] giving up after repeated stream failures at {s.pos}")
+
+    body = ResumableBody()
 
     import pandas as pd
     results = []          # flushed per-contract dicts (built at end of stream)
@@ -220,13 +265,33 @@ def extract_day(date_str, limit_bytes=None, log=print):
                     row[f"q{qi+1}_bid_size"] = int(p[6]) if p[6] else 0
                     row[f"q{qi+1}_ts"] = int(p[8])
                 else:
-                    for suf in ("ask_exch", "ask", "ask_size", "bid_exch", "bid", "bid_size", "ts"):
-                        row[f"q{qi+1}_{suf}"] = None
+                    # 0-sentinels, NOT None: a None anywhere makes pandas cast
+                    # the column to float64, which silently destroys the low
+                    # bits of ns timestamps (> 2^53). q_ts == 0 marks absence.
+                    row[f"q{qi+1}_ask_exch"] = 0
+                    row[f"q{qi+1}_ask"] = 0.0
+                    row[f"q{qi+1}_ask_size"] = 0
+                    row[f"q{qi+1}_bid_exch"] = 0
+                    row[f"q{qi+1}_bid"] = 0.0
+                    row[f"q{qi+1}_bid_size"] = 0
+                    row[f"q{qi+1}_ts"] = 0
             results.append(row)
         if state.day_count:
             row = dict(base)
             row.update(window="day", update_count=state.day_count,
-                       first_ts=int(state.day_first_ts), last_ts=int(state.day_last_ts))
+                       two_sided_count=0,
+                       spread_min=None, spread_max=None, spread_mean=None,
+                       mid_open=None, mid_high=None, mid_low=None, mid_close=None,
+                       first_ts=int(state.day_first_ts), last_ts=int(state.day_last_ts),
+                       last_bid_size=0, last_ask_size=0)
+            for qi in range(N_LAST_QUOTES):
+                row[f"q{qi+1}_ask_exch"] = 0
+                row[f"q{qi+1}_ask"] = 0.0
+                row[f"q{qi+1}_ask_size"] = 0
+                row[f"q{qi+1}_bid_exch"] = 0
+                row[f"q{qi+1}_bid"] = 0.0
+                row[f"q{qi+1}_bid_size"] = 0
+                row[f"q{qi+1}_ts"] = 0
             results.append(row)
 
     while True:
