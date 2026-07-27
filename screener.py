@@ -79,6 +79,20 @@ def match_expirations(available_exps, target_fridays):
     return matched
 
 
+def passes_quote_guards(bid, ask):
+    """Shared liquidity guards — the live parser AND the backtest replay
+    (scripts/replay_scan.py) both call this, so the tradeable-universe
+    definition can never diverge between them.
+
+    A contract is quotable iff it has a live two-sided quote (bid > 0,
+    ask > 0, not crossed) whose spread is ≤ MAX_SPREAD_PCT of the midpoint.
+    """
+    if bid is None or ask is None or bid <= 0 or ask <= 0 or ask < bid:
+        return False
+    mid = (bid + ask) / 2
+    return (ask - bid) / mid <= MAX_SPREAD_PCT
+
+
 def _parse_massive_contracts(raw):
     """Filter and normalize a list of Massive option snapshot objects.
 
@@ -97,11 +111,8 @@ def _parse_massive_contracts(raw):
         if q is None or q.bid is None or q.ask is None:
             continue
         bid, ask = float(q.bid), float(q.ask)
-        if bid <= 0 or ask <= 0 or ask < bid:
-            continue          # no live two-sided quote → not tradeable
-        mid = (bid + ask) / 2
-        if (ask - bid) / mid > MAX_SPREAD_PCT:
-            continue          # quote too wide for the price to be meaningful
+        if not passes_quote_guards(bid, ask):
+            continue
         vol = int(o.day.volume) if o.day is not None and o.day.volume is not None else 0
         if vol < MIN_VOLUME:
             continue
@@ -109,31 +120,71 @@ def _parse_massive_contracts(raw):
             "strike": float(o.details.strike_price),
             "bid":    round(bid, 4),
             "ask":    round(ask, 4),
-            "mid":    round(mid, 4),
+            "mid":    round((bid + ask) / 2, 4),
             "delta":  round(abs(float(o.greeks.delta)), 6),
             "volume": vol,
         })
     return result
 
 
+def _live_chain_provider(ticker, exp, side, strike_low, strike_high):
+    """Default chain source: Massive live snapshot → parsed contract dicts.
+
+    Returns a list of {strike, bid, ask, mid, delta, volume} or None on a
+    fetch error (the caller skips that side/expiration, matching the old
+    inline behavior). The backtest replay passes its own provider with the
+    same signature/shape — everything downstream is shared.
+    """
+    try:
+        raw = list(massive_client.list_snapshot_options_chain(
+            ticker,
+            params={
+                'expiration_date':  exp,
+                'strike_price.gte': strike_low,
+                'strike_price.lte': strike_high,
+                'contract_type':    side,
+                'limit':            250,
+            }
+        ))
+    except Exception as e:
+        print(f"\n    [!] {exp}: {side} chain error — {e}")
+        return None
+    return _parse_massive_contracts(raw)
+
+
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
-def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None):
+def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
+                chain_provider=None, as_of=None):
     """
     Builds all valid triplets for one ticker across the provided expirations.
 
     Args:
-        ticker        : str
-        price         : float — current stock price
-        week_exps     : list of (week_num, exp_str)
-        min_premium   : float — minimum net credit required
-        min_p_profit  : float or None — minimum P(max profit); defaults to MIN_P_MAX_PROFIT
+        ticker         : str
+        price          : float — current stock price (at the scan/replay moment)
+        week_exps      : list of (week_num, exp_str)
+        min_premium    : float — minimum net credit required
+        min_p_profit   : float or None — minimum P(max profit); defaults to MIN_P_MAX_PROFIT
+        chain_provider : callable(ticker, exp, side, strike_low, strike_high)
+                         -> list of {strike, bid, ask, mid, delta, volume} or
+                         None on error. Defaults to the live Massive snapshot
+                         (_live_chain_provider). The backtest replay injects an
+                         extract-backed provider — all leg/guard/scoring logic
+                         below is shared between live and replay.
+        as_of          : date or None — valuation date for time-to-expiry and
+                         the expired-contract cut. Defaults to today (live).
+                         The replay passes the historical scan date; without
+                         it, replaying past dates would silently mis-anchor T.
 
     Returns:
         (triplets: list[dict], total_evaluated: int)
     """
     if min_p_profit is None:
         min_p_profit = MIN_P_MAX_PROFIT
+    if chain_provider is None:
+        chain_provider = _live_chain_provider
+    if as_of is None:
+        as_of = datetime.today().date()
 
     triplets        = []
     total_evaluated = 0
@@ -143,42 +194,14 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None):
 
     for week_num, exp in week_exps:
         exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-        T = (exp_date - datetime.today().date()).days / 365.0
+        T = (exp_date - as_of).days / 365.0
         if T <= 0:
             continue
 
-        try:
-            raw_calls = list(massive_client.list_snapshot_options_chain(
-                ticker,
-                params={
-                    'expiration_date':  exp,
-                    'strike_price.gte': strike_low,
-                    'strike_price.lte': strike_high,
-                    'contract_type':    'call',
-                    'limit':            250,
-                }
-            ))
-        except Exception as e:
-            print(f"\n    [!] {exp}: call chain error — {e}")
+        calls = chain_provider(ticker, exp, "call", strike_low, strike_high)
+        puts  = chain_provider(ticker, exp, "put", strike_low, strike_high)
+        if calls is None or puts is None:
             continue
-
-        try:
-            raw_puts = list(massive_client.list_snapshot_options_chain(
-                ticker,
-                params={
-                    'expiration_date':  exp,
-                    'strike_price.gte': strike_low,
-                    'strike_price.lte': strike_high,
-                    'contract_type':    'put',
-                    'limit':            250,
-                }
-            ))
-        except Exception as e:
-            print(f"\n    [!] {exp}: put chain error — {e}")
-            continue
-
-        calls = _parse_massive_contracts(raw_calls)
-        puts  = _parse_massive_contracts(raw_puts)
 
         # Segment by role. Premium is the transactable side of the quote:
         # legs we buy price at the ask, legs we sell price at the bid — so

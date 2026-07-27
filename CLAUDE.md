@@ -7,7 +7,7 @@ The platform is **single-strategy**: every scan runs the Call Spread Risk Revers
 
 > **History:** Earlier baselines V1 (% strike-distance ranker) and V2 (delta-adjusted single-leg ranker) have been removed (see Changelog). The proprietary risk reversal strategy is now the sole algorithm.
 
-**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A complete (gate passed 2026-07-26 — see `lib/bs.py`). Phase B1a (extraction worker, `scripts/extract_quotes.py`) built; overlap-window extraction validated. B1b replay and the B2 year-scale stream have NOT started.** Each phase has an exit gate; read the spec before touching anything ranker-related.
+**Learned Ranker Roadmap** — `docs/RANKER_SPEC.md` (Draft v2) specifies the ML re-ranker project in phases A–E: (A) Black-Scholes IV/delta module, (B) flat-file backtester (extract + replay), (C) descriptive analytics, (D) LightGBM ranker, (E) shadow mode. **Phase A complete (gate passed 2026-07-26 — `lib/bs.py`). B1a extraction worker built (`scripts/extract_quotes.py`); overlap re-extraction with the fixed extractor in progress. B1b replay module built (`scripts/replay_scan.py`, dry-run verified) — its 5-day smoke run and the replay-vs-live agreement gate are PENDING: the smoke waits on green extract verdicts, the gate waits on the clean week (07-27→07-31; runnable once Friday's flat file publishes Saturday ~11 AM ET). B2 year-scale stream NOT started.** Each phase has an exit gate; read the spec before touching anything ranker-related.
 
 ---
 
@@ -302,6 +302,8 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
 | `scripts/extract_quotes.py`         | Writes files| Per trading day — stream the OPRA quotes flat file → `data/extracts/DATE.parquet` (gitignored) |
+| `scripts/extract_catchup.sh`        | Wrapper     | Local cron (Tue–Sat 12:05) — extract+validate clean-week days as flat files publish |
+| `scripts/replay_scan.py`            | **Writes**  | B1b backtest replay — scan a historical (date, slot) from extracts → `ml_dataset` `source='backtest'` (default dry-run; `--write` to persist) |
 | `scripts/validate_extract.py`       | Read-only   | After an extraction — integrity + REST cross-check + ml_dataset comparison |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes` (tradebook trades) |
 | `scripts/backfill_ml_outcomes.py`   | **Writes**  | After options expire — fills `ml_dataset` outcome columns (sector-scan setups) |
@@ -426,6 +428,15 @@ Streams a trading day's OPRA quotes flat file (~100–160 GB compressed) from Ma
 - **Performance (measured, this Mac):** network-bound at ~5–7 MB/s per S3 stream (S3 throughput varies; probes saw up to 18); CPU is ~26 s/GB worst-case (52 s user per 2 GB in the densest stretch) via run-based galloping + binary-searched window slices — only in-window rows of universe contracts are parsed. Run multiple dates in parallel to use the pipe; EC2 sizing for the B2 year-stream should assume CPU is NOT the bottleneck below ~50 MB/s per worker.
 - Output `data/extracts/DATE.parquet` (+ verbatim `day_aggs/DATE.csv.gz`) — **gitignored data**; immutable; re-runs skip existing dates (resumable). `--limit-gb N` smoke-tests to a `.partial.parquet` that is never treated as complete.
 - **Validation:** `scripts/validate_extract.py --date DATE` — duplicate/bounds integrity, REST `list_quotes` exact-match cross-check (nanosecond standard), and the ml_dataset leg-premium comparison (staleness quantification for pre-2026-07-27 dates; the true live-overlap agreement gate for quote-priced cron days after the EC2 deploy).
+
+### Backtest Replay — `scripts/replay_scan.py` (RANKER_SPEC Phase B1b)
+
+Replays the sector scan for a historical (date, slot) from the local extracts, writing `ml_dataset`/`sector_scan_runs` with `source='backtest'`. **Default is dry-run; `--write` persists.** Same-code-path design (zero duplicated filter/scoring logic):
+
+- `screener.scan_ticker` gained two backward-compatible params: `chain_provider` (callable returning parsed contract dicts; defaults to the live Massive snapshot via the extracted `_live_chain_provider`) and `as_of` (valuation date for time-to-expiry; defaults to today). Liquidity guards are shared via `screener.passes_quote_guards`; `options_screener.get_next_fridays` gained `as_of` for point-in-time weekly targets. Live behavior is unchanged by default — regression-verified.
+- The replay's provider serves each contract's newest in-window quote (`q10`) from the extract, computes delta via `lib/bs.py` from the quote mid (ill-posed IV solve → contract excluded, the replay analogue of the live IV-placeholder filter), and applies the same volume≥20 filter from the stored day_aggs. Slot quote = last NBBO ≤ 10:05/15:35 ET — mirrors the live cron's 0–4-min scan band; documented approximation, never lookahead.
+- Selection + writes share `sector_scan.py`'s `select_top_n` / `write_picked` / `write_nonpicked` (same de-dup/re-run cleanup semantics).
+- **Point-in-time context:** per-ticker/SPY spot from Massive minute aggs at the slot (success-only disk cache `data/extracts/spot_cache.json`; paced + retried — recent dates 429 until Massive tiers them historical); VIX from yfinance ^VIX 60m bars (raises if missing — no silent substitution); days-to-earnings from yfinance `earnings_dates` (the historical table, NOT `.calendar` which leaks the present); FOMC/CPI/PPI/NFP from the published annual schedules — valid only near-present, so the replay **refuses dates > 14 days back** until historical schedule reconstruction exists (documented TODO for the year-scale backtest).
 
 ### `screener.py`
 - Call Spread Risk Reversal screener — available as both a standalone CLI and via the web UI (`/api/run`)

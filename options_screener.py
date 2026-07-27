@@ -14,9 +14,12 @@ TICKERS = ["GEV", "PLTR", "APP", "AVGO", "META", "MU", "NVDA", "TSLA", "AMD", "T
 massive_client = RESTClient(os.getenv('MASSIVE_API_KEY'))
 
 
-def get_next_fridays(n=4):
-    """Return the next N Friday dates (as date objects), starting tomorrow."""
-    today = datetime.today()
+def get_next_fridays(n=4, as_of=None):
+    """Return the next N Friday dates (as date objects), starting the day
+    after `as_of` (default: today — live behavior unchanged). The backtest
+    replay passes the historical scan date so weekly targets are
+    point-in-time."""
+    today = datetime.combine(as_of, datetime.min.time()) if as_of else datetime.today()
     fridays = []
     d = today + timedelta(days=1)
     while len(fridays) < n:
