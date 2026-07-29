@@ -2,7 +2,9 @@
 
 Replays the daily sector scan for a historical (date, slot) from the local
 flat-file extracts (data/extracts/DATE.parquet + day_aggs), writing to
-ml_dataset/sector_scan_runs with source='backtest'.
+ml_dataset/sector_scan_runs with source='backtest_open' / 'backtest_close'
+(slot-split, mirroring live_open/live_close — requires
+docs/backtest_slot_split_migration.sql).
 
 SAME CODE PATH as live, by construction:
   - `screener.scan_ticker` runs unchanged — this module only injects a
@@ -14,8 +16,9 @@ SAME CODE PATH as live, by construction:
     filter via `screener.MIN_VOLUME` (volume sourced from the stored
     day_aggs file for that date).
   - Selection + DB writes via sector_scan's `select_top_n`, `write_picked`,
-    `write_nonpicked` (same de-dup/cleanup semantics; source='backtest' keeps
-    backtest rows separable and re-runs idempotent).
+    `write_nonpicked` (same de-dup/cleanup semantics; the slot-split source
+    keeps backtest rows separable from live AND from the other slot, so
+    per-slot re-runs replace only their own slot's rows).
 
 Delta: computed from the slot quote MID via lib/bs.py (implied_vol → delta),
 since Massive serves no historical Greeks. Contracts whose IV solve is
@@ -46,7 +49,7 @@ POINT-IN-TIME sourcing (spec rule #6):
 
 Usage (from project root):
   python3 scripts/replay_scan.py --date 2026-07-24            # both slots, DRY RUN
-  python3 scripts/replay_scan.py --date 2026-07-24 --write    # write source='backtest'
+  python3 scripts/replay_scan.py --date 2026-07-24 --write    # write source='backtest_<slot>'
   python3 scripts/replay_scan.py --date 2026-07-20 --date 2026-07-21 --slot close --write
 """
 
@@ -266,7 +269,11 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
     as_of = datetime.strptime(date_str, "%Y-%m-%d").date()
     h, m = SLOTS[slot]
     scan_timestamp = datetime(as_of.year, as_of.month, as_of.day, h, m, tzinfo=ET).isoformat()
-    source = "backtest"
+    # Slot-split source (mirrors live_open/live_close): the de-dup keys are
+    # (source, scan_date, sector)-shaped, so the slot must live inside source
+    # or a both-slots replay's close pass would replace the open pass's rows.
+    # Requires docs/backtest_slot_split_migration.sql applied.
+    source = f"backtest_{slot}"
 
     store = ExtractStore(date_str)
     spy = spot_at_slot("SPY", date_str, slot)
@@ -378,7 +385,7 @@ def main():
     ap.add_argument("--slot", choices=["open", "close", "both"], default="both")
     ap.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
     ap.add_argument("--write", action="store_true",
-                    help="write to ml_dataset/sector_scan_runs (source='backtest'); default is dry-run")
+                    help="write to ml_dataset/sector_scan_runs (source='backtest_<slot>'); default is dry-run")
     ap.add_argument("--sleep", type=float, default=0.15,
                     help="pause between per-ticker spot lookups (default 0.15s)")
     args = ap.parse_args()

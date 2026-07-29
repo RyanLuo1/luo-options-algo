@@ -15,9 +15,10 @@ writes — safe to run any time. Reads SUPABASE_URL + SUPABASE_SERVICE_KEY from
 required because both tables are RLS-locked with no public policies.
 
 Open and close are distinct observations, encoded in `source`
-(live_open / live_close); by default both are shown, separated. `--slot`
-restricts to one. (Any `backtest`-source rows for the date are shown too, as
-their own section.)
+(live_open / live_close, and backtest_open / backtest_close for replay rows);
+by default every source present is shown, separated. `--slot` restricts to
+one slot across both provenances (live_<slot> + backtest_<slot>). Legacy
+slot-blind `backtest` rows, if any remain, render as their own section.
 
 If `rich` is installed, status is colored (green=picked, dim=none_qualified,
 yellow=no_tickers, red=error). Otherwise it prints plain text and still works.
@@ -69,8 +70,12 @@ _STATUS_STYLE = {
 }
 _STATUS_ORDER = {'picked': 0, 'none_qualified': 1, 'no_tickers': 2, 'error': 3}
 
-# source → human slot label.
-_SLOT_LABEL = {'live_open': 'open', 'live_close': 'close', 'backtest': 'backtest'}
+# source → human slot label. ('backtest' is the legacy slot-blind value —
+# kept only so any pre-split rows still render; see
+# docs/backtest_slot_split_migration.sql.)
+_SLOT_LABEL = {'live_open': 'open', 'live_close': 'close',
+               'backtest_open': 'backtest-open', 'backtest_close': 'backtest-close',
+               'backtest': 'backtest'}
 
 
 def _emit(text, style=None):
@@ -241,7 +246,8 @@ def main():
     # PostgREST embedded-relation syntax).
     run_q = supabase.table('sector_scan_runs').select('*').eq('scan_date', date_str)
     if args.slot:
-        run_q = run_q.eq('source', f'live_{args.slot}')
+        # A slot spans both provenances: live_<slot> and backtest_<slot>.
+        run_q = run_q.in_('source', [f'live_{args.slot}', f'backtest_{args.slot}'])
     runs = run_q.execute().data or []
 
     if not runs:
@@ -266,9 +272,11 @@ def main():
           f"{('  slot=' + args.slot) if args.slot else '  (all slots)'}", "bold")
     _emit("═" * 92, "dim")
 
-    # Render live_open, live_close, then any other source (e.g. backtest).
+    # Render live_open, live_close, backtest_open, backtest_close, then any
+    # other source (e.g. legacy plain 'backtest').
     ordered = sorted(by_source, key=lambda s: (
-        {'live_open': 0, 'live_close': 1}.get(s, 2), s))
+        {'live_open': 0, 'live_close': 1,
+         'backtest_open': 2, 'backtest_close': 3}.get(s, 4), s))
     for source in ordered:
         _render_slot(date_str, source, by_source[source], ml_by_id)
 

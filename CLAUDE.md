@@ -302,8 +302,9 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
 | `scripts/extract_quotes.py`         | Writes files| Per trading day — stream the OPRA quotes flat file → `data/extracts/DATE.parquet` (gitignored) |
-| `scripts/extract_catchup.sh`        | Wrapper     | Local cron (Tue–Sat 12:05) — extract+validate clean-week days as flat files publish |
-| `scripts/replay_scan.py`            | **Writes**  | B1b backtest replay — scan a historical (date, slot) from extracts → `ml_dataset` `source='backtest'` (default dry-run; `--write` to persist) |
+| `scripts/extract_catchup.sh`        | Wrapper     | launchd (Mac, 12:05 local Tue–Sat) — extract+validate clean-week days as flat files publish |
+| `scripts/replay_scan.py`            | **Writes**  | B1b backtest replay — scan a historical (date, slot) from extracts → `ml_dataset` `source='backtest_open'/'backtest_close'` (default dry-run; `--write` to persist) |
+| `scripts/run_ml_backfill.sh`        | Wrapper     | launchd (Mac, 16:30 local Mon–Fri) — nightly `backfill_ml_outcomes.py` with logging |
 | `scripts/validate_extract.py`       | Read-only   | After an extraction — integrity + REST cross-check + ml_dataset comparison |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes` (tradebook trades) |
 | `scripts/backfill_ml_outcomes.py`   | **Writes**  | After options expire — fills `ml_dataset` outcome columns (sector-scan setups) |
@@ -431,7 +432,9 @@ Streams a trading day's OPRA quotes flat file (~100–160 GB compressed) from Ma
 
 ### Backtest Replay — `scripts/replay_scan.py` (RANKER_SPEC Phase B1b)
 
-Replays the sector scan for a historical (date, slot) from the local extracts, writing `ml_dataset`/`sector_scan_runs` with `source='backtest'`. **Default is dry-run; `--write` persists.** Same-code-path design (zero duplicated filter/scoring logic):
+Replays the sector scan for a historical (date, slot) from the local extracts, writing `ml_dataset`/`sector_scan_runs` with **`source='backtest_open'` / `'backtest_close'`** (slot-split, mirroring `live_open`/`live_close`). **Default is dry-run; `--write` persists.** Same-code-path design (zero duplicated filter/scoring logic):
+
+> **Slot-split source (2026-07-28, `docs/backtest_slot_split_migration.sql`):** the de-dup keys (`uniq_ssr_run (source, scan_date, sector)` and `uniq_ml_dataset_observation (source, …)`) are slot-blind unless the slot lives inside `source`. The replay originally wrote plain `'backtest'` for both slots, so a both-slots run's close pass deleted/replaced the open pass's rows. The migration adds `backtest_open`/`backtest_close` to both CHECK constraints (no index changes needed — the existing keys become slot-aware, exactly as live). Plain `'backtest'` remains legal in the DB as a legacy transitional value but **no writer uses it**; a future migration can drop it once no rows carry it.
 
 - `screener.scan_ticker` gained two backward-compatible params: `chain_provider` (callable returning parsed contract dicts; defaults to the live Massive snapshot via the extracted `_live_chain_provider`) and `as_of` (valuation date for time-to-expiry; defaults to today). Liquidity guards are shared via `screener.passes_quote_guards`; `options_screener.get_next_fridays` gained `as_of` for point-in-time weekly targets. Live behavior is unchanged by default — regression-verified.
 - The replay's provider serves each contract's newest in-window quote (`q10`) from the extract, computes delta via `lib/bs.py` from the quote mid (ill-posed IV solve → contract excluded, the replay analogue of the live IV-placeholder filter), and applies the same volume≥20 filter from the stored day_aggs. Slot quote = last NBBO ≤ 10:05/15:35 ET — mirrors the live cron's 0–4-min scan band; documented approximation, never lookahead.
@@ -697,6 +700,21 @@ Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`
 - Scrape every 5 minutes using a paid data provider
 - More automated signal delivery to users
 - Alert system when a data point meets criteria
+
+---
+
+## Scheduled Automation (who runs what, where)
+
+Two machines run scheduled jobs; know which is which before touching schedules.
+
+| Job | Machine | Scheduler | Schedule | Script | Log |
+|---|---|---|---|---|---|
+| Live sector scan (open slot) | EC2 | cron | ~10:00 ET Mon–Fri (dual UTC lines, ET-gated wrapper) | `scripts/run_sector_scan.sh open` | `~/luo-options-algo/logs/sector_scan.log` (EC2) |
+| Live sector scan (close slot) | EC2 | cron | ~15:30 ET Mon–Fri (dual UTC lines, ET-gated wrapper) | `scripts/run_sector_scan.sh close` | same |
+| Clean-week catch-up extraction | Mac | **launchd** `com.luocapital.extract-catchup` | 12:05 local Tue–Sat | `scripts/extract_catchup.sh` | `~/Library/Logs/luocapital/extract_catchup.log` |
+| Nightly ml_dataset outcome backfill | Mac | **launchd** `com.luocapital.ml-backfill` | 16:30 local Mon–Fri (= 18:30 ET year-round; MT and ET shift DST together) | `scripts/run_ml_backfill.sh` | `~/Library/Logs/luocapital/ml_backfill.log` |
+
+**Mac jobs are launchd, not cron** — macOS denies cron Full Disk Access so a crontab entry silently never fires (learned 2026-07-28; the dead entry was removed). Plists live in `~/Library/LaunchAgents/com.luocapital.*.plist` (not in the repo — machine state); each also writes a `*_launchd.log` next to its main log for errors outside the script's own redirect. `StartCalendarInterval` runs a missed slot on wake if the Mac was asleep. Manage with `launchctl bootstrap|bootout gui/$UID <plist>`; verify with `launchctl list | grep luocapital`. Both wrapped scripts are idempotent, so missed/doubled fires are safe. Logs live in `~/Library/Logs/luocapital/`, **not `/tmp`** (reboots clear `/tmp` — that erased the first recovery's logs). The EC2 cron details (DST gating, market-day guard) are under the sector-scan section.
 
 ---
 

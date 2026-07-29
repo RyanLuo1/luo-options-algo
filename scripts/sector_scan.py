@@ -20,12 +20,15 @@ comes later.
 Usage:
     python3 scripts/sector_scan.py --slot open
     python3 scripts/sector_scan.py --slot close
-    python3 scripts/sector_scan.py --slot open --source backtest
+    python3 scripts/sector_scan.py --slot open --source backtest_open
     python3 scripts/sector_scan.py --slot open --weeks-max 4 --min-premium 2 --dry-run
 
     --slot {open,close}   REQUIRED. Sets source to live_open / live_close.
     --source SOURCE       Override source (default live_<slot>; must be one of
-                          live_open | live_close | backtest — DB CHECK enforced).
+                          live_open | live_close | backtest_open |
+                          backtest_close — DB CHECK enforced; the backtest
+                          values are slot-split like live, see
+                          docs/backtest_slot_split_migration.sql).
     --weeks-min N         Min expiration week (default 1).
     --weeks-max N         Max expiration week (default 12, max 12).
     --min-premium D       Min net credit in dollars (default 5.00).
@@ -383,7 +386,8 @@ def main():
                         help="evaluate the market-day guard for a date "
                              "(default today) and exit, without scanning/writing")
     parser.add_argument("--source", default=None,
-                        help="override source (default live_<slot>; backtest allowed)")
+                        help="override source (default live_<slot>; "
+                             "backtest_open/backtest_close allowed)")
     parser.add_argument("--weeks-min", type=int, default=1)
     parser.add_argument("--weeks-max", type=int, default=12)
     parser.add_argument("--min-premium", type=float, default=5.00)
@@ -418,9 +422,11 @@ def main():
     top_n       = max(1, args.top_n)
     weeks_range = f"W{weeks_min}-W{weeks_max}"
 
-    if source not in ("live_open", "live_close", "backtest"):
-        print(f"error: source must be live_open | live_close | backtest "
-              f"(got {source!r}) — DB CHECK constraint.", file=sys.stderr)
+    if source not in ("live_open", "live_close", "backtest_open", "backtest_close"):
+        print(f"error: source must be live_open | live_close | backtest_open "
+              f"| backtest_close (got {source!r}) — plain 'backtest' is legacy "
+              f"(slot-blind, see docs/backtest_slot_split_migration.sql).",
+              file=sys.stderr)
         sys.exit(1)
 
     # ── Market-day guard — skip weekends/holidays before any heavy work ───────

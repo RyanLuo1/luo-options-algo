@@ -25,7 +25,11 @@ create table if not exists sector_scan_runs (
     created_at          timestamptz not null default now(),
 
     source              text not null
-        check (source in ('backtest', 'live_open', 'live_close')),
+        check (source in ('backtest_open', 'backtest_close',
+                          'live_open', 'live_close', 'backtest')),
+        -- backtest_open/backtest_close are slot-split like live (see
+        -- docs/backtest_slot_split_migration.sql); plain 'backtest' is a
+        -- legacy transitional value no writer uses post-split.
     scan_date           date not null,
     scan_timestamp      timestamptz not null,
     sector              text not null,
