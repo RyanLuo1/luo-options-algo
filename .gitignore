@@ -24,3 +24,8 @@ reports/*.pdf
 
 # Quote extracts — data, not code (flat-file extraction output)
 data/extracts/
+
+# Private research findings — methodology is public (docs/RANKER_SPEC.md),
+# results are not. Only the explanatory README stub is tracked.
+docs/private/*
+!docs/private/README.md

@@ -281,6 +281,28 @@ The process artifact is valuable independent of the P&L answer.
    extractor streams to physical EOF and merges per-contract state across
    partitions (early-exit or flush-on-boundary would silently drop/duplicate
    data). day_aggs_v1 files ARE globally sorted.
+6. **Historical macro schedules (B2 prerequisite).** FOMC/CPI/PPI/NFP dates
+   *as known at each past date* must be reconstructed before replaying dates
+   more than 14 days old — the point-in-time STOP built into
+   `replay_scan.py` refuses such dates by design (the published annual
+   schedules are only valid near-present; using today's schedule for a
+   year-old scan date would leak the present into `days_to_next_*`
+   features). Reconstruction source: the Fed/BLS annual schedules are
+   published in advance and archived — scrape the historical schedule pages
+   (or archive.org snapshots) per year. Until this exists, the year-scale
+   replay cannot run; do not weaken the STOP as a workaround.
+7. **Flat-file spot for year-scale replay (B2 prerequisite).** B2's replay
+   must source historical underlying spot from Massive **stocks flat files**
+   (minute aggs), not REST minute-agg calls. Evidence from the B1b smoke
+   runs (2026-07-28): sustained 429 degradation at replay volume despite two
+   pacing retreats — the final configuration (0.75 s/ticker) still landed at
+   ~92% ticker coverage, with failures scattered across sectors. At ~10
+   spot lookups per sector-slot × 22 sector-slots/day × ~250 days, REST is
+   structurally the wrong tool. Flat-file spot (we are entitled to
+   minute_aggs back to 2014) makes replays fully offline, zero rate-limit
+   exposure, perfectly reproducible — same argument that moved quotes to
+   flat files. The success-only `spot_cache.json` pattern stays for the
+   overlap-week scale only.
 
 ---
 
@@ -296,8 +318,10 @@ B1a Extraction worker (stream day-files → slot        (build + overlap-window
 B1b Replay core (scan_ticker on extracts +            (the crux; gate: backtest
     computed deltas)                                   ≈ live on overlap days)
 B2  Stream the year on a spot worker; replay;         (a weekend + tens of $;
-    backfill labels                                    extraction window per
-                                                       open question 5 FIRST)
+    backfill labels                                    prerequisites: open
+                                                       questions 6 [historical
+                                                       macro schedules] and 7
+                                                       [flat-file spot] FIRST)
 C   Descriptive analytics + findings doc              (days, high value)
 D   LightGBM ranker, walk-forward, vs-score eval      (only if C warrants)
 E   Shadow mode on live scans                         (months, by design)
