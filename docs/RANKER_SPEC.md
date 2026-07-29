@@ -295,8 +295,11 @@ The process artifact is valuable independent of the P&L answer.
    must source historical underlying spot from Massive **stocks flat files**
    (minute aggs), not REST minute-agg calls. Evidence from the B1b smoke
    runs (2026-07-28): sustained 429 degradation at replay volume despite two
-   pacing retreats — the final configuration (0.75 s/ticker) still landed at
-   ~92% ticker coverage, with failures scattered across sectors. At ~10
+   pacing retreats — at the final configuration (0.75 s/ticker) the full
+   10-slot run opened at 97.5% ticker coverage and DEGRADED to a ~67%
+   steady state from slot 4 onward (74.2% overall; 305/1,180 spot lookups
+   failed), i.e. the limiter tightens under sustained load — pacing cannot
+   fix this. At ~10
    spot lookups per sector-slot × 22 sector-slots/day × ~250 days, REST is
    structurally the wrong tool. Flat-file spot (we are entitled to
    minute_aggs back to 2014) makes replays fully offline, zero rate-limit
