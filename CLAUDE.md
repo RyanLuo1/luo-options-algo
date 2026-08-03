@@ -705,16 +705,16 @@ Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`
 
 ## Scheduled Automation (who runs what, where)
 
-Two machines run scheduled jobs; know which is which before touching schedules.
+**ALL scheduled automation lives on EC2 (cron). The Mac is interactive-only** — no launchd/cron jobs. (Decided 2026-08-03: macOS TCC denies cron AND launchd agents Full Disk Access for files under `~/Desktop`, so Mac scheduled jobs silently never ran; both `com.luocapital.*` LaunchAgents are permanently unloaded — the plists may still sit in `~/Library/LaunchAgents/` but nothing is bootstrapped. Do not re-load them; schedule on EC2 instead.)
 
-| Job | Machine | Scheduler | Schedule | Script | Log |
-|---|---|---|---|---|---|
-| Live sector scan (open slot) | EC2 | cron | ~10:00 ET Mon–Fri (dual UTC lines, ET-gated wrapper) | `scripts/run_sector_scan.sh open` | `~/luo-options-algo/logs/sector_scan.log` (EC2) |
-| Live sector scan (close slot) | EC2 | cron | ~15:30 ET Mon–Fri (dual UTC lines, ET-gated wrapper) | `scripts/run_sector_scan.sh close` | same |
-| Clean-week catch-up extraction | Mac | **launchd** `com.luocapital.extract-catchup` | 12:05 local Tue–Sat | `scripts/extract_catchup.sh` | `~/Library/Logs/luocapital/extract_catchup.log` |
-| Nightly ml_dataset outcome backfill | Mac | **launchd** `com.luocapital.ml-backfill` | 16:30 local Mon–Fri (= 18:30 ET year-round; MT and ET shift DST together) | `scripts/run_ml_backfill.sh` | `~/Library/Logs/luocapital/ml_backfill.log` |
+| Job | Scheduler | Schedule | Script | Log (EC2) |
+|---|---|---|---|---|
+| Live sector scan (open slot) | EC2 cron | ~10:00 ET Mon–Fri (dual UTC lines, ET-gated wrapper) | `scripts/run_sector_scan.sh open` | `~/luo-options-algo/logs/sector_scan.log` |
+| Live sector scan (close slot) | EC2 cron | ~15:30 ET Mon–Fri (dual UTC lines, ET-gated wrapper) | `scripts/run_sector_scan.sh close` | same |
+| Catch-up quote extraction | EC2 cron | 14:05 ET Tue–Sat (dual UTC lines 18:05/19:05, ET-gated wrapper; flat files publish ~11 AM ET) | `scripts/ec2_extract_catchup.sh` | `/home/ubuntu/logs/extract_catchup.log` |
+| Nightly ml_dataset outcome backfill | EC2 cron | 18:30 ET Mon–Fri (dual UTC lines 22:30/23:30, ET-gated wrapper) | `scripts/ec2_ml_backfill.sh` | `/home/ubuntu/logs/ml_backfill.log` |
 
-**Mac jobs are launchd, not cron** — macOS denies cron Full Disk Access so a crontab entry silently never fires (learned 2026-07-28; the dead entry was removed). Plists live in `~/Library/LaunchAgents/com.luocapital.*.plist` (not in the repo — machine state); each also writes a `*_launchd.log` next to its main log for errors outside the script's own redirect. `StartCalendarInterval` runs a missed slot on wake if the Mac was asleep. Manage with `launchctl bootstrap|bootout gui/$UID <plist>`; verify with `launchctl list | grep luocapital`. Both wrapped scripts are idempotent, so missed/doubled fires are safe. Logs live in `~/Library/Logs/luocapital/`, **not `/tmp`** (reboots clear `/tmp` — that erased the first recovery's logs). The EC2 cron details (DST gating, market-day guard) are under the sector-scan section.
+All four wrappers share the same pattern: UTC box without `CRON_TZ` → cron fires at both the EDT and EST UTC times, the wrapper gates on the real ET clock, exactly one fire proceeds per day; always `exit 0`; size-capped logs. The extraction wrapper additionally holds a `flock` (multi-hour runs must not overlap) and skips if < 5 GB free on `/`. The extractor needs `boto3` + `pyarrow` in the EC2 venv and the `MASSIVE_S3_*` keys in the EC2 `.env` (both present since 2026-08-03). **EC2 S3 throughput caveat:** files.massive.com serves ~3 MB/s per stream to EC2 — a single day-file (~130–180 GB) takes many hours; the daily one-file cadence absorbs this, and the flock makes a long run safe. Extracts accumulate on EC2 under `data/extracts/` (~65–70 MB/day + day_aggs); rsync down to the Mac when a replay needs them. The Mac's legacy wrappers (`scripts/extract_catchup.sh`, `scripts/run_ml_backfill.sh`) remain in the repo for reference but are unscheduled everywhere.
 
 ---
 
