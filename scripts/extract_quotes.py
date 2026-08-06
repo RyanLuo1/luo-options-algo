@@ -44,6 +44,18 @@ window rows + one window='day' counters row per contract). Extracts are
 immutable; already-extracted dates are skipped (resumable). day_aggs land in
 data/extracts/day_aggs/YYYY-MM-DD.csv.gz verbatim.
 
+Memory (2026-08-05 chunked-writer fix): per-contract state MUST persist to
+physical EOF — the partition layout means any contract can recur in a later
+partition (that is why `states` is a merge dict), so there is no point mid-
+stream where an underlying is provably final; flush-at-underlying-boundary
+would silently duplicate/split rows. The old OOM (~6.9 GB total-vm, killed
+the 2 GB t3.small three times) was NOT the state dict (~1.7 GB) but the
+endgame: materializing every flushed row dict, building DataFrames, then
+pd.concat + to_parquet held several copies at once. The endgame now streams
+batches of flushed rows straight into one pyarrow ParquetWriter (identical
+schema/columns, just more row groups) — peak memory is the state dict plus
+one ~100k-row batch. Content is unchanged; only row-group layout differs.
+
 Usage (from project root):
   python3 scripts/extract_quotes.py --date 2026-07-24
   python3 scripts/extract_quotes.py --date 2026-07-20 --date 2026-07-21 ...
@@ -105,6 +117,35 @@ def load_universe_roots(path=None):
     return roots
 
 
+def _extract_schema():
+    """The exact arrow schema of the output parquet — column order and dtypes
+    match what the original pandas-inferred writer produced (verified against
+    a pre-fix file: string / int64 / double only; ns timestamps are int64 with
+    0-sentinels, NEVER floats/nulls). Explicit so a batch that happens to lack
+    variation (e.g. an all-'day'-rows batch with all-None spread stats) can
+    never drift the schema."""
+    import pyarrow as pa
+    fields = [
+        ("date", pa.string()), ("underlying", pa.string()),
+        ("contract", pa.string()), ("window", pa.string()),
+        ("update_count", pa.int64()), ("two_sided_count", pa.int64()),
+        ("spread_min", pa.float64()), ("spread_max", pa.float64()),
+        ("spread_mean", pa.float64()),
+        ("mid_open", pa.float64()), ("mid_high", pa.float64()),
+        ("mid_low", pa.float64()), ("mid_close", pa.float64()),
+        ("first_ts", pa.int64()), ("last_ts", pa.int64()),
+        ("last_bid_size", pa.int64()), ("last_ask_size", pa.int64()),
+    ]
+    for qi in range(1, N_LAST_QUOTES + 1):
+        fields += [
+            (f"q{qi}_ask_exch", pa.int64()), (f"q{qi}_ask", pa.float64()),
+            (f"q{qi}_ask_size", pa.int64()), (f"q{qi}_bid_exch", pa.int64()),
+            (f"q{qi}_bid", pa.float64()), (f"q{qi}_bid_size", pa.int64()),
+            (f"q{qi}_ts", pa.int64()),
+        ]
+    return pa.schema(fields)
+
+
 def window_bounds_ns(date_str):
     """DST-correct ET window bounds for the date, as (label, lo_ns, hi_ns)."""
     et = ZoneInfo("America/New_York")
@@ -133,7 +174,7 @@ class ContractState:
         self.windows_done = False
 
 
-def extract_day(date_str, limit_bytes=None, log=print):
+def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(os.path.join(OUT_DIR, "day_aggs"), exist_ok=True)
     # A byte-limited run is a smoke test: name it .partial so it never counts
@@ -182,22 +223,40 @@ def extract_day(date_str, limit_bytes=None, log=print):
             s.pos = 0
             s.body = None
             s.retries = 0
+            s.since_open = 0
             s._open()
 
         def _open(s):
             nonlocal s3
             obj = s3.get_object(Bucket=BUCKET, Key=key, Range=f"bytes={s.pos}-{end_byte}")
             s.body = obj["Body"]
+            s.since_open = 0
 
         def read(s, n):
+            nonlocal s3
             if s.pos > end_byte:
                 return b""
+            # Proactive connection recycle: per-stream throughput decays over a
+            # connection's lifetime on Massive's side (measured 16-18 MB/s at
+            # open -> 2.3 MB/s after ~21 h). A fresh ranged GET at the current
+            # offset resets the server-side pacing; gzip state is in-process so
+            # this is exactly the resume path, invoked proactively.
+            if reconnect_bytes and s.since_open >= reconnect_bytes:
+                log(f"[{date_str}] recycling connection at {s.pos/1e9:.1f} GB "
+                    f"(--reconnect-every-gb)", flush=True)
+                try:
+                    s.body.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                s3 = s3_client()
+                s._open()
             for attempt in range(8):
                 try:
                     chunk = s.body.read(n)
                     if not chunk and s.pos <= end_byte:
                         raise IOError(f"stream ended early at {s.pos}/{end_byte + 1}")
                     s.pos += len(chunk)
+                    s.since_open += len(chunk)
                     return chunk
                 except Exception as e:  # noqa: BLE001 — resume on any stream error
                     s.retries += 1
@@ -217,8 +276,9 @@ def extract_day(date_str, limit_bytes=None, log=print):
     body = ResumableBody()
 
     import pandas as pd
-    results = []          # flushed per-contract dicts (built at end of stream)
-    frames = []           # DataFrame batches (memory bound)
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    results = []          # flushed per-contract dicts (drained per batch at end of stream)
     states = {}           # contract ticker bytes -> ContractState (merges partitions)
     cur = None            # ContractState of the active contract (None = not universe)
     cur_prefix = b""      # active contract ticker + b','
@@ -453,28 +513,50 @@ def extract_day(date_str, limit_bytes=None, log=print):
                 f"({downloaded/1e6/el:.1f} MB/s, {lines_total/1e6:.0f}M lines, "
                 f"{len(states)} contracts tracked, {el/60:.0f}m)", flush=True)
 
-    # end of stream: flush every tracked contract (partitions merged in `states`)
-    for st in states.values():
-        flush(st)
-        if len(results) > 150_000:      # bound memory: dicts → typed frame
-            frames.append(pd.DataFrame(results))
-            results.clear()
+    # End of stream: flush every tracked contract (partitions merged in
+    # `states`) THROUGH an incremental parquet writer — never more than one
+    # batch of row dicts + its arrow table in memory. Same columns/dtypes as
+    # the old single-shot writer (schema is pinned); only row-group layout
+    # differs. The state dict itself cannot be flushed earlier: partition
+    # recurrence means no contract is final before physical EOF.
+    schema = _extract_schema()
+    total_rows = 0
+    win_rows = 0
+    writer = pq.ParquetWriter(out_path + ".tmp", schema)
+
+    def write_batch():
+        nonlocal total_rows, win_rows
+        if not results:
+            return
+        df = pd.DataFrame(results)
+        results.clear()
+        df.insert(0, "date", date_str)
+        total_rows += len(df)
+        win_rows += int((df["window"] != "day").sum())
+        writer.write_table(pa.Table.from_pandas(df, schema=schema, preserve_index=False))
+
+    try:
+        for st in states.values():
+            flush(st)
+            if len(results) >= 100_000:
+                write_batch()
+        write_batch()
+    finally:
+        writer.close()
     el = time.time() - t0
 
-    if results:
-        frames.append(pd.DataFrame(results))
-    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    df.insert(0, "date", date_str)
-    df.to_parquet(out_path + ".tmp", index=False)
     os.rename(out_path + ".tmp", out_path)
     size = os.path.getsize(out_path)
+    import resource
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_mb = peak / 1e6 if sys.platform == "darwin" else peak / 1e3  # bytes vs KB
     log(f"[{date_str}] DONE in {el/60:.1f} min: {downloaded/1e9:.1f} GB streamed "
         f"({downloaded/1e6/el:.1f} MB/s sustained), {lines_total/1e6:.0f}M lines scanned, "
-        f"{kept_rows/1e6:.1f}M in-window rows, {len(df)} extract rows "
-        f"({df[df.window != 'day'].shape[0]} window + {df[df.window == 'day'].shape[0]} day), "
-        f"{size/1e6:.1f} MB parquet")
+        f"{kept_rows/1e6:.1f}M in-window rows, {total_rows} extract rows "
+        f"({win_rows} window + {total_rows - win_rows} day), "
+        f"{size/1e6:.1f} MB parquet, peak RSS {peak_mb:.0f} MB")
     return dict(date=date_str, seconds=el, bytes=downloaded, mb_s=downloaded / 1e6 / el,
-                lines=lines_total, kept=kept_rows, rows=len(df), parquet_bytes=size)
+                lines=lines_total, kept=kept_rows, rows=total_rows, parquet_bytes=size)
 
 
 def main():
@@ -482,6 +564,10 @@ def main():
     ap.add_argument("--date", action="append", required=True, help="YYYY-MM-DD (repeatable)")
     ap.add_argument("--limit-gb", type=float, default=None,
                     help="Smoke test: stop after N GB downloaded (extract is partial; not renamed final)")
+    ap.add_argument("--reconnect-every-gb", type=float, default=None,
+                    help="Proactively recycle the S3 connection every N GB (per-stream "
+                         "throughput decays over connection lifetime; a fresh ranged GET "
+                         "resets it — same mechanism as the error-resume path)")
     ap.add_argument("--universe", default=None,
                     help="override universe JSON (default data/universe_extract.json)")
     args = ap.parse_args()
@@ -489,12 +575,13 @@ def main():
         global UNIVERSE_PATH
         UNIVERSE_PATH = args.universe
     limit = int(args.limit_gb * 1e9) if args.limit_gb else None
+    reconnect = int(args.reconnect_every_gb * 1e9) if args.reconnect_every_gb else None
     for date_str in args.date:
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
             sys.exit(f"bad date: {date_str}")
-        extract_day(date_str, limit_bytes=limit)
+        extract_day(date_str, limit_bytes=limit, reconnect_bytes=reconnect)
 
 
 if __name__ == "__main__":

@@ -306,6 +306,21 @@ The process artifact is valuable independent of the P&L answer.
    exposure, perfectly reproducible — same argument that moved quotes to
    flat files. The success-only `spot_cache.json` pattern stays for the
    overlap-week scale only.
+8. **Connection cycling for B2 stream workers.** Per-stream S3 throughput
+   decays over a connection's LIFETIME on Massive's side (measured
+   2026-08-04/05 on EC2: 16–18 MB/s at open, monotonic decay to 2.3 MB/s
+   over ~21 h; a fresh connection immediately re-opened fast). Limits are
+   per-connection, not per-account (Mac + EC2 sustained ~10.6 MB/s
+   aggregate concurrently). B2 workers must therefore recycle their
+   connection every N GB via the ResumableBody resume path instead of
+   riding the decay — implemented as `extract_quotes.py
+   --reconnect-every-gb N` (2026-08-05; gzip state is in-process, so a
+   proactive re-open at the current byte offset is free). Suggested N: 8.
+   Caveat (measured 2026-08-05 overnight): recycling defends against
+   lifetime decay but does NOT beat account-aggregate pacing — an EC2 run
+   with 8 GB recycles sustained only ~2.2 MB/s while a Mac stream
+   concurrently pulled ~4–5 MB/s on the same account. Budget B2 wall-clock
+   on ~10 MB/s account-aggregate, not per-stream numbers.
 
 ---
 
