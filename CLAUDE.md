@@ -173,7 +173,7 @@ Black-Scholes IV solver + delta for the learned-ranker backtest (`docs/RANKER_SP
 | `6M`      | Massive `list_aggs` | 1-day bars over 190 days |
 | `1Y`      | Massive `list_aggs` | 1-day bars over 370 days |
 
-**Why 1D uses yfinance** — Massive's $30/mo Options plan returns `NOT_AUTHORIZED` for any stock aggregate dated today, regardless of market state. Without yfinance, 1D would always show *yesterday's* bars even mid-session. yfinance fills exactly that gap. The Massive 1D path remains in the code as a fallback for the rare case yfinance also fails (unknown ticker, Yahoo outage); it returns the most recent **non-today** session by bucketing a 7-day hourly window by ET date and picking the max, same as before.
+**Why 1D uses yfinance** — Massive's Options Advanced plan ($199/mo) returns `NOT_AUTHORIZED` for any stock aggregate dated today, regardless of market state (today's stock data is excluded from the Options plan family at every tier — it requires a separate Stocks plan). Without yfinance, 1D would always show *yesterday's* bars even mid-session. yfinance fills exactly that gap. The Massive 1D path remains in the code as a fallback for the rare case yfinance also fails (unknown ticker, Yahoo outage); it returns the most recent **non-today** session by bucketing a 7-day hourly window by ET date and picking the max, same as before.
 
 **5D still uses Massive 1-hour bars** — that timeframe is bars from yesterday and earlier (today's hourly slot is replaced by 1D), so Massive's historical stock data is sufficient.
 
@@ -272,7 +272,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 **Auto-backfill — `scripts/backfill_outcomes.py`**:
 - Run with `python3 scripts/backfill_outcomes.py` from the project root (no arguments). Reads `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `MASSIVE_API_KEY` from `.env` (loaded transitively via `options_screener`'s `load_dotenv()`).
 - Finds tradebook rows with `expiration < today_ET` that don't yet have an outcome.
-- Fetches the closing stock price on the expiration date from Massive's `list_aggs` (daily, 7-day backward window so holiday-shifted expirations resolve to the nearest prior trading day). Works on the existing $30 Options plan since this is **historical** stock data — Massive's "no today's data" restriction doesn't apply.
+- Fetches the closing stock price on the expiration date from Massive's `list_aggs` (daily, 7-day backward window so holiday-shifted expirations resolve to the nearest prior trading day). Works on the Options Advanced plan ($199/mo) since this is **historical** stock data — Massive's "no today's data" restriction (which applies across the Options plan family) doesn't apply.
 - Computes the four values + outcome_type per the formulas above, inserts to `trade_outcomes` with `notes='auto-backfilled'`.
 - Prints one line per trade and a summary: `Backfilled N trades. Win rate: X%. Total P&L: $Y. Average per trade: $Z.`
 - **CLI output is in per-contract dollars** (i.e. `pnl_per_contract`, which is raw payoff × 100). Brokerage statements quote dollars at this scale — `[backfill] GEV 2026-05-01: P&L=$+1026.00` rather than the per-share `$+10.26`. The database stores **both**: `realized_pnl` (per-share, matches option quote prices) and `pnl_per_contract` (per-contract, matches brokerage P&L). When tradebook later tracks contract quantity, the CLI multiplies by `qty` on top of the × 100; the DB columns remain unit-fixed.
@@ -302,9 +302,11 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
 | `scripts/extract_quotes.py`         | Writes files| Per trading day — stream the OPRA quotes flat file → `data/extracts/DATE.parquet` (gitignored) |
-| `scripts/extract_catchup.sh`        | Wrapper     | launchd (Mac, 12:05 local Tue–Sat) — extract+validate clean-week days as flat files publish |
+| `scripts/extract_catchup.sh`        | Wrapper     | **Legacy — unscheduled** former Mac launchd catch-up wrapper; kept for reference (see Scheduled Automation) |
+| `scripts/ec2_extract_catchup.sh`    | Wrapper     | EC2 cron (14:05 ET Tue–Sat, ET-gated dual UTC lines, flock) — extract+validate as flat files publish → `/home/ubuntu/logs/extract_catchup.log` |
 | `scripts/replay_scan.py`            | **Writes**  | B1b backtest replay — scan a historical (date, slot) from extracts → `ml_dataset` `source='backtest_open'/'backtest_close'` (default dry-run; `--write` to persist) |
-| `scripts/run_ml_backfill.sh`        | Wrapper     | launchd (Mac, 16:30 local Mon–Fri) — nightly `backfill_ml_outcomes.py` with logging |
+| `scripts/run_ml_backfill.sh`        | Wrapper     | **Legacy — unscheduled** former Mac launchd nightly-backfill wrapper; kept for reference (see Scheduled Automation) |
+| `scripts/ec2_ml_backfill.sh`        | Wrapper     | EC2 cron (18:30 ET Mon–Fri, ET-gated dual UTC lines) — nightly `backfill_ml_outcomes.py` → `/home/ubuntu/logs/ml_backfill.log` |
 | `scripts/validate_extract.py`       | Read-only   | After an extraction — integrity + REST cross-check + ml_dataset comparison |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes` (tradebook trades) |
 | `scripts/backfill_ml_outcomes.py`   | **Writes**  | After options expire — fills `ml_dataset` outcome columns (sector-scan setups) |
@@ -314,7 +316,7 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 
 Produces the **sector → large-cap-ticker map** that the daily sector scan reads. It is a **standalone, periodically-run** script — **NOT** invoked on every scan, and it does **not** touch Massive, scan options, or change the app. Run it occasionally (e.g. monthly, or when index membership / market caps shift) to refresh the universe the sector scan consumes.
 
-- Run with `python3 scripts/build_universe.py` from the project root. Optional flags: `--limit N` (only evaluate the first N candidates — for a quick smoke test) and `--sleep S` (seconds between tickers, default `0.25`).
+- Run with `python3 scripts/build_universe.py` from the project root. Optional flags: `--limit N` (only evaluate the first N candidates — for a quick smoke test), `--sleep S` (seconds between tickers, default `0.25`), `--threshold DOLLARS` (market-cap floor, default `100000000000` = $100B), and `--out PATH` (output path, default `data/universe.json`). The latter two are how alternate universes are built (e.g. the extraction universe via `--threshold 75000000000 --out data/universe_extract.json`).
 - **Candidate pool:** the **S&P 500 constituent list, scraped from Wikipedia** (`List_of_S&P_500_companies`, the `id="constituents"` table). Nearly every US company over $100B is in the index, so it's a stable, reproducible starting universe. Wikipedia share-class dots are normalized to yfinance dashes (`BRK.B` → `BRK-B`). The Wikipedia fetch is retried with backoff; the source URL is recorded in the output metadata.
 - **Per-ticker enrichment:** `sector` and `marketCap` come from `yf.Ticker(t).info` (yfinance, not Massive — this is reference data, not options/historical bars). Tickers are **grouped by whatever sector string yfinance returns** — no custom taxonomy. yfinance's native strings are the GICS-style sectors: `Technology`, `Financial Services`, `Healthcare`, `Consumer Cyclical`, `Consumer Defensive`, `Energy`, `Industrials`, `Basic Materials`, `Real Estate`, `Utilities`, `Communication Services`. (These are yfinance's labels and differ slightly from the canonical GICS names — e.g. `Financial Services` not "Financials", `Healthcare` not "Health Care" — and we keep yfinance's exactly.)
 - **Filter:** keep only tickers with `marketCap > $100,000,000,000` ($100B).
@@ -342,7 +344,7 @@ Reads the sector universe (`data/universe.json`), runs the existing Call Spread 
 
 - Run from the project root: `python3 scripts/sector_scan.py --slot open` (or `--slot close`).
   - `--slot {open,close}` (**required**) sets `source` to `live_open` / `live_close`. The DB has **no `slot` column** — the slot is encoded into `source`.
-  - `--source` overrides source (default `live_<slot>`; must be one of `live_open` | `live_close` | `backtest` — enforced by a DB CHECK). Use `backtest` for historical replay later.
+  - `--source` overrides source (default `live_<slot>`; allowed writer values are `live_open` | `live_close` | `backtest_open` | `backtest_close`). Plain `backtest` remains legal in the DB as a legacy transitional value but **no writer uses it** — the script rejects it with a pointer to `docs/backtest_slot_split_migration.sql` (see the slot-split note under Backtest Replay). The backtest sources are written by `scripts/replay_scan.py`.
   - Filters use the app defaults but are CLI-overridable: `--weeks-min` (1), `--weeks-max` (12), `--min-premium` (5.00), `--min-p-profit` (0.50).
   - `--sleep` (0.15s) paces between tickers; `--limit-per-sector N` scans only the first N tickers per sector (testing); `--universe PATH` points at a different universe file; `--dry-run` scans but writes nothing.
 - **Reuses** `screener.scan_ticker` and the Massive client — it does **not** change the app, the algorithm, the tradebook, or `trade_outcomes`. It injects a dedicated Massive `RESTClient` (15s read timeout, 3 retries) into `screener.massive_client` so scan calls fail fast under load (no edit to `screener.py`).
@@ -497,7 +499,7 @@ Auth is handled via `@supabase/supabase-js`. The client is initialized in `web/s
 
 - **`web/src/lib/supabase.js`** — exports the `supabase` client singleton
 - **`web/src/hooks/useAuth.js`** — exports `useAuth()` hook returning `{ user, session, loading }` via `getSession` + `onAuthStateChange`
-- **`web/src/pages/LoginPage.jsx`** — dark-themed **split-screen** auth page at `/login` serving **both sign-in and public sign-up** via a `mode` toggle (`'signin'` | `'signup'`); redirects to `/` if already logged in. **Left half:** vertically-centered form — Luo Capital lockup, a mode-aware heading ("Welcome back." / "Create your account.") + subline, Email + Password fields (password has a Show/Hide toggle, UI-only), and a muted `© 2026 · Luo Capital` footer. **Right half:** a darker brand panel with an SVG-only candlestick motif (slate wicks, profit/loss bodies, faint grid, faint purple radial glow) whose candles drift slowly via the `.candle-a/b/c` keyframes in `index.css` (~6–8s, honors `prefers-reduced-motion`); a centered `Luo Capital / Options Screener` lockup sits over it. No WebGL / video / external images. **Responsive:** the right panel is `hidden lg:block`, so narrow screens show the full-width centered form only.
+- **`web/src/pages/LoginPage.jsx`** — dark-themed **split-screen** auth page at `/login` serving **both sign-in and public sign-up** via a `mode` toggle (`'signin'` | `'signup'`); redirects to `/` if already logged in. **⚠ Supabase-side public signups are disabled (personal research project) — the UI signup path is dead-ended pending removal.** **Left half:** vertically-centered form — Luo Capital lockup, a mode-aware heading ("Welcome back." / "Create your account.") + subline, Email + Password fields (password has a Show/Hide toggle, UI-only), and a muted `© 2026 · Luo Capital` footer. **Right half:** a darker brand panel with an SVG-only candlestick motif (slate wicks, profit/loss bodies, faint grid, faint purple radial glow) whose candles drift slowly via the `.candle-a/b/c` keyframes in `index.css` (~6–8s, honors `prefers-reduced-motion`); a centered `Luo Capital / Options Screener` lockup sits over it. No WebGL / video / external images. **Responsive:** the right panel is `hidden lg:block`, so narrow screens show the full-width centered form only.
   - **Mode toggle** — a small centered link under the form switches modes: `New here? Create an account` ↔ `Already have an account? Sign in` (`switchMode()` clears error/notice and the confirm field). The accent-purple primary button reads **Sign in** or **Create account** accordingly.
   - **Sign-up flow (public)** — in `'signup'` mode the form adds a **Confirm password** field; `handleSubmit` validates `password === confirmPw` client-side (inline `Passwords do not match.` on mismatch, no submit) before calling the **existing** `supabase.auth.signUp({ email, password })` path (surfaced, not rewritten). **The post-signUp branch is session-aware so the UI is correct regardless of the Supabase "Confirm email" setting:**
     - **Session returned** (confirmation **off** → Supabase logs the user in immediately) → route straight into the screener like a normal sign-in; **no** "check your email" notice.
@@ -724,7 +726,7 @@ All four wrappers share the same pattern: UTC box without `CRON_TZ` → cron fir
 - **Host:** AWS EC2 t3.small, Ubuntu 24.04, us-east-2 (Ohio)
 - **Server IP:** 3.131.232.204 (Elastic IP — permanent)
 - **Domain:** https://luo-capital.com (registered via Namecheap, DNS A records pointing to Elastic IP)
-- **SSL:** Let's Encrypt via Certbot, auto-renews, expires 2026-07-13
+- **SSL:** Let's Encrypt via Certbot — auto-renews (no manual expiry tracking needed)
 
 ### Stack
 - **Nginx** reverse proxy on port 80/443 → forwards to Gunicorn on port 5001
