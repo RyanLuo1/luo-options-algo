@@ -1,0 +1,67 @@
+{
+ "metadata": {
+  "generated_at": "2026-08-07T17:53:27.821188Z",
+  "year": 2025,
+  "sources": {
+   "fomc": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "cpi": "https://www.bls.gov/schedule/news_release/cpi.htm + http://web.archive.org/web/20250605150747/https://www.bls.gov/schedule/news_release/cpi.htm",
+   "ppi": "https://www.bls.gov/schedule/news_release/ppi.htm + http://web.archive.org/web/20250523204950/https://www.bls.gov/schedule/news_release/ppi.htm",
+   "nfp": "https://www.bls.gov/schedule/news_release/empsit.htm + http://web.archive.org/web/20250524030443/https://www.bls.gov/schedule/news_release/empsit.htm"
+  }
+ },
+ "fomc": [
+  "2025-01-29",
+  "2025-03-19",
+  "2025-05-07",
+  "2025-06-18",
+  "2025-07-30",
+  "2025-08-22",
+  "2025-09-17",
+  "2025-10-29",
+  "2025-12-10"
+ ],
+ "cpi": [
+  "2025-01-15",
+  "2025-02-12",
+  "2025-03-12",
+  "2025-04-10",
+  "2025-05-13",
+  "2025-06-11",
+  "2025-07-15",
+  "2025-08-12",
+  "2025-09-11",
+  "2025-10-15",
+  "2025-11-13",
+  "2025-12-10",
+  "2025-12-18"
+ ],
+ "ppi": [
+  "2025-01-14",
+  "2025-02-13",
+  "2025-03-13",
+  "2025-04-11",
+  "2025-05-15",
+  "2025-06-12",
+  "2025-07-16",
+  "2025-08-14",
+  "2025-09-10",
+  "2025-10-16",
+  "2025-11-14",
+  "2025-12-11"
+ ],
+ "nfp": [
+  "2025-01-10",
+  "2025-02-07",
+  "2025-03-07",
+  "2025-04-04",
+  "2025-05-02",
+  "2025-06-06",
+  "2025-07-03",
+  "2025-08-01",
+  "2025-09-05",
+  "2025-10-03",
+  "2025-11-07",
+  "2025-12-05",
+  "2025-12-16"
+ ]
+}

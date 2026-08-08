@@ -72,21 +72,54 @@ import subprocess
 import sys
 from datetime import date, timedelta
 
+# Claims manifest (extract_claims table): prevents this cron duplicating a day
+# another machine already extracted/holds. Degrades gracefully to local-file
+# existence checks if the table/network is unavailable (single-machine mode).
+sys.path.insert(0, "scripts")
+try:
+    from extract_claims import ClaimsUnavailable, claim_day, mark_done, mark_failed
+    def _claim(ds):
+        try:
+            return claim_day(ds)
+        except ClaimsUnavailable as e:
+            print(f"[catchup] claims unavailable ({e}) — local-only mode", flush=True)
+            return None                     # None = manifest unusable
+except ImportError:
+    def _claim(ds):
+        return None
+
 START = date(2026, 7, 27)          # first clean quote-priced cron day
 d, today = START, date.today()
 while d < today:                    # published files only (yesterday and back)
     if d.weekday() < 5:
         ds = d.isoformat()
         if not os.path.exists(f"data/extracts/{ds}.parquet"):
+            claimed = _claim(ds)
+            if claimed is False:
+                print(f"[catchup] {ds} held/done by another worker — skipping", flush=True)
+                d += timedelta(days=1)
+                continue
             print(f"[catchup] extracting {ds}", flush=True)
             rc = subprocess.run(
                 [sys.executable, "scripts/extract_quotes.py", "--date", ds]).returncode
             if rc == 0:
-                subprocess.run(
-                    [sys.executable, "scripts/validate_extract.py", "--date", ds])
+                vrc = subprocess.run(
+                    [sys.executable, "scripts/validate_extract.py", "--date", ds]).returncode
+                if claimed:
+                    try:
+                        size = os.path.getsize(f"data/extracts/{ds}.parquet")
+                        mark_done(ds, parquet_bytes=size) if vrc == 0 else \
+                            mark_failed(ds, f"validation rc={vrc}")
+                    except Exception:
+                        pass
             else:
                 print(f"[catchup] {ds} failed rc={rc} (unpublished/holiday?) — "
                       f"will retry next run", flush=True)
+                if claimed:
+                    try:
+                        mark_failed(ds, f"extract rc={rc} (unpublished/holiday?)")
+                    except Exception:
+                        pass
     d += timedelta(days=1)
 print("[catchup] done", flush=True)
 PY

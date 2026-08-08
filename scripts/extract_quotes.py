@@ -118,17 +118,20 @@ def load_universe_roots(path=None):
 
 
 def _extract_schema():
-    """The exact arrow schema of the output parquet — column order and dtypes
-    match what the original pandas-inferred writer produced (verified against
-    a pre-fix file: string / int64 / double only; ns timestamps are int64 with
-    0-sentinels, NEVER floats/nulls). Explicit so a batch that happens to lack
-    variation (e.g. an all-'day'-rows batch with all-None spread stats) can
-    never drift the schema."""
+    """The exact arrow schema of the output parquet (string / int64 / double
+    only; ns timestamps are int64 with 0-sentinels, NEVER floats/nulls).
+    Explicit so a batch that happens to lack variation (e.g. an all-'day'-rows
+    batch with all-None spread stats) can never drift the schema.
+
+    Schema v2 (2026-08-07): adds bid_upd_count/ask_upd_count after
+    two_sided_count. Files extracted before this date lack the two columns —
+    readers select by name and tolerate both generations."""
     import pyarrow as pa
     fields = [
         ("date", pa.string()), ("underlying", pa.string()),
         ("contract", pa.string()), ("window", pa.string()),
         ("update_count", pa.int64()), ("two_sided_count", pa.int64()),
+        ("bid_upd_count", pa.int64()), ("ask_upd_count", pa.int64()),
         ("spread_min", pa.float64()), ("spread_max", pa.float64()),
         ("spread_mean", pa.float64()),
         ("mid_open", pa.float64()), ("mid_high", pa.float64()),
@@ -168,7 +171,11 @@ class ContractState:
         self.day_count = 0
         self.day_first_ts = None   # bytes
         self.day_last_ts = None    # bytes
-        # per window: [count, two_sided, sp_min, sp_max, sp_sum, mo, mh, ml, mc, deque, f_ts, l_ts]
+        # per window: [count, two_sided, sp_min, sp_max, sp_sum, mo, mh, ml, mc,
+        #              deque, f_ts, l_ts, prev_bid, prev_ask, bid_upd, ask_upd]
+        # bid_upd/ask_upd (2026-08-07): rows whose bid (ask) differs from the
+        # previous in-window row's — quote-side update activity, a cheap
+        # microstructure feature. First in-window row counts as both.
         self.windows = [None] * n_windows
         self.widx = 0              # window cursor (persists across partitions)
         self.windows_done = False
@@ -298,10 +305,12 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
         for wi, wstate in enumerate(state.windows):
             if wstate is None:
                 continue
-            (count, two_sided, sp_min, sp_max, sp_sum, mo, mh, ml, mc, dq, f_ts, l_ts) = wstate
+            (count, two_sided, sp_min, sp_max, sp_sum, mo, mh, ml, mc, dq, f_ts, l_ts,
+             _pb, _pa, bid_upd, ask_upd) = wstate
             row = dict(base)
             row.update(
                 window=windows[wi][0], update_count=count, two_sided_count=two_sided,
+                bid_upd_count=bid_upd, ask_upd_count=ask_upd,
                 spread_min=sp_min, spread_max=sp_max,
                 spread_mean=(sp_sum / two_sided) if two_sided else None,
                 mid_open=mo, mid_high=mh, mid_low=ml, mid_close=mc,
@@ -339,7 +348,7 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
         if state.day_count:
             row = dict(base)
             row.update(window="day", update_count=state.day_count,
-                       two_sided_count=0,
+                       two_sided_count=0, bid_upd_count=0, ask_upd_count=0,
                        spread_min=None, spread_max=None, spread_mean=None,
                        mid_open=None, mid_high=None, mid_low=None, mid_close=None,
                        first_ts=int(state.day_first_ts), last_ts=int(state.day_last_ts),
@@ -468,7 +477,8 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
                 w = st.windows[widx]
                 if w is None:
                     w = [0, 0, None, None, 0.0, None, None, None, None,
-                         deque(maxlen=N_LAST_QUOTES), rows[a][-19:], rows[b][-19:]]
+                         deque(maxlen=N_LAST_QUOTES), rows[a][-19:], rows[b][-19:],
+                         None, None, 0, 0]
                     st.windows[widx] = w
                 w[0] += b - a + 1
                 w[11] = rows[b][-19:]
@@ -477,6 +487,12 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
                     p = r2.split(b",", 6)   # only fields 0-5 needed per-row
                     ask = float(p[2]) if p[2] != b"0" else 0.0
                     bid = float(p[5]) if p[5] != b"0" else 0.0
+                    if bid != w[12]:
+                        w[14] += 1
+                        w[12] = bid
+                    if ask != w[13]:
+                        w[15] += 1
+                        w[13] = ask
                     if bid > 0 and ask > 0:
                         w[1] += 1
                         sp = ask - bid

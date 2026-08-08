@@ -83,6 +83,7 @@ from sector_scan import (  # noqa: E402
 ET = ZoneInfo("America/New_York")
 EXTRACT_DIR = os.path.join(_HERE, "..", "data", "extracts")
 SPOT_CACHE_PATH = os.path.join(EXTRACT_DIR, "spot_cache.json")
+MACRO_SCHED_DIR = os.path.join(_HERE, "..", "data", "macro_schedules")
 SLOTS = {"open": (10, 0), "close": (15, 30)}   # slot clock time ET; window label == slot name
 MAX_LOOKBACK_DAYS = 14   # macro-proximity point-in-time validity guard (see docstring)
 DEFAULT_MIN_PREMIUM = 5.00
@@ -244,6 +245,80 @@ def vix_at_slot(date_str, slot):
     return round(best, 2)
 
 
+def implied_spot(store, ticker, window, as_of, n_strikes=3):
+    """Parity-implied underlying spot from the extract itself (RANKER_SPEC §6
+    #7 fallback — the stocks flat files turned out NOT to be entitled on the
+    options plan, 403-verified 2026-08-07; REST minute-aggs 429 at replay
+    volume; put-call parity needs nothing beyond the options quotes we
+    already extracted).
+
+    S = C_mid − P_mid + K·e^(−rT) averaged over the `n_strikes` strikes
+    nearest the money on the NEAREST expiration with usable pairs. Two-sided
+    quotes only. e^(−rT) uses lib/bs's constant r; with T ≤ ~2 weeks the
+    discount term is < 0.2% of K. Dividend ex-dates inside T bias S low by
+    the dividend PV — documented approximation, same class as lib/bs's.
+    Returns None when no expiration offers a usable pair (ticker skipped,
+    mirroring the REST-failure skip path)."""
+    import math
+    bucket = store.buckets[window]
+    exps = sorted({exp for (root, exp, side) in bucket if root == ticker})
+    for exp in exps:                       # nearest expiration first
+        T = (datetime.strptime(exp, "%Y-%m-%d").date() - as_of).days / 365.0
+        if T <= 0:
+            continue
+        calls = {k: (b, a) for k, b, a, _ in bucket.get((ticker, exp, "call"), [])
+                 if b > 0 and a >= b}
+        puts = {k: (b, a) for k, b, a, _ in bucket.get((ticker, exp, "put"), [])
+                if b > 0 and a >= b}
+        pairs = sorted(set(calls) & set(puts))
+        if not pairs:
+            continue
+        disc = math.exp(-RISK_FREE_RATE * T)
+        def s_of(k):
+            c = (calls[k][0] + calls[k][1]) / 2
+            p = (puts[k][0] + puts[k][1]) / 2
+            return c - p + k * disc
+        # nearest-the-money = smallest |C_mid − P_mid|
+        atm = sorted(pairs, key=lambda k: abs((calls[k][0] + calls[k][1]) / 2
+                                              - (puts[k][0] + puts[k][1]) / 2))
+        chosen = atm[:n_strikes]
+        return round(sum(s_of(k) for k in chosen) / len(chosen), 4)
+    return None
+
+
+def load_macro_proximity_pit(as_of):
+    """(days_to_fomc, days_to_cpi, days_to_macro) from the RECONSTRUCTED
+    schedules (data/macro_schedules/{year}.json, built by
+    scripts/build_macro_schedules.py — RANKER_SPEC §6 #6). Published annual
+    schedules are as-known-then (see that script's docstring; known
+    imprecision: late-2025 shutdown-era reschedules carry both dates).
+
+    Returns None when the tables do NOT cover as_of — coverage requires a
+    known next event of EVERY type at/after as_of — in which case the caller
+    falls back to the near-present live lookup guarded by the 14-day STOP.
+    Same semantics as sector_scan._next_event_days (>= as_of; today = 0)."""
+    events = {"fomc": [], "cpi": [], "ppi": [], "nfp": []}
+    found_any = False
+    for y in (as_of.year, as_of.year + 1):
+        p = os.path.join(MACRO_SCHED_DIR, f"{y}.json")
+        if not os.path.exists(p):
+            continue
+        with open(p) as f:
+            doc = json.load(f)
+        found_any = True
+        for k in events:
+            events[k] += [datetime.strptime(d, "%Y-%m-%d").date()
+                          for d in doc.get(k, [])]
+    if not found_any:
+        return None
+    d_fomc = _next_event_days(events["fomc"], as_of)
+    d_cpi = _next_event_days(events["cpi"], as_of)
+    d_all = [_next_event_days(v, as_of) for v in events.values()]
+    if d_fomc is None or d_cpi is None or any(x is None for x in d_all):
+        return None      # incomplete coverage near a table's horizon
+    return d_fomc, d_cpi, min(d_all)
+
+
 _earnings_tbl_cache = {}
 
 
@@ -265,7 +340,7 @@ def days_to_earnings_pit(ticker, ref):
 
 def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
                 min_premium=DEFAULT_MIN_PREMIUM, min_pp=DEFAULT_MIN_PP, write=False,
-                sleep_s=0.15):
+                sleep_s=0.15, spot_source="rest"):
     as_of = datetime.strptime(date_str, "%Y-%m-%d").date()
     h, m = SLOTS[slot]
     scan_timestamp = datetime(as_of.year, as_of.month, as_of.day, h, m, tzinfo=ET).isoformat()
@@ -278,7 +353,12 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
     store = ExtractStore(date_str)
     spy = spot_at_slot("SPY", date_str, slot)
     vix = vix_at_slot(date_str, slot)
-    d_fomc, d_cpi, d_macro = load_macro_proximity(as_of)
+    pit = load_macro_proximity_pit(as_of)
+    if pit is not None:
+        d_fomc, d_cpi, d_macro = pit
+        print(f"  macro source: reconstructed schedules (PIT)", flush=True)
+    else:
+        d_fomc, d_cpi, d_macro = load_macro_proximity(as_of)
     print(f"\n=== REPLAY {date_str} slot={slot}  VIX={vix} SPY={spy}  "
           f"macro: fomc={d_fomc} cpi={d_cpi} any={d_macro}  "
           f"{'WRITE' if write else 'DRY-RUN'} ===", flush=True)
@@ -297,8 +377,12 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
         scanned = skipped = evaluated_total = 0
         price_by_ticker = {}
         for ticker in tickers:
-            spot = spot_at_slot(ticker, date_str, slot)
-            _time.sleep(sleep_s)            # pace Massive spot lookups (429s)
+            if spot_source == "implied":
+                # parity-implied from the extract itself — no network, no 429s
+                spot = implied_spot(store, ticker, slot, as_of)
+            else:
+                spot = spot_at_slot(ticker, date_str, slot)
+                _time.sleep(sleep_s)        # pace Massive spot lookups (429s)
             if spot is None:
                 skipped += 1
                 continue
@@ -388,23 +472,34 @@ def main():
                     help="write to ml_dataset/sector_scan_runs (source='backtest_<slot>'); default is dry-run")
     ap.add_argument("--sleep", type=float, default=0.15,
                     help="pause between per-ticker spot lookups (default 0.15s)")
+    ap.add_argument("--spot-source", choices=["rest", "implied"], default="rest",
+                    help="underlying spot source: 'rest' = Massive minute aggs "
+                         "(near-present; 429-prone at volume), 'implied' = "
+                         "put-call-parity from the extract itself (offline, "
+                         "the B2 year-scale mode; validated 2026-08-07). SPY "
+                         "context always uses rest/cache (SPY options are not "
+                         "in the pre-$50B extraction universe).")
     args = ap.parse_args()
 
     today = date_cls.today()
     for ds in args.date:
         d = datetime.strptime(ds, "%Y-%m-%d").date()
+        # The 14-day STOP is retired ONLY for dates the reconstructed schedule
+        # tables cover; it remains the guard for anything outside coverage.
+        if load_macro_proximity_pit(d) is not None:
+            continue
         if (today - d).days > MAX_LOOKBACK_DAYS:
-            sys.exit(f"{ds} is > {MAX_LOOKBACK_DAYS} days back: macro-event proximity can no "
-                     f"longer be sourced point-in-time from the published schedules "
-                     f"(events between then and now have scrolled off). Year-scale replay "
-                     f"needs historical schedule reconstruction first — see module docstring.")
+            sys.exit(f"{ds} is > {MAX_LOOKBACK_DAYS} days back and NOT covered by the "
+                     f"reconstructed macro schedules (data/macro_schedules/) — "
+                     f"build them with scripts/build_macro_schedules.py, or stay "
+                     f"within the {MAX_LOOKBACK_DAYS}-day near-present window.")
 
     supabase = _make_supabase() if args.write else None
     slots = ["open", "close"] if args.slot == "both" else [args.slot]
     for ds in args.date:
         for slot in slots:
             replay_slot(ds, slot, supabase, top_n=args.top_n, write=args.write,
-                        sleep_s=args.sleep)
+                        sleep_s=args.sleep, spot_source=args.spot_source)
 
 
 if __name__ == "__main__":
