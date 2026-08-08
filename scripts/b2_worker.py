@@ -38,11 +38,14 @@ def run_one(date_str, reconnect_bytes):
     def log(msg, **kw):
         print(msg, flush=True, **{k: v for k, v in kw.items() if k != "flush"})
         hb_state["n"] += 1
-        if hb_state["n"] % 3 == 0:          # every ~3 progress lines (~6 GB)
-            try:
-                heartbeat(date_str)
-            except Exception:
-                pass                         # heartbeat is best-effort
+        # Heartbeat on EVERY progress line (~2 GB): at 1 MB/s that is ~33 min
+        # between lines, which paired with STALE_MINUTES=60 keeps a slow live
+        # worker safely unreclaimable (6 GB cadence at low rates overran the
+        # old 30-min threshold — a sibling could steal a live claim).
+        try:
+            heartbeat(date_str)
+        except Exception:
+            pass                             # heartbeat is best-effort
 
     res = extract_quotes.extract_day(date_str, log=log, reconnect_bytes=reconnect_bytes)
     if res is None:                          # already extracted locally

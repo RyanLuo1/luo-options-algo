@@ -30,7 +30,9 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-STALE_MINUTES = 30
+STALE_MINUTES = 60   # paired with per-progress-line (~2 GB) heartbeats; a slow
+                     # live stream must never look stale (reclaim latency for a
+                     # truly dead worker is noise over a multi-day fleet run)
 _WORKER = f"{socket.gethostname()}:{os.getpid()}"
 
 
