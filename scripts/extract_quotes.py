@@ -99,8 +99,10 @@ BUCKET = "flatfiles"
 # ("lose-shift"). The getaddrinfo patch below pins only ENDPOINT_HOST; TLS
 # still validates against the hostname via SNI.
 POD_KEEP_MBS = 6.0        # keep the pod when the last segment beat this
+POD_REFRESH_S = 30        # re-resolve at most this often (DNS TTL ~34 s)
 _POD_POOL = set()
 _pod_choice = {"ip": None}
+_pod_state = {"last_refresh": 0.0}
 _real_getaddrinfo = socket.getaddrinfo
 
 
@@ -113,19 +115,45 @@ def _pod_getaddrinfo(host, *args, **kwargs):
 socket.getaddrinfo = _pod_getaddrinfo
 
 
-def _refresh_pod_pool():
+def _refresh_pod_pool(force=False):
+    """Grow the pod pool: fresh DNS resolution (throttled to POD_REFRESH_S,
+    matching the record's TTL) merged with a SHARED per-box pool file so
+    concurrent workers pool their discoveries — one worker resolving alone
+    sees ~1 new pod per TTL window; eight sharing see eight windows' worth.
+    Called cheaply from the stream read loop, not just at recycles (a slow
+    pod means recycles ~10 min apart — far too slow to learn the pool)."""
+    now = time.time()
+    if not force and now - _pod_state["last_refresh"] < POD_REFRESH_S:
+        return
+    _pod_state["last_refresh"] = now
     try:
         for info in _real_getaddrinfo(ENDPOINT_HOST, 443, socket.AF_INET,
                                       socket.SOCK_STREAM):
             _POD_POOL.add(info[4][0])
     except OSError:
         pass
+    try:
+        path = os.path.join(OUT_DIR, "pod_pool.json")
+        try:
+            with open(path) as f:
+                disk = set(json.load(f))
+        except Exception:  # noqa: BLE001 — missing/corrupt file is fine
+            disk = set()
+        merged = _POD_POOL | disk
+        if merged != disk:
+            tmp = f"{path}.tmp{os.getpid()}"
+            with open(tmp, "w") as f:
+                json.dump(sorted(merged), f)
+            os.rename(tmp, path)
+        _POD_POOL.update(merged)
+    except Exception:  # noqa: BLE001 — the shared file is best-effort
+        pass
 
 
 def choose_pod(last_segment_mbs=None):
     """Pick the pod for the next connection; returns the chosen IP (or None to
     use plain DNS when the pool is somehow empty)."""
-    _refresh_pod_pool()
+    _refresh_pod_pool(force=True)
     cur = _pod_choice["ip"]
     if cur and last_segment_mbs is not None and last_segment_mbs >= POD_KEEP_MBS:
         return cur                                   # win-stay
@@ -309,6 +337,7 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
             nonlocal s3
             if s.pos > end_byte:
                 return b""
+            _refresh_pod_pool()   # throttled internally; grows the shared pool
             # Proactive connection recycle: per-stream throughput decays over a
             # connection's lifetime on Massive's side (measured 16-18 MB/s at
             # open -> 2.3 MB/s after ~21 h). A fresh ranged GET at the current
