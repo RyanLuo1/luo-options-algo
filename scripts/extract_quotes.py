@@ -66,6 +66,8 @@ import argparse
 import gzip
 import json
 import os
+import random
+import socket
 import sys
 import time
 import zlib
@@ -82,7 +84,54 @@ import boto3  # noqa: E402
 from botocore.config import Config  # noqa: E402
 
 ENDPOINT = "https://files.massive.com"
+ENDPOINT_HOST = "files.massive.com"
 BUCKET = "flatfiles"
+
+# ── Pod-aware connection routing (2026-08-12) ────────────────────────────────
+# Massive serves flat files from SHARED, congestion-varying pods behind one
+# rotating DNS A record (TTL ~34 s). Measured inter-pod spread at one moment:
+# 0.8 → 28 MB/s (35x). Naive per-recycle re-resolution clumps concurrent
+# workers onto whichever single record the TTL window serves, pinning them to
+# congested pods. Fix (per Massive support: "reconnect periodically to
+# re-roll pod assignment"): accumulate every IP DNS ever hands us into a pod
+# pool and choose per-connection — KEEP the current pod while it serves fast
+# segments ("win-stay"), re-roll to a random other pod when it slows
+# ("lose-shift"). The getaddrinfo patch below pins only ENDPOINT_HOST; TLS
+# still validates against the hostname via SNI.
+POD_KEEP_MBS = 6.0        # keep the pod when the last segment beat this
+_POD_POOL = set()
+_pod_choice = {"ip": None}
+_real_getaddrinfo = socket.getaddrinfo
+
+
+def _pod_getaddrinfo(host, *args, **kwargs):
+    if host == ENDPOINT_HOST and _pod_choice["ip"]:
+        return _real_getaddrinfo(_pod_choice["ip"], *args, **kwargs)
+    return _real_getaddrinfo(host, *args, **kwargs)
+
+
+socket.getaddrinfo = _pod_getaddrinfo
+
+
+def _refresh_pod_pool():
+    try:
+        for info in _real_getaddrinfo(ENDPOINT_HOST, 443, socket.AF_INET,
+                                      socket.SOCK_STREAM):
+            _POD_POOL.add(info[4][0])
+    except OSError:
+        pass
+
+
+def choose_pod(last_segment_mbs=None):
+    """Pick the pod for the next connection; returns the chosen IP (or None to
+    use plain DNS when the pool is somehow empty)."""
+    _refresh_pod_pool()
+    cur = _pod_choice["ip"]
+    if cur and last_segment_mbs is not None and last_segment_mbs >= POD_KEEP_MBS:
+        return cur                                   # win-stay
+    others = list(_POD_POOL - {cur}) or list(_POD_POOL)
+    _pod_choice["ip"] = random.choice(others) if others else None
+    return _pod_choice["ip"]
 N_LAST_QUOTES = 10
 WINDOWS_ET = [  # (label, start hh:mm, end hh:mm) — end-inclusive
     ("open",   (9, 30),  (10, 5)),
@@ -231,13 +280,30 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
             s.body = None
             s.retries = 0
             s.since_open = 0
+            s.opened_at = None
+            s.pod_rolls = 0
             s._open()
 
-        def _open(s):
+        def _segment_mbs(s):
+            if s.opened_at is None or s.since_open == 0:
+                return None
+            dt = time.time() - s.opened_at
+            return (s.since_open / 1e6 / dt) if dt > 0 else None
+
+        def _open(s, force_reroll=False):
             nonlocal s3
+            seg = None if force_reroll else s._segment_mbs()
+            prev = _pod_choice["ip"]
+            pod = choose_pod(last_segment_mbs=seg)
+            if pod != prev:
+                s.pod_rolls += 1
+                log(f"[{date_str}] pod re-roll -> {pod} "
+                    f"(prev segment {seg if seg is None else round(seg, 1)} MB/s, "
+                    f"pool {len(_POD_POOL)})", flush=True)
             obj = s3.get_object(Bucket=BUCKET, Key=key, Range=f"bytes={s.pos}-{end_byte}")
             s.body = obj["Body"]
             s.since_open = 0
+            s.opened_at = time.time()
 
         def read(s, n):
             nonlocal s3
@@ -277,7 +343,7 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
                     except Exception:
                         pass
                     s3 = s3_client()      # fresh client + connection pool
-                    s._open()
+                    s._open(force_reroll=True)   # error = assume the pod is bad
             raise IOError(f"[{date_str}] giving up after repeated stream failures at {s.pos}")
 
     body = ResumableBody()
