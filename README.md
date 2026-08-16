@@ -41,7 +41,9 @@ The trade rewards a stock that rises moderately into the spread, tolerates one t
 
 ## How the platform works
 
-**Scanning.** For each ticker on the watchlist, the engine pulls the full options chain — strikes, premiums, implied volatility, open interest, and Greeks — and constructs every valid Call Spread Risk Reversal across the expirations in range. Each candidate is filtered and scored.
+**Scanning.** For each ticker on the watchlist, the engine pulls the full options chain — strikes, live bid/ask quotes, implied volatility, open interest, and Greeks — and constructs every valid Call Spread Risk Reversal across the expirations in range. Each candidate is filtered and scored.
+
+**Pricing you can actually trade.** Every leg is priced on the side of the book you would transact on: legs you sell at the **bid**, the leg you buy at the **ask**. The credit shown for a setup is the credit you could actually collect at that moment — not a stale last-trade print. Liquidity guards enforce this honesty: contracts without a live two-sided quote, or whose bid-ask spread is too wide a fraction of the midpoint to price meaningfully, are excluded outright.
 
 **The scoring model.** Setups are ranked on a delta-based framework that builds on the option Greeks supplied by the data provider:
 
@@ -64,7 +66,7 @@ The trade rewards a stock that rises moderately into the spread, tolerates one t
 
 ## How to take advantage of it
 
-1. **Set your universe and filters.** Open the controls drawer, enter a watchlist (or use the default), and set the expiration range, minimum net premium, and minimum probability of profit.
+1. **Set your universe and filters.** Enter tickers directly, or save named watchlists and scan one with `@name` (e.g. `@semis`). In the controls drawer, set the expiration range, minimum net premium, and minimum probability of profit.
 2. **Run a scan.** The engine evaluates the full chain for every ticker and returns a ranked list of qualifying setups.
 3. **Review the best setups.** The top of the table is the highest-scoring structure. Each row shows the credit collected and the maximum profit.
 4. **Inspect a setup.** Click any row to open the detail panel — full three-leg breakdown, payoff zones, and the price chart for that ticker. Use the per-ticker filter to focus on a single name.
@@ -84,11 +86,15 @@ The trade rewards a stock that rises moderately into the spread, tolerates one t
 
 ---
 
+## The research pipeline (built and running)
+
+- **Systematic data collection.** Twice every trading day, an automated scan sweeps every large-cap name in every sector — far beyond the interactive watchlist — and logs the best setups *and* the runners-up per sector, with market context and macro-event proximity attached. The runners-up matter: a future ranking model needs to see the marginal setups it should learn to avoid, not just the winners the heuristic already liked. Outcomes are labeled automatically as expirations pass.
+- **A validated backtester.** The scan can be replayed against historical options data through the *same code path* as the live scanner — same filters, same scoring, with option deltas recomputed from historical quotes via a validated Black-Scholes module. Before being trusted, the replay was gated on reproducing the live scanner's picks over an overlap window: it matched the live sector winner on a strong majority of assessable sector-slots, with **every** disagreement individually attributed to a known, bounded mechanism (delta drift at leg-window boundaries, or quote-timing between snapshot and scan minute) — zero unexplained. A year-scale historical extraction is currently streaming to extend the labeled dataset by ~250 trading days.
+
 ## What's next
 
-- **Performance analytics.** As closed-trade volume grows, dashboards for win rate by score decile, probability-of-profit calibration, and P&L across volatility regimes — turning the outcome log into insight about where the strategy's edge actually lives.
-- **Machine-learning ranking layer.** A gradient-boosted model (XGBoost / LightGBM) trained on logged setup features — leg deltas, net premium, days to expiration, moneyness, IV rank, market context, and macro-event proximity — with realized P&L as the label. The goal is an **ML score shown alongside the existing algorithmic score**, surfacing where a learned model and the heuristic agree or diverge, rather than replacing the transparent rules-based ranking.
-- **Backtesting.** Replaying the strategy across historical options chains to validate the scoring model against out-of-sample data and accelerate the ML training set beyond forward-tracked outcomes.
+- **Performance analytics.** With the backtest corpus labeled, dashboards for win rate by score decile, probability-of-profit calibration, and P&L across volatility regimes — turning the outcome log into insight about where the strategy's edge actually lives, and deciding whether a learned ranker is even warranted.
+- **Machine-learning ranking layer.** A gradient-boosted model (LightGBM) trained on at-scan-time setup features — leg deltas, net premium, days to expiration, moneyness, market context, macro-event proximity — with realized outcomes as labels, evaluated strictly walk-forward and run in **shadow mode** against live scans before anything surfaces. The goal is an ML score shown **alongside** the existing algorithmic score, highlighting where the model and the heuristic diverge — never replacing the transparent rules-based ranking.
 - **Live position tracking.** Mark-to-market for open trades and an in-app outcomes dashboard.
 
 ---
