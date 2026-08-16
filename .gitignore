@@ -29,3 +29,6 @@ data/extracts/
 # results are not. Only the explanatory README stub is tracked.
 docs/private/*
 !docs/private/README.md
+
+# personal case-study documents live in docs/private/ (untracked); keep the old path ignored too
+docs/POD_SELECTION_CASE_STUDY.md
