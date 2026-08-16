@@ -100,7 +100,13 @@ BUCKET = "flatfiles"
 # still validates against the hostname via SNI.
 POD_KEEP_MBS = 6.0        # keep the pod when the last segment beat this
 POD_REFRESH_S = 30        # re-resolve at most this often (DNS TTL ~34 s)
-_POD_POOL = set()
+POD_TTL_S = 2 * 3600      # drop pods DNS hasn't served for this long (2026-08-15
+                          # incident: Massive rotated their pod fleet and an
+                          # append-only pool went 100% stale in one moment; a
+                          # sticky pinned choice then 403'd every subsequent
+                          # request and burned the whole claim range in 30 min)
+_POD_POOL = {}            # ip -> last time DNS served it (epoch seconds)
+_POD_BLOCKED = set()      # pods that returned 4xx this process — never re-picked
 _pod_choice = {"ip": None}
 _pod_state = {"last_refresh": 0.0}
 _real_getaddrinfo = socket.getaddrinfo
@@ -129,35 +135,61 @@ def _refresh_pod_pool(force=False):
     try:
         for info in _real_getaddrinfo(ENDPOINT_HOST, 443, socket.AF_INET,
                                       socket.SOCK_STREAM):
-            _POD_POOL.add(info[4][0])
+            _POD_POOL[info[4][0]] = now
     except OSError:
         pass
     try:
         path = os.path.join(OUT_DIR, "pod_pool.json")
         try:
             with open(path) as f:
-                disk = set(json.load(f))
+                disk = json.load(f)
+            if isinstance(disk, list):        # legacy ageless format: treat as
+                disk = {ip: now - POD_TTL_S / 2 for ip in disk}   # half-aged
         except Exception:  # noqa: BLE001 — missing/corrupt file is fine
-            disk = set()
-        merged = _POD_POOL | disk
+            disk = {}
+        merged = {}
+        for src in (disk, _POD_POOL):
+            for ip, ts in src.items():
+                merged[ip] = max(merged.get(ip, 0), ts)
+        # (a) AGE-OUT: the pool is a rolling window of DNS-fresh pods, never an
+        # append-only set — a fleet-wide pod rotation must purge it naturally.
+        merged = {ip: ts for ip, ts in merged.items() if now - ts <= POD_TTL_S}
         if merged != disk:
             tmp = f"{path}.tmp{os.getpid()}"
             with open(tmp, "w") as f:
-                json.dump(sorted(merged), f)
+                json.dump(merged, f)
             os.rename(tmp, path)
+        _POD_POOL.clear()
         _POD_POOL.update(merged)
     except Exception:  # noqa: BLE001 — the shared file is best-effort
         pass
 
 
+def _live_pods():
+    now = time.time()
+    return [ip for ip, ts in _POD_POOL.items()
+            if now - ts <= POD_TTL_S and ip not in _POD_BLOCKED]
+
+
+def block_pod(ip):
+    """(c) Negative health caching: a pod that answered 4xx is dead to this
+    process — drop it from the pool and never re-pick it."""
+    if ip:
+        _POD_BLOCKED.add(ip)
+        _POD_POOL.pop(ip, None)
+
+
 def choose_pod(last_segment_mbs=None):
     """Pick the pod for the next connection; returns the chosen IP (or None to
-    use plain DNS when the pool is somehow empty)."""
+    use plain DNS when no live pod is known — plain DNS always serves a live
+    pod by construction)."""
     _refresh_pod_pool(force=True)
     cur = _pod_choice["ip"]
-    if cur and last_segment_mbs is not None and last_segment_mbs >= POD_KEEP_MBS:
+    live = _live_pods()
+    if (cur in live and last_segment_mbs is not None
+            and last_segment_mbs >= POD_KEEP_MBS):
         return cur                                   # win-stay
-    others = list(_POD_POOL - {cur}) or list(_POD_POOL)
+    others = [ip for ip in live if ip != cur] or live
     _pod_choice["ip"] = random.choice(others) if others else None
     return _pod_choice["ip"]
 N_LAST_QUOTES = 10
@@ -269,6 +301,12 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
         log(f"[{date_str}] extract exists, skipping (immutable)")
         return None
 
+    # (b) The pre-stream calls (day_aggs GET, quotes HEAD) run BEFORE any
+    # ResumableBody re-roll logic exists — a stale pinned pod carried over
+    # from a previous date would 403 them and fail the whole date (the
+    # 2026-08-15 burn). Plain DNS for everything until the stream opens.
+    _pod_choice["ip"] = None
+
     s3 = s3_client()
     y, m, _d = date_str.split("-")
 
@@ -362,6 +400,12 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
                     return chunk
                 except Exception as e:  # noqa: BLE001 — resume on any stream error
                     s.retries += 1
+                    err = str(e)
+                    if "403" in err or "AccessDenied" in err or "Forbidden" in err:
+                        # a 4xx from a pinned pod = dead/rotated pod, not
+                        # congestion — blocklist it so lose-shift can't return
+                        block_pod(_pod_choice["ip"])
+                        _pod_choice["ip"] = None
                     wait = min(60, 2 ** attempt)
                     log(f"[{date_str}] stream error at {s.pos/1e9:.1f} GB "
                         f"({type(e).__name__}: {e}) — resuming in {wait}s "
