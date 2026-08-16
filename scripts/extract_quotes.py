@@ -357,19 +357,44 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
             return (s.since_open / 1e6 / dt) if dt > 0 else None
 
         def _open(s, force_reroll=False):
+            """Open (or re-open) the ranged stream. _open is reached from
+            __init__, the 1 GB recycle, and the read-error path — none of
+            which may die on a pod that rotated away inside the 2 h aging
+            window. A 4xx here blocks the pod and re-rolls; the final
+            attempt pins nothing (plain DNS always resolves to a live pod)."""
             nonlocal s3
             seg = None if force_reroll else s._segment_mbs()
-            prev = _pod_choice["ip"]
-            pod = choose_pod(last_segment_mbs=seg)
-            if pod != prev:
-                s.pod_rolls += 1
-                log(f"[{date_str}] pod re-roll -> {pod} "
-                    f"(prev segment {seg if seg is None else round(seg, 1)} MB/s, "
-                    f"pool {len(_POD_POOL)})", flush=True)
-            obj = s3.get_object(Bucket=BUCKET, Key=key, Range=f"bytes={s.pos}-{end_byte}")
-            s.body = obj["Body"]
-            s.since_open = 0
-            s.opened_at = time.time()
+            for attempt in range(6):
+                prev = _pod_choice["ip"]
+                if attempt == 5:
+                    _pod_choice["ip"] = None      # last resort: plain DNS
+                    pod = None
+                else:
+                    pod = choose_pod(last_segment_mbs=seg)
+                    seg = None                    # win-stay only on 1st attempt
+                if pod != prev:
+                    s.pod_rolls += 1
+                    log(f"[{date_str}] pod re-roll -> {pod} "
+                        f"(pool {len(_POD_POOL)}, open attempt {attempt + 1})",
+                        flush=True)
+                try:
+                    obj = s3.get_object(Bucket=BUCKET, Key=key,
+                                        Range=f"bytes={s.pos}-{end_byte}")
+                    s.body = obj["Body"]
+                    s.since_open = 0
+                    s.opened_at = time.time()
+                    return
+                except Exception as e:  # noqa: BLE001
+                    err = str(e)
+                    if "403" in err or "AccessDenied" in err or "Forbidden" in err:
+                        log(f"[{date_str}] open hit dead pod "
+                            f"{_pod_choice['ip']} — blocked, re-rolling",
+                            flush=True)
+                        block_pod(_pod_choice["ip"])
+                        _pod_choice["ip"] = None
+                        continue
+                    raise                          # non-4xx: caller's problem
+            raise IOError(f"[{date_str}] stream open failed even via plain DNS")
 
         def read(s, n):
             nonlocal s3
