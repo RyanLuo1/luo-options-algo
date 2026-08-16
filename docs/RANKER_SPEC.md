@@ -176,6 +176,12 @@ On the labeled backtest corpus (~2,500+ best rows + runners-up):
 
 - Win rate & capture by **score decile** — does the existing score predict at all?
 - **P(profit) calibration** — when the delta model says 50%, does ~50% win?
+  Note the known mechanical suspect if miscalibration appears: the
+  `(1−δ_B)(1−δ_C)` product assumes the two short legs finish independently,
+  but both depend on the same underlying's path — the true P(both expire
+  worthless) is P(K_C < S < K_B), which the product only approximates.
+  (These distributions and the score-decile curves are also the evidence
+  that tunes Phase D's `label_gain` — see the grading design note there.)
 - `earnings_before_expiry` effect (prior: hurts). Days-to-earnings gradient.
 - VIX-regime splits; open vs close slot outcomes (higher scores at close —
   better results, or just different pricing?).
@@ -188,29 +194,84 @@ features explain most of the variation, consider rule-based filters instead of
 (or before) a model — simpler is stronger. Proceed to D only if the signal
 looks conditional/interactive enough to warrant learning.
 
-### Phase D — The ranker  *(only after C)*
+### Phase D — The ranker  *(only after C; formulation settled 2026-08-16)*
 
-- **Model:** LightGBM (gradient-boosted trees). Tabular, small-data-robust,
-  feature importances. No neural nets.
-- **Target:** start with classification P(win); secondary regression on
-  capture_pct or pnl. (Learning-to-rank objectives are a later refinement.)
-- **Features:** everything at-scan-time in `ml_dataset` incl. the existing
-  score as a feature. NOTHING computed post-scan. `source` never a feature.
-- **Validation:** walk-forward only (train on months 1–9, test 10–12; roll).
-  Never random splits. **Primary metric: within-scan-day ranking** — for each
-  day+slot, compare the model's top-k picks vs the score's top-k picks on
-  realized outcome. Report win rate / capture / P&L of model-top-k vs
-  score-top-k, and within-day rank correlation. Global AUC/RMSE are
-  secondary diagnostics only.
-- **Baseline to beat:** the existing score's ranking. If the model can't beat
-  it out of sample by a meaningful margin, the finding is "the heuristic is
+The production question is "order today's qualified setups," so Phase D is a
+**three-way bake-off** on one shared harness, not a single-model build:
+
+- **(a) The incumbent** `net_premium / spread_width` score — the benchmark
+  that must be beaten.
+- **(b) Pointwise P(win)** — LightGBM classifier + sort. The designated
+  starting point; doubles as the calibration check Phase C wants.
+- **(c) LambdaRank** — LightGBM `lambdarank` objective. Groups =
+  **slot-day** (`scan_date × slot`); documents = the logged setups in that
+  group; graded relevance per the grading note below. A within-group
+  ranking loss never compares scores across days or across sources, which
+  also sidesteps the documented live-vs-backtest score-level drift.
+
+All three use the same walk-forward folds, the same embargo, the same
+groups. **Model family:** LightGBM only (tabular, small-data-robust,
+feature importances; no neural nets). **Features:** everything at-scan-time
+in `ml_dataset` incl. the existing score as a feature. NOTHING computed
+post-scan. `source` never a feature.
+
+**Primary metric — realized top-k money; NDCG is a proxy only.** The
+bake-off is decided by out-of-sample **win rate / capture / P&L of each
+method's top-k picks (k = 1–3, where capital actually goes)** — never by
+NDCG alone. NDCG@k serves as the training-time objective/proxy; its
+discount curve and grade scale are arbitrary knobs, and this project's
+standard is "did the picks make more money out of sample." Stated
+explicitly: **LambdaRank losing to the pointwise baseline at our scale
+(~500 groups) is a legitimate finding about data scale, not a failure.**
+Global AUC/RMSE remain secondary diagnostics.
+
+**HARD RULE — the expiration-date embargo.** Walk-forward folds are
+embargoed by **expiration date, not scan date**: a training fold contains
+only rows whose *expiration* precedes the fold boundary. A W12 setup
+scanned in March has no honest label until June — folding it in by
+scan date silently peeks. The cost is real and mandatory: effective
+training data shrinks, and folds skew short-DTE near boundaries. This is
+the same point-in-time discipline as the earnings-leak rule and the macro
+STOP, applied to labels rather than features — do not weaken it as a
+workaround.
+
+**Grading design (for LambdaRank's relevance).** Start with **zone-based
+integer grades** (loss = 0 → capped = highest) via LightGBM's
+`label_gain`, chosen for noise-robustness: outcomes are heavy-tailed, and
+a single tail P&L must not dominate a group's gradients. capture_pct-
+weighted grades are a later experiment — noting the trap that
+`capture_pct` is **NULL for losers by convention** and cannot be a grade
+directly. Phase C's zone-outcome distributions and score-decile curves are
+the evidence that tunes `label_gain` — run C first.
+
+**Scope + the replay decision.** Training groups are the heuristic's
+**shortlist** (top-N-distinct per sector, 2-per-ticker cap): the model
+re-orders the incumbent's survivors and cannot learn about setups the
+score buried. DECIDED (2026-08-16): the year-scale replay logs
+**top-10 per sector** (instead of live's top-5) for training richness —
+a replay-side selection knob with zero extraction cost, decided now so
+the year is replayed once with the right N. Evaluation still truncates
+at production's k.
+
+**The ticker-blind ablation.** Within a slot-day group, same-underlying
+rows share fate almost perfectly and cross-ticker outcomes are
+regime-correlated — a group of ~15 rows is often ~4 independent bets, and
+a ranking loss will happily learn ticker-level luck from that structure.
+Protocol: train each learned method once more with ticker-identifying
+features removed; **edge that survives blinding is structure, edge that
+doesn't was memorized ticker-luck.** Early wins deserve the
+too-good-to-be-true tripwire with extra force for this reason.
+
+- **Baseline to beat:** the existing score's ranking. If nothing beats it
+  out of sample by a meaningful margin, the finding is "the heuristic is
   adequate" — a legitimate, publishable-in-README outcome.
 - **Leakage tripwire:** individual-outcome accuracy that looks impressive =
   stop and audit. Expect modest, consistent ranking improvement, not oracle
   behavior.
 
-**Acceptance:** documented walk-forward comparison, model-top-k vs
-score-top-k, with feature importances and a written interpretation.
+**Acceptance:** documented walk-forward bake-off — incumbent vs pointwise
+vs LambdaRank on realized top-k outcomes, with the ticker-blind ablation,
+feature importances, and a written interpretation.
 
 ### Phase E — Shadow mode  *(months; patience by design)*
 
