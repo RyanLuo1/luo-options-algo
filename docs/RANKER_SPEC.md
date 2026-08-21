@@ -188,6 +188,18 @@ On the labeled backtest corpus (~2,500+ best rows + runners-up):
 - `setups_qualified` (pick competitiveness) vs outcome — are thin-sector
   picks worse?
 - Ticker/sector concentration of realized P&L.
+- **Capital-normalized scoring:** rank the labeled year by
+  return-on-collateral — `net_premium / (K_C − net_premium)`, computable
+  from stored columns (short-put collateral ≈ the put strike; credit
+  received offsets it) — and compare realized top-k money under that
+  ranking vs the incumbent `net_premium / spread_width` score. The
+  incumbent is credit-per-spread-risk; this asks whether credit-per-dollar-
+  tied-up ranks realized outcomes better.
+- **Known universe bias to note in findings:** the `min_premium ≥ $5.00`
+  ABSOLUTE threshold systematically favors high-priced underlyings (a $5
+  credit is a different fraction of collateral at K_C=100 vs K_C=1000).
+  Revisit only as a deliberate, versioned change AFTER Phase C — never
+  mid-collection, or the dataset forks silently.
 
 **Deliverable:** a short written findings doc. **Decision point:** if 2–3
 features explain most of the variation, consider rule-based filters instead of
@@ -212,7 +224,9 @@ The production question is "order today's qualified setups," so Phase D is a
 All three use the same walk-forward folds, the same embargo, the same
 groups. **Model family:** LightGBM only (tabular, small-data-robust,
 feature importances; no neural nets). **Features:** everything at-scan-time
-in `ml_dataset` incl. the existing score as a feature. NOTHING computed
+in `ml_dataset` incl. the existing score as a feature, plus derived
+at-scan-time candidates: **collateral (`K_C − net_premium`),
+return-on-collateral, premium-as-%-of-spread**. NOTHING computed
 post-scan. `source` never a feature.
 
 **Primary metric — realized top-k money; NDCG is a proxy only.** The

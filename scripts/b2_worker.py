@@ -20,6 +20,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from datetime import date as date_cls, datetime, timedelta
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,40 @@ from extract_claims import (  # noqa: E402
     ClaimsUnavailable, claim_day, heartbeat, mark_done, mark_failed,
 )
 import extract_quotes  # noqa: E402
+
+
+def _is_transient(e):
+    """Vendor-outage signatures — retry the DATE after the vendor recovers,
+    never mark it failed and advance (the 2026-08-20 503 storm burned the
+    whole remaining range in hours because any exception failed the date)."""
+    err = f"{type(e).__name__}: {e}"
+    return (extract_quotes._is_transient(err)
+            or "IncompleteRead" in err
+            or "stream open failed even via plain DNS" in err
+            or "giving up after repeated stream failures" in err)
+
+
+def wait_for_vendor(date_str, probe_key="us_options_opra/day_aggs_v1/2026/07/2026-07-31.csv.gz"):
+    """Circuit breaker: hold (heartbeating the claim) until a plain-DNS HEAD
+    probe succeeds. A worker in this state is paused, not burning the queue."""
+    extract_quotes._pod_choice["ip"] = None
+    s3 = extract_quotes.s3_client()
+    n = 0
+    while True:
+        try:
+            s3.head_object(Bucket=extract_quotes.BUCKET, Key=probe_key)
+            print(f"[worker] vendor probe ok after {n} waits — resuming", flush=True)
+            return
+        except Exception as e:  # noqa: BLE001
+            n += 1
+            print(f"[worker] vendor still unavailable ({type(e).__name__}) — "
+                  f"waiting 10 min (cycle {n})", flush=True)
+            try:
+                heartbeat(date_str)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(600)
+            s3 = extract_quotes.s3_client()
 
 
 def run_one(date_str, reconnect_bytes):
@@ -80,15 +115,24 @@ def main():
                          f"to run fleet extraction without coordination")
             if got:
                 print(f"[worker] claimed {ds}", flush=True)
-                try:
-                    nbytes = run_one(ds, reconnect)
-                    mark_done(ds, parquet_bytes=nbytes)
-                    done += 1
-                    print(f"[worker] {ds} DONE ({(nbytes or 0)/1e6:.1f} MB)", flush=True)
-                except Exception as e:  # noqa: BLE001
-                    mark_failed(ds, f"{type(e).__name__}: {e}")
-                    failed += 1
-                    print(f"[worker] {ds} FAILED: {e}", flush=True)
+                for cycle in range(4):
+                    try:
+                        nbytes = run_one(ds, reconnect)
+                        mark_done(ds, parquet_bytes=nbytes)
+                        done += 1
+                        print(f"[worker] {ds} DONE ({(nbytes or 0)/1e6:.1f} MB)", flush=True)
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        if _is_transient(e) and cycle < 3:
+                            print(f"[worker] transient vendor failure on {ds} "
+                                  f"({type(e).__name__}) — circuit breaker engaged",
+                                  flush=True)
+                            wait_for_vendor(ds)
+                            continue          # retry the SAME date, claim held
+                        mark_failed(ds, f"{type(e).__name__}: {e}")
+                        failed += 1
+                        print(f"[worker] {ds} FAILED: {e}", flush=True)
+                        break
             else:
                 skipped += 1
         d += timedelta(days=1)

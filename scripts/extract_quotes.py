@@ -179,6 +179,14 @@ def block_pod(ip):
         _POD_POOL.pop(ip, None)
 
 
+def _is_transient(err):
+    """Vendor-side trouble (retry/wait), as opposed to a dead pod (4xx) or a
+    real error. String-matched because botocore surfaces these many ways."""
+    return any(s in err for s in ("503", "500", "502", "504",
+                                  "ServiceUnavailable", "SlowDown",
+                                  "InternalError"))
+
+
 def choose_pod(last_segment_mbs=None):
     """Pick the pod for the next connection; returns the chosen IP (or None to
     use plain DNS when no live pod is known — plain DNS always serves a live
@@ -310,10 +318,27 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
     s3 = s3_client()
     y, m, _d = date_str.split("-")
 
+    def _retry_5xx(fn, what, attempts=4):
+        """Pre-stream calls ride plain DNS but still see vendor 5xx storms
+        (2026-08-20); ride out short ones here, let longer ones raise to the
+        worker's circuit breaker."""
+        for i in range(attempts):
+            try:
+                return fn()
+            except Exception as e:  # noqa: BLE001
+                if _is_transient(str(e)) and i < attempts - 1:
+                    log(f"[{date_str}] {what}: transient vendor error — "
+                        f"retry {i + 1} in 30s", flush=True)
+                    time.sleep(30)
+                    continue
+                raise
+
     # day_aggs first (tiny) — stored verbatim
     da_path = os.path.join(OUT_DIR, "day_aggs", f"{date_str}.csv.gz")
     if not os.path.exists(da_path):
-        obj = s3.get_object(Bucket=BUCKET, Key=f"us_options_opra/day_aggs_v1/{y}/{m}/{date_str}.csv.gz")
+        obj = _retry_5xx(
+            lambda: s3.get_object(Bucket=BUCKET, Key=f"us_options_opra/day_aggs_v1/{y}/{m}/{date_str}.csv.gz"),
+            "day_aggs GET")
         with open(da_path + ".tmp", "wb") as f:
             f.write(obj["Body"].read())
         os.rename(da_path + ".tmp", da_path)
@@ -327,7 +352,7 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
     n_win = len(windows)
 
     key = f"us_options_opra/quotes_v1/{y}/{m}/{date_str}.csv.gz"
-    head = s3.head_object(Bucket=BUCKET, Key=key)
+    head = _retry_5xx(lambda: s3.head_object(Bucket=BUCKET, Key=key), "quotes HEAD")
     total_bytes = head["ContentLength"]
     end_byte = (min(limit_bytes, total_bytes) if limit_bytes else total_bytes) - 1
     d = zlib.decompressobj(16 + zlib.MAX_WBITS)
@@ -393,7 +418,19 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
                         block_pod(_pod_choice["ip"])
                         _pod_choice["ip"] = None
                         continue
-                    raise                          # non-4xx: caller's problem
+                    if _is_transient(err):
+                        # 5xx = vendor-side trouble, NOT a dead pod: back off,
+                        # re-roll without blocklisting (2026-08-20 incident: a
+                        # 503 storm burned the whole claim range because 5xx
+                        # fell through to raise)
+                        wait = min(60, 10 * (attempt + 1))
+                        log(f"[{date_str}] open got transient vendor error "
+                            f"({err[:60]}) — waiting {wait}s, re-rolling",
+                            flush=True)
+                        _pod_choice["ip"] = None
+                        time.sleep(wait)
+                        continue
+                    raise                          # anything else: caller's problem
             raise IOError(f"[{date_str}] stream open failed even via plain DNS")
 
         def read(s, n):
