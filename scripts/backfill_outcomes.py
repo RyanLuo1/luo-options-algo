@@ -28,6 +28,8 @@ sys.path.insert(0, _PROJECT_ROOT)
 
 from options_screener import massive_client  # noqa: E402  — env load on import
 
+import yfinance as yf  # noqa: E402
+
 from supabase import create_client  # noqa: E402
 
 SUPABASE_URL         = os.environ.get('SUPABASE_URL', '')
@@ -97,24 +99,58 @@ def _fetch_with_retry(ticker, expiration_date, *, delays):
     return None
 
 
+def _fetch_close_yfinance(ticker, expiration_date):
+    """
+    Primary close source (2026-08-24): Yahoo's daily close on
+    `expiration_date`, or the most recent prior trading day within the same
+    7-day backward window the Massive path uses. Free of Massive's REST rate
+    limits, which 429 on recent expirations. Returns None on any failure —
+    the caller falls back to the Massive REST path, whose behavior is
+    unchanged.
+
+    (The originally-approved source — our local day_aggs flat-file extracts —
+    can't serve this: those files are OPRA *options* aggregates with no
+    underlying closes, and the us_stocks_sip flat files 403 on our plan.
+    Validated instead against the existing REST-derived labels: 45/45 sampled
+    (ticker, expiration) pairs reproduced stock_price_at_expiration to the
+    penny and the identical outcome_type.)
+    """
+    try:
+        hist = yf.Ticker(ticker).history(
+            start=expiration_date - timedelta(days=7),
+            end=expiration_date + timedelta(days=1),   # yf end is exclusive → bars ≤ expiration
+            auto_adjust=False, actions=False,
+        )
+        if hist.empty:
+            return None
+        return round(float(hist["Close"].iloc[-1]), 4)
+    except Exception as e:
+        print(f"  ⟳ {ticker} {expiration_date}: yfinance close failed ({e}) "
+              f"— falling back to Massive REST", file=sys.stderr)
+        return None
+
+
 def fetch_close_price(ticker, expiration_date, *, delays=(2, 5), use_cache=True):
     """
     Return the close on `expiration_date`, or the most recent prior trading
     day if that exact date had no bar (holiday, half-day, etc.). Returns
     None when every retry attempt failed.
 
-    Cached by (ticker, date) — repeats during the same run never call Massive.
+    Cached by (ticker, date) — repeats during the same run never re-fetch.
     Pass `use_cache=False` to force a fresh attempt (the retry pass in main()
     uses this to re-try entries previously cached as None).
 
-    Massive's $30 Options plan includes historical stock aggregates, so this
-    call works for any past expiration. The 7-day backward window absorbs
-    holiday-shifted expirations without extra logic.
+    Source order (2026-08-24): yfinance first (no Massive rate limits — the
+    REST path 429s on recent expirations), Massive REST as fallback. Both
+    use the same 7-day backward window, which absorbs holiday-shifted
+    expirations without extra logic.
     """
     key = (ticker, expiration_date.strftime("%Y-%m-%d"))
     if use_cache and key in _price_cache:
         return _price_cache[key]
-    price = _fetch_with_retry(ticker, expiration_date, delays=delays)
+    price = _fetch_close_yfinance(ticker, expiration_date)
+    if price is None:
+        price = _fetch_with_retry(ticker, expiration_date, delays=delays)
     _price_cache[key] = price
     return price
 
