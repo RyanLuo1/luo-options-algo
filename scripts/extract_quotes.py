@@ -181,10 +181,16 @@ def block_pod(ip):
 
 def _is_transient(err):
     """Vendor-side trouble (retry/wait), as opposed to a dead pod (4xx) or a
-    real error. String-matched because botocore surfaces these many ways."""
+    real error. String-matched because botocore surfaces these many ways.
+    Timeouts are transient too (2025-08-06 burned twice on ReadTimeoutError
+    being treated as a date-failure): "ReadTimeout"/"ConnectTimeout" match
+    botocore's ReadTimeoutError/ConnectTimeoutError and the requests/urllib3
+    class names; "TimeoutError"/"timed out" catch socket-level variants."""
     return any(s in err for s in ("503", "500", "502", "504",
                                   "ServiceUnavailable", "SlowDown",
-                                  "InternalError"))
+                                  "InternalError",
+                                  "ReadTimeout", "ConnectTimeout",
+                                  "TimeoutError", "timed out"))
 
 
 def choose_pod(last_segment_mbs=None):
