@@ -185,12 +185,15 @@ def _is_transient(err):
     Timeouts are transient too (2025-08-06 burned twice on ReadTimeoutError
     being treated as a date-failure): "ReadTimeout"/"ConnectTimeout" match
     botocore's ReadTimeoutError/ConnectTimeoutError and the requests/urllib3
-    class names; "TimeoutError"/"timed out" catch socket-level variants."""
+    class names; "TimeoutError"/"timed out" catch socket-level variants.
+    "EndpointConnectionError" is the same family — the network's moment, not
+    the date's fault (2026-01-08 was marked failed on one)."""
     return any(s in err for s in ("503", "500", "502", "504",
                                   "ServiceUnavailable", "SlowDown",
                                   "InternalError",
                                   "ReadTimeout", "ConnectTimeout",
-                                  "TimeoutError", "timed out"))
+                                  "TimeoutError", "timed out",
+                                  "EndpointConnectionError"))
 
 
 def choose_pod(last_segment_mbs=None):
