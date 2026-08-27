@@ -232,8 +232,11 @@ def s3_client():
 UNIVERSE_PATH = os.path.join(PROJECT_ROOT, "data", "universe_extract.json")
 
 
+SCAN_UNIVERSE_PATH = os.path.join(PROJECT_ROOT, "data", "universe.json")
+
+
 def load_universe_roots(path=None):
-    """Extraction universe: the $75B SUPERSET (data/universe_extract.json),
+    """Extraction universe: the $50B SUPERSET (data/universe_extract.json),
     deliberately wider than the scan's $100B data/universe.json so future
     point-in-time universe corrections are replay-side filters, not
     re-extractions. The replay applies the real >$100B logic itself."""
@@ -241,6 +244,33 @@ def load_universe_roots(path=None):
         uni = json.load(f)
     roots = sorted({t for lst in uni["sectors"].values() for t in lst})
     return roots
+
+
+def assert_universe_superset(extract_path=None, scan_path=None):
+    """Defense in depth (2026-08-27): the extraction universe must contain
+    every scan-universe name, else the extract silently loses scan coverage
+    (the 2026-08-07 universe build dropped 12 S&P mega-caps — MU, JPM, XOM,
+    HD, ... — and 132 extracts were banked without them before the ml-
+    comparison surfaced it). Called at the top of extract_day(), before a
+    single byte is streamed, so a stale/broken universe file on any box
+    fails the date loudly instead of banking a gapped extract.
+
+    Returns (n_extract, n_scan) on success; raises RuntimeError naming the
+    missing tickers on violation."""
+    def _tickers(path):
+        with open(path) as f:
+            return {t for lst in json.load(f)["sectors"].values() for t in lst}
+
+    extract = _tickers(extract_path or UNIVERSE_PATH)
+    scan = _tickers(scan_path or SCAN_UNIVERSE_PATH)
+    missing = sorted(scan - extract)
+    if missing:
+        raise RuntimeError(
+            f"extraction universe is missing {len(missing)} scan-universe "
+            f"name(s): {missing} — refusing to extract with a gapped "
+            f"universe (rebuild data/universe_extract.json with "
+            f"--require-superset-of data/universe.json and redeploy)")
+    return len(extract), len(scan)
 
 
 def _extract_schema():
@@ -317,6 +347,10 @@ def extract_day(date_str, limit_bytes=None, log=print, reconnect_bytes=None):
     if not limit_bytes and os.path.exists(out_path):
         log(f"[{date_str}] extract exists, skipping (immutable)")
         return None
+
+    # Universe guard — fail before streaming a byte (see assert_universe_superset).
+    n_extract, n_scan = assert_universe_superset()
+    log(f"[{date_str}] universe OK: {n_extract} extract roots ⊇ {n_scan} scan names")
 
     # (b) The pre-stream calls (day_aggs GET, quotes HEAD) run BEFORE any
     # ResumableBody re-roll logic exists — a stale pinned pod carried over
