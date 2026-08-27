@@ -154,9 +154,19 @@ def fetch_ticker_info(ticker, retries=4, backoff=2.0):
     last_err = None
     for attempt in range(1, retries + 1):
         try:
-            info = yf.Ticker(ticker).info or {}
+            tk = yf.Ticker(ticker)
+            info = tk.info or {}
             sector = info.get("sector")
             market_cap = info.get("marketCap")
+            if not market_cap:
+                # Yahoo's quoteSummary intermittently omits marketCap for
+                # some names (observed 2026-08-27: MU, CRM, LOW, ... — the
+                # exact hole the 2026-08-07 build fell into) while the
+                # quote endpoint behind fast_info still has it.
+                try:
+                    market_cap = tk.fast_info["market_cap"]
+                except Exception:  # noqa: BLE001 — keep info's None
+                    pass
             return sector, market_cap
         except Exception as err:  # noqa: BLE001 — transient yfinance/network
             last_err = err
@@ -197,14 +207,19 @@ def build_universe(limit=None, sleep=0.25, threshold=THRESHOLD, out_path=OUTPUT_
     def attempt(ticker, i, total, tag=""):
         nonlocal kept, skipped_below
         sector, market_cap = fetch_ticker_info(ticker)
-        if sector is None and market_cap is None:
-            unresolved[ticker] = "fetch error"
-            return False
-        if not sector:
-            unresolved[ticker] = "no sector"
-            return False
         if not market_cap:
-            unresolved[ticker] = "no marketCap"
+            unresolved[ticker] = ("fetch error" if sector is None
+                                  else "no marketCap")
+            return False
+        if market_cap <= threshold:
+            # Below threshold is a normal filter outcome — no sector needed
+            # (FISV: cap resolves but sector is missing; it was never going
+            # to be kept, so it must not fail the build).
+            unresolved.pop(ticker, None)
+            skipped_below += 1
+            return True
+        if not sector:
+            unresolved[ticker] = "no sector (above threshold)"
             return False
 
         unresolved.pop(ticker, None)
