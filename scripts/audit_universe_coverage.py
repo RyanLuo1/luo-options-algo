@@ -27,6 +27,9 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from extract_quotes import opra_root  # noqa: E402 — the one true symbology map
+
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXTRACTS_DIR = os.path.join(_PROJECT_ROOT, "data", "extracts")
 SCAN_UNIVERSE = os.path.join(_PROJECT_ROOT, "data", "universe.json")
@@ -35,20 +38,28 @@ DEFAULT_OUT = os.path.join(_PROJECT_ROOT, "docs", "private",
 
 KNOWN_12 = ["ADI", "BLK", "CRM", "HD", "JPM", "LOW", "MCD", "MDT", "MRK",
             "MU", "WDC", "XOM"]
+# Known symbology casualty (distinct scope from the 12): BRK-B never matched
+# the exact-root pass in any era — mapped to OPRA root BRKB 2026-08-28.
+KNOWN_SYMBOLOGY = ["BRKB"]
 
 # Point-in-time analysis of the audit's surprises (2026-08-27), carried into
 # every regenerated ledger. Evidence: day_aggs root counts quoted inline.
 FINDINGS = """\
 ## Findings — the surprises explained (investigated 2026-08-27)
 
-**BRK-B — missing from EVERY extract, both eras (symbology, not universe).**
-The universe files store yfinance-style `BRK-B`; OPRA option roots strip the
-punctuation — the 2026-08-20 day_aggs carries **616 contracts under root
-`BRKB`** (and no `BRK-B`). The extractor's exact-root match therefore never
-captures Berkshire options, in any extract ever banked ($75B era included).
-This is a 13th effectively-missing scan name for the re-stream scope
-discussion, and the fix is a yfinance→OPRA root map (`BRK-B` → `BRKB`) in
-`load_universe_roots()` — NOT a universe rebuild. Pending decision.
+**BRK-B — missing from EVERY extract banked pre-mapping, both eras
+(symbology, not universe).** The universe files store yfinance-style
+`BRK-B`; OPRA option roots strip the punctuation — the 2026-08-20 day_aggs
+carries **616 contracts under root `BRKB`** (and no `BRK-B`). The
+extractor's exact-root match therefore never captured Berkshire options in
+any extract of either era. **Fixed 2026-08-28**: `opra_root()` in
+`extract_quotes.py` maps punctuated class shares generically (`BRK-B` →
+`BRKB`; a sweep of both universe files found BRK-B to be the only
+punctuated name today, with no stripped-root collisions); extracts from
+each worker's next date onward carry `underlying = BRKB`. Its re-stream
+scope is therefore **every date banked before the mapping deploy** —
+strictly wider than the 12's post-Aug-7 scope (exact counts in the
+Re-stream scope section above).
 
 **HON on 2025-10-30 — corporate-action adjustment day (known semantic).**
 day_aggs evidence: 2025-10-29 all plain `HON` (186 contracts); **2025-10-30
@@ -107,7 +118,10 @@ def main():
         date = os.path.basename(p)[:-8]
         und = set(pd.read_parquet(p, columns=["underlying"])["underlying"]
                   .unique())
-        missing = sorted(name_set - und)
+        # Presence is checked by OPRA root (BRK-B ↔ BRKB); missing names are
+        # reported as the OPRA root the extract would carry.
+        missing = sorted(opra_root(n) for n in name_set
+                         if opra_root(n) not in und)
         generation = "$75B era" if "MU" in und else "$50B era (gapped)"
         rows.append({
             "date": date,
@@ -124,14 +138,21 @@ def main():
     for r in rows:
         sig_groups[tuple(r["missing"])].append(r["date"])
 
+    known = set(KNOWN_12) | set(KNOWN_SYMBOLOGY)
     surprises = []
     for r in rows:
-        extra_missing = [m for m in r["missing"] if m not in KNOWN_12]
+        extra_missing = [m for m in r["missing"] if m not in known]
         if extra_missing:
             surprises.append((r["date"], extra_missing))
-        if r["generation"].startswith("$75B") and r["missing"]:
+        if (r["generation"].startswith("$75B")
+                and set(r["missing"]) - set(KNOWN_SYMBOLOGY)):
             surprises.append((r["date"], f"$75B-era date missing "
                                          f"{r['missing']}"))
+
+    # The two re-stream scopes the completion-day decision reads:
+    brkb_dates = [r["date"] for r in rows if "BRKB" in r["missing"]]
+    twelve_dates = [r["date"] for r in rows
+                    if any(m in r["missing"] for m in KNOWN_12)]
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
@@ -158,6 +179,25 @@ def main():
                  ", ".join(sig))
         lines.append(f"| {label} | {len(dates)} | "
                      f"{min(dates)} → {max(dates)} |")
+
+    lines += [
+        "",
+        "## Re-stream scope (the two numbers the completion-day decision "
+        "reads)",
+        "",
+        f"- **BRK-B/`BRKB` (symbology, both eras):** "
+        f"**{len(brkb_dates)}** of {len(rows)} audited extracts lack it "
+        f"({min(brkb_dates)} → {max(brkb_dates)})." if brkb_dates else
+        "- **BRK-B/`BRKB`:** no audited extract lacks it.",
+        f"- **The 12 (post-Aug-7 universe gap):** **{len(twelve_dates)}** "
+        f"of {len(rows)} audited extracts lack one or more of them "
+        f"({min(twelve_dates)} → {max(twelve_dates)})." if twelve_dates else
+        "- **The 12:** no audited extract lacks any of them.",
+        "",
+        "In-flight dates that started under the broken universe but banked "
+        "after this audit ran belong to both scopes — re-run this audit at "
+        "completion for final counts.",
+    ]
 
     lines += ["", FINDINGS]
     lines += ["## Surprises beyond the known 12-name pattern", ""]

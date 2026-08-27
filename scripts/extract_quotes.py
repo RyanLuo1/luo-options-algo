@@ -67,6 +67,7 @@ import gzip
 import json
 import os
 import random
+import re
 import socket
 import sys
 import time
@@ -235,14 +236,28 @@ UNIVERSE_PATH = os.path.join(PROJECT_ROOT, "data", "universe_extract.json")
 SCAN_UNIVERSE_PATH = os.path.join(PROJECT_ROOT, "data", "universe.json")
 
 
+def opra_root(ticker):
+    """yfinance→OPRA symbology map (2026-08-28): OPRA option roots strip
+    share-class punctuation — BRK-B options trade under root BRKB — while
+    the universe files store yfinance/Wikipedia style (dashes/dots). The
+    old exact-root match on the raw ticker therefore never captured BRK-B
+    in ANY extract of either era (see docs/private/UNIVERSE_GAP_LEDGER.md).
+    Plain alphanumeric tickers pass through untouched. Any consumer that
+    looks a scan-universe name up against extract `underlying` values (the
+    replay's chain provider, coverage audits) must apply this same map."""
+    return re.sub(r"[^A-Z0-9]", "", ticker.upper())
+
+
 def load_universe_roots(path=None):
     """Extraction universe: the $50B SUPERSET (data/universe_extract.json),
     deliberately wider than the scan's $100B data/universe.json so future
     point-in-time universe corrections are replay-side filters, not
-    re-extractions. The replay applies the real >$100B logic itself."""
+    re-extractions. The replay applies the real >$100B logic itself.
+    Tickers are returned as OPRA roots (see opra_root) — the parquet
+    `underlying` column carries these, e.g. BRKB for BRK-B."""
     with open(path or UNIVERSE_PATH) as f:
         uni = json.load(f)
-    roots = sorted({t for lst in uni["sectors"].values() for t in lst})
+    roots = sorted({opra_root(t) for lst in uni["sectors"].values() for t in lst})
     return roots
 
 

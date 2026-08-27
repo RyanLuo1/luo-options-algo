@@ -66,6 +66,23 @@ class TestUniverseGuard(unittest.TestCase):
         self.assertIn("2 scan-universe", msg)
         self.assertNotIn("NVDA'", msg)  # present names are not listed as missing
 
+    def test_opra_root_maps_punctuated_class_shares(self):
+        self.assertEqual(extract_quotes.opra_root("BRK-B"), "BRKB")
+        self.assertEqual(extract_quotes.opra_root("BF.B"), "BFB")
+        self.assertEqual(extract_quotes.opra_root("brk-b"), "BRKB")
+
+    def test_opra_root_passes_plain_tickers_untouched(self):
+        for t in ("MU", "JPM", "XOM", "GOOGL", "SPY"):
+            self.assertEqual(extract_quotes.opra_root(t), t)
+
+    def test_load_universe_roots_applies_opra_map(self):
+        _write_universe(self.extract_path,
+                        {"Financial Services": ["BRK-B", "JPM"],
+                         "Technology": ["MU"]})
+        roots = extract_quotes.load_universe_roots(self.extract_path)
+        self.assertEqual(roots, ["BRKB", "JPM", "MU"])
+        self.assertNotIn("BRK-B", roots)
+
     def test_default_paths_pass_on_repo_files(self):
         # The real repo files must satisfy the invariant once the rebuilt
         # universe lands; tolerate a known-broken state only by skipping
