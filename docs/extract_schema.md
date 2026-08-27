@@ -95,3 +95,23 @@ extractor: it never exits early, streams to physical EOF, and merges
 per-contract state across partitions (a contract recurring later adds to the
 same state; window q-deques stay in stream order). `day_aggs_v1` files, by
 contrast, ARE globally sorted.
+
+## Coverage caveats (2026-08-27 audit — authoritative record: docs/private/UNIVERSE_GAP_LEDGER.md)
+
+- **The 2026-08 universe gap:** extracts banked with the 2026-08-07
+  `universe_extract.json` (which silently dropped 12 S&P mega-caps — ADI,
+  BLK, CRM, HD, JPM, LOW, MCD, MDT, MRK, MU, WDC, XOM) lack those names
+  entirely. Fixed 2026-08-27 (rebuilt universe + superset guard in
+  `extract_quotes.py` + loud-failure `build_universe.py`); re-stream scope
+  is a completion-runbook decision (CLAUDE.md).
+- **Share-class symbology:** universe files store yfinance-style tickers
+  (`BRK-B`); OPRA roots strip punctuation (`BRKB`). The exact-root match
+  therefore never captures such names — BRK-B is absent from every extract
+  of both eras. Fix candidate (pending decision): a yfinance→OPRA root map
+  in `load_universe_roots()`.
+- **Adjusted classes are deliberately excluded** (`O:MU1...`-style roots
+  parse to different roots and carry non-standard deliverables). On a
+  corporate-action day the ENTIRE standard chain can be adjusted away:
+  2025-10-30 has zero plain `HON` (all 144 contracts trade as `HON1`; the
+  standard chain relists 10-31). Replay coverage accounting must treat such
+  dates as name-holidays, not extraction bugs.
