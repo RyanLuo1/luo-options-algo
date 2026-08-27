@@ -3,13 +3,63 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Design tokens — single source of truth for the dark fintech palette.
+   Design tokens — single source of truth for the palette.
    Slate base + purple accent + reserved profit/loss greens & reds.
    Wired into Tailwind via tailwind.config.js (theme.extend.colors) so these
    are consumed as semantic utility classes (bg-surface, text-profit,
    border-subtle, …) rather than hardcoded hex in components.
+
+   Theming (darkMode: 'class'): `:root` holds the LIGHT palette; the `.dark`
+   block below redefines EVERY token (hex vars AND -rgb channel triplets) to
+   the original dark values verbatim, so any page carrying the `dark` class
+   on <html> renders exactly as before the light theme existed. Dark is the
+   default everywhere — only /login can go light for now (see ThemeScope in
+   src/main.jsx and the FOUC guard in index.html).
    ────────────────────────────────────────────────────────────────────────── */
 :root {
+  /* backgrounds — lightest page bg to white surfaces */
+  --bg-base: #F1F5F9;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #F8FAFC;
+  /* borders */
+  --border-subtle: #E2E8F0;
+  --border-strong: #CBD5E1;
+  /* text */
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-tertiary: #64748B;
+  /* accent — actions, highlights, 'top pick'. NOT used for profit/loss */
+  --accent: #7C5CFF;
+  --accent-hover: #6D4FE8;
+  /* semantic profit/loss — reserved ONLY for money/P&L, never for chrome.
+     One step darker than the dark-theme values for contrast on white. */
+  --profit: #059669;
+  --profit-dim: #D1FAE5;
+  --loss: #E11D48;
+  --loss-dim: #FFE4E6;
+  /* link/info — darkened for contrast on white */
+  --link: #4F6FE0;
+
+  /* RGB channel triplets — consumed by tailwind.config.js as
+     rgb(var(--*-rgb) / <alpha-value>) so opacity modifiers (bg-accent/10,
+     border-subtle/30) actually compile. Keep in sync with the hex vars above. */
+  --surface-rgb: 255 255 255;
+  --subtle-rgb: 226 232 240;
+  --tertiary-rgb: 100 116 139;
+  --accent-rgb: 124 92 255;
+  --loss-rgb: 225 29 72;
+  --link-rgb: 79 111 224;
+
+  /* Monospace numeric font. JetBrains Mono (loaded in index.html) with a
+     system-monospace fallback so digits stay fixed-width even offline.
+     Theme-independent — defined once here, inherited by .dark. */
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+}
+
+/* Dark palette — the ORIGINAL token values, moved here verbatim from the old
+   single-theme :root. Do not tweak these: with .dark applied the app must
+   render byte-identical to the pre-theming build. */
+.dark {
   /* backgrounds — darkest to lightest surface */
   --bg-base: #0F172A;
   --bg-surface: #1E293B;
@@ -21,10 +71,10 @@
   --text-primary: #F1F5F9;
   --text-secondary: #94A3B8;
   --text-tertiary: #64748B;
-  /* accent — actions, highlights, 'top pick'. NOT used for profit/loss */
+  /* accent */
   --accent: #7C5CFF;
   --accent-hover: #6D4FE8;
-  /* semantic profit/loss — reserved ONLY for money/P&L, never for chrome */
+  /* semantic profit/loss */
   --profit: #34D399;
   --profit-dim: #065F46;
   --loss: #F43F5E;
@@ -32,13 +82,19 @@
   /* link/info */
   --link: #7C9EF8;
 
-  /* Monospace numeric font. JetBrains Mono (loaded in index.html) with a
-     system-monospace fallback so digits stay fixed-width even offline. */
-  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+  /* RGB channel triplets */
+  --surface-rgb: 30 41 59;
+  --subtle-rgb: 51 65 85;
+  --tertiary-rgb: 100 116 139;
+  --accent-rgb: 124 92 255;
+  --loss-rgb: 244 63 94;
+  --link-rgb: 124 158 248;
 }
 
 body {
-  @apply bg-gray-950 text-gray-100;
+  /* Dark pair preserves the exact pre-theming body colors (gray-950/gray-100);
+     light falls back to the token palette. */
+  @apply bg-base text-primary dark:bg-gray-950 dark:text-gray-100;
 }
 
 /* Tabular numeric display — fixed-width digits so number columns align.
@@ -62,6 +118,24 @@ body {
 .candle-c { animation: candle-drift 8s ease-in-out infinite; animation-delay: -4.5s; }
 @media (prefers-reduced-motion: reduce) {
   .candle-a, .candle-b, .candle-c { animation: none; }
+}
+
+/* Auth-card banner entrances (LoginPage notice/error). */
+@keyframes auth-fade-in-up {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes auth-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+.anim-fade-in-up { animation: auth-fade-in-up .25s ease-out both; }
+.anim-shake { animation: auth-fade-in-up .2s ease-out both, auth-shake .35s ease-in-out .05s; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-in-up, .anim-shake { animation: none; }
 }
 
 /* Dual-handle range slider — two stacked <input type="range">.

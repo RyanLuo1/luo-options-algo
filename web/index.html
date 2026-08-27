@@ -1,7 +1,25 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <!-- Theme FOUC guard — runs before the bundle. Dark is the default
+         everywhere; only /login honors a stored 'light' preference
+         (localStorage key 'luo-theme'). Non-login routes always start dark
+         (ThemeScope in src/main.jsx enforces this on navigation too). -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('luo-theme')
+          if (window.location.pathname.indexOf('/login') === 0 && stored === 'light') {
+            document.documentElement.classList.remove('dark')
+          } else {
+            document.documentElement.classList.add('dark')
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark')
+        }
+      })()
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Monospace numeric font (tabular figures). Falls back to the system

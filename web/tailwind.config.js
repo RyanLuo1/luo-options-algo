@@ -4,6 +4,10 @@ export default {
     "./index.html",
     "./src/**/*.{js,jsx}",
   ],
+  // Theme is driven by the `dark` class on <html> (see index.html FOUC guard +
+  // ThemeScope in src/main.jsx). Token vars flip in src/index.css (:root =
+  // light, .dark = the original dark palette).
+  darkMode: 'class',
   theme: {
     extend: {
       // Semantic color tokens — each references a CSS variable defined in
@@ -14,20 +18,24 @@ export default {
       colors: {
         // backgrounds
         base:    'var(--bg-base)',
+        // Tokens written as rgb(var(--*-rgb) / <alpha-value>) support Tailwind
+        // opacity modifiers (bg-accent/10, border-subtle/30). Raw var() strings
+        // silently compile to nothing under a modifier — keep the channel vars
+        // in index.css in sync with the hex vars.
         surface: {
-          DEFAULT: 'var(--bg-surface)',
+          DEFAULT: 'rgb(var(--surface-rgb) / <alpha-value>)',
           raised:  'var(--bg-surface-raised)',
         },
         // borders
-        subtle: 'var(--border-subtle)',
+        subtle: 'rgb(var(--subtle-rgb) / <alpha-value>)',
         strong: 'var(--border-strong)',
         // text
         primary:   'var(--text-primary)',
         secondary: 'var(--text-secondary)',
-        tertiary:  'var(--text-tertiary)',
+        tertiary:  'rgb(var(--tertiary-rgb) / <alpha-value>)',
         // accent — actions / highlights (never profit/loss)
         accent: {
-          DEFAULT: 'var(--accent)',
+          DEFAULT: 'rgb(var(--accent-rgb) / <alpha-value>)',
           hover:   'var(--accent-hover)',
         },
         // semantic profit/loss — money / P&L only
@@ -36,11 +44,11 @@ export default {
           dim:     'var(--profit-dim)',
         },
         loss: {
-          DEFAULT: 'var(--loss)',
+          DEFAULT: 'rgb(var(--loss-rgb) / <alpha-value>)',
           dim:     'var(--loss-dim)',
         },
         // link / info
-        link: 'var(--link)',
+        link: 'rgb(var(--link-rgb) / <alpha-value>)',
       },
       fontFamily: {
         // `font-mono` now resolves to the JetBrains Mono stack in --font-mono.

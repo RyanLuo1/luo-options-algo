@@ -1,13 +1,36 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import useAuth from '../hooks/useAuth'
+import ThemeToggle from '../components/ThemeToggle'
+
+const FEATURES = [
+  {
+    Icon: RankedIcon,
+    title: 'Ranked Risk-Reversal Setups',
+    desc: 'Every ticker and expiration scanned, scored, and ranked on live bid-ask pricing.',
+    chipClass: 'bg-accent/10 text-accent',
+  },
+  {
+    Icon: LedgerIcon,
+    title: 'Tradebook & Realized Outcomes',
+    desc: 'Log fills, follow open structures, and measure results against the scan that found them.',
+    chipClass: 'bg-link/10 text-link',
+  },
+  {
+    Icon: CandlesIcon,
+    title: 'TradingView Charts, In Context',
+    desc: "Full charting on the underlying, right beside each setup's strikes and detail.",
+    chipClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  },
+]
 
 export default function LoginPage() {
   const navigate         = useNavigate()
   const { user, loading } = useAuth()
+  const [searchParams]   = useSearchParams()
 
-  const [mode,        setMode]        = useState('signin')  // 'signin' | 'signup'
+  const [mode,        setMode]        = useState(searchParams.get('mode') === 'signup' ? 'signup' : 'signin')  // 'signin' | 'signup'
   const [email,       setEmail]       = useState('')
   const [password,    setPassword]    = useState('')
   const [confirmPw,   setConfirmPw]   = useState('')
@@ -23,8 +46,8 @@ export default function LoginPage() {
     if (!loading && user) navigate('/', { replace: true })
   }, [user, loading, navigate])
 
-  function switchMode() {
-    setMode(m => (m === 'signin' ? 'signup' : 'signin'))
+  function switchMode(target) {
+    setMode(target)
     setError(null)
     setNotice(null)
     setConfirmPw('')
@@ -95,51 +118,173 @@ export default function LoginPage() {
   if (loading) return null
 
   return (
-    <div className="min-h-screen flex bg-base text-primary">
+    <div className="min-h-screen bg-base text-primary flex flex-col lg:flex-row">
+      <ThemeToggle />
 
-      {/* ── Left — sign-in form (vertically centered) ──────────────────────── */}
-      <div className="relative flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm">
-
-          {/* Lockup */}
-          <div className="flex items-center gap-2.5 mb-12">
+      {/* ── Mobile hero (hidden ≥ lg) ──────────────────────────────────────── */}
+      <div className="lg:hidden relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-accent/10 dark:from-accent/15 via-base to-base pointer-events-none" />
+        <div className="absolute top-0 left-0 w-64 h-64 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10 px-6 pt-10 pb-6">
+          <div className="flex items-center gap-2.5 mb-5">
             <BrandMark />
-            <span className="font-bold text-lg tracking-tight text-primary">Luo Capital</span>
+            <span className="font-black text-xl tracking-tight text-primary">
+              Luo <span className="text-accent">Capital</span>
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black leading-tight mb-3">
+            Stop Guessing.
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-link">
+              Start Screening.
+            </span>
+          </h1>
+          <p className="text-sm text-secondary mb-4 leading-relaxed max-w-md">
+            Scan, score, and rank Call Spread Risk Reversals on live quotes.
+          </p>
+          <div className="flex gap-4 text-[11px] text-tertiary">
+            {[
+              { Icon: RankedIcon,  label: 'Ranked Setups' },
+              { Icon: LedgerIcon,  label: 'Tradebook' },
+              { Icon: CandlesIcon, label: 'Live Charts' },
+            ].map(({ Icon, label }) => (
+              <span key={label} className="flex items-center gap-1.5">
+                <Icon className="w-3.5 h-3.5 text-accent" /> {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Left — brand panel (hidden < lg) ───────────────────────────────── */}
+      <div className="hidden lg:flex flex-col justify-center flex-1 py-12 px-[6vw] relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-accent/10 dark:from-accent/15 via-base to-base pointer-events-none" />
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <CandleMotif />
+        </div>
+        <div className="absolute top-20 left-10 w-72 h-72 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-20 right-0 w-56 h-56 bg-link/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 max-w-xl w-full">
+          <div className="flex items-center gap-2.5 mb-8">
+            <BrandMark />
+            <span className="font-bold text-lg tracking-tight text-primary">
+              Luo <span className="text-accent">Capital</span>
+            </span>
+          </div>
+
+          <h1 className="text-4xl lg:text-5xl font-black leading-[1.1] mb-5 tracking-tight">
+            Stop Guessing.
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-link">
+              Start Screening.
+            </span>
+          </h1>
+          <p className="text-secondary text-base lg:text-lg leading-relaxed mb-10 max-w-lg">
+            Scan the options chain for Call Spread Risk Reversals, score every structure
+            on live bid-ask quotes, and track what you actually trade.
+          </p>
+
+          <div className="space-y-4 max-w-lg">
+            {FEATURES.map(f => (
+              <FeatureCard key={f.title} {...f} />
+            ))}
+          </div>
+
+          <p className="text-tertiary text-xs mt-8">
+            Personal research platform · Not investment advice
+          </p>
+        </div>
+      </div>
+
+      {/* ── Right — auth card ──────────────────────────────────────────────── */}
+      <div className="flex flex-1 items-center justify-center px-4 sm:px-[6vw] pt-6 pb-10 lg:py-12 relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[28rem] h-[28rem] bg-accent/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="w-full max-w-md rounded-2xl bg-white/60 dark:bg-white/[0.04] border border-slate-200/60 dark:border-white/[0.08] backdrop-blur-xl shadow-2xl shadow-black/5 dark:shadow-black/30 p-6 sm:p-8">
+
+          {/* Segmented mode toggle */}
+          <div className="flex bg-surface rounded-xl p-1 border border-subtle mb-8">
+            {[
+              { value: 'signin', label: 'Sign In' },
+              { value: 'signup', label: 'Create Account' },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => switchMode(value)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  mode === value
+                    ? 'bg-accent text-white shadow-lg shadow-accent/40'
+                    : 'text-secondary hover:text-primary'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           {/* Heading */}
-          <h1 className="text-2xl font-bold text-primary tracking-tight">
-            {isSignup ? 'Create your account.' : 'Welcome back.'}
-          </h1>
-          <p className="text-secondary text-sm mt-1.5 mb-8">
-            {isSignup ? 'Sign up to access the screener.' : 'Sign in to the screener.'}
-          </p>
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-primary tracking-tight">
+              {isSignup ? 'Create your account.' : 'Welcome back.'}
+            </h2>
+            <p className="text-secondary text-sm mt-1">
+              {isSignup ? 'Sign up to access the screener.' : 'Sign in to the screener.'}
+            </p>
+          </div>
+
+          {/* On-brand confirmation / info notice */}
+          {notice && (
+            <div className="mb-4 p-4 rounded-xl bg-accent/10 border border-accent/30 text-sm text-secondary flex items-start gap-3 anim-fade-in-up">
+              <span className="p-1 rounded-full bg-accent/20 text-accent mt-0.5 shrink-0">
+                <span className="flex items-center justify-center w-4 h-4 text-[10px] font-bold">i</span>
+              </span>
+              <span>{notice}</span>
+            </div>
+          )}
+
+          {/* Inline error — loss-red */}
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-loss/10 border border-loss/20 text-loss text-sm flex items-start gap-2 anim-shake">
+              <AlertIcon className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Form — same handlers as before */}
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
 
             {/* Email */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="text-[11px] font-medium text-secondary">Email</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                disabled={busy}
-                placeholder="you@example.com"
-                autoComplete="email"
-                className="h-[42px] bg-surface-raised text-primary border border-subtle rounded-md px-3
-                           text-sm placeholder-tertiary transition-colors
-                           focus:outline-none focus:border-accent disabled:opacity-50"
-              />
+            <div>
+              <label htmlFor="email" className="block text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">
+                Email
+              </label>
+              <div className="relative">
+                <MailIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  disabled={busy}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  className="w-full bg-surface-raised text-primary border border-subtle rounded-xl pl-10 pr-4 py-3
+                             text-sm placeholder-tertiary/50 transition-all
+                             focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
+                />
+              </div>
             </div>
 
             {/* Password — with show/hide toggle */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="password" className="text-[11px] font-medium text-secondary">Password</label>
+            <div>
+              <label htmlFor="password" className="block text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">
+                Password
+              </label>
               <div className="relative">
+                <LockIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
                 <input
                   id="password"
                   type={showPw ? 'text' : 'password'}
@@ -149,102 +294,66 @@ export default function LoginPage() {
                   disabled={busy}
                   placeholder="••••••••"
                   autoComplete={isSignup ? 'new-password' : 'current-password'}
-                  className="w-full h-[42px] bg-surface-raised text-primary border border-subtle rounded-md pl-3 pr-16
-                             text-sm placeholder-tertiary transition-colors
-                             focus:outline-none focus:border-accent disabled:opacity-50"
+                  className="w-full bg-surface-raised text-primary border border-subtle rounded-xl pl-10 pr-11 py-3
+                             text-sm placeholder-tertiary/50 transition-all
+                             focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw(s => !s)}
                   tabIndex={-1}
-                  className="absolute inset-y-0 right-0 px-3 flex items-center text-[11px] font-medium
-                             text-tertiary hover:text-secondary transition-colors"
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-tertiary hover:text-secondary transition-colors"
                 >
-                  {showPw ? 'Hide' : 'Show'}
+                  {showPw ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Confirm password — sign-up only */}
+            {/* Confirm password — sign-up only; mirrors showPw, no eye button */}
             {isSignup && (
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="confirm-password" className="text-[11px] font-medium text-secondary">Confirm password</label>
-                <input
-                  id="confirm-password"
-                  type={showPw ? 'text' : 'password'}
-                  value={confirmPw}
-                  onChange={e => setConfirmPw(e.target.value)}
-                  required
-                  disabled={busy}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  className="h-[42px] bg-surface-raised text-primary border border-subtle rounded-md px-3
-                             text-sm placeholder-tertiary transition-colors
-                             focus:outline-none focus:border-accent disabled:opacity-50"
-                />
+              <div>
+                <label htmlFor="confirm-password" className="block text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">
+                  Confirm password
+                </label>
+                <div className="relative">
+                  <LockIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
+                  <input
+                    id="confirm-password"
+                    type={showPw ? 'text' : 'password'}
+                    value={confirmPw}
+                    onChange={e => setConfirmPw(e.target.value)}
+                    required
+                    disabled={busy}
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    className="w-full bg-surface-raised text-primary border border-subtle rounded-xl pl-10 pr-4 py-3
+                               text-sm placeholder-tertiary/50 transition-all
+                               focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
+                  />
+                </div>
               </div>
-            )}
-
-            {/* Inline error — muted loss-red */}
-            {error && (
-              <p className="text-loss text-xs -mt-0.5">{error}</p>
-            )}
-
-            {/* On-brand confirmation / info notice */}
-            {notice && (
-              <p className="text-xs -mt-0.5 rounded-md border border-accent/40 bg-accent/10 text-secondary px-3 py-2">
-                {notice}
-              </p>
             )}
 
             {/* Primary action — accent purple */}
             <button
               type="submit"
               disabled={busy}
-              className="mt-2 h-[42px] bg-accent hover:bg-accent-hover text-primary text-sm font-semibold
-                         rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed
+                         text-white font-bold text-sm transition-all flex items-center justify-center gap-2
+                         shadow-lg shadow-accent/30"
             >
+              {busy && <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
               {busy
                 ? (isSignup ? 'Creating account…' : 'Signing in…')
                 : (isSignup ? 'Create account' : 'Sign in')}
             </button>
           </form>
 
-          {/* Mode toggle */}
-          <p className="text-tertiary text-xs mt-6 text-center">
-            {isSignup ? 'Already have an account? ' : 'New here? '}
-            <button
-              type="button"
-              onClick={switchMode}
-              className="font-medium text-accent hover:text-accent-hover transition-colors"
-            >
-              {isSignup ? 'Sign in' : 'Create an account'}
-            </button>
+          {/* Footer */}
+          <p className="text-tertiary text-[11px] text-center mt-6">
+            © 2026 · Luo Capital
           </p>
-        </div>
-
-        {/* Footer */}
-        <div className="absolute bottom-6 inset-x-0 text-center text-tertiary text-[11px]">
-          © 2026 · Luo Capital
-        </div>
-      </div>
-
-      {/* ── Right — brand visual (hidden on narrow screens) ────────────────── */}
-      <div className="hidden lg:block relative flex-1 overflow-hidden border-l border-subtle bg-[#0B1220]">
-        <CandleMotif />
-
-        {/* Faint purple glow */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{ background: 'radial-gradient(60% 50% at 50% 42%, rgba(124,92,255,0.18), transparent 70%)' }}
-        />
-
-        {/* Centered lockup over the motif */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8">
-          <div className="text-primary font-bold text-3xl tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
-            Luo Capital
-          </div>
-          <div className="text-secondary text-sm mt-2 tracking-wide">Options Screener</div>
         </div>
       </div>
 
@@ -260,6 +369,126 @@ function BrandMark() {
       <line x1="11" y1="4" x2="11" y2="18" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
       <rect x="8" y="7" width="6" height="8" rx="1.5" fill="var(--accent)" />
     </svg>
+  )
+}
+
+/* Feature row on the brand panel — icon chip + title + one-line description. */
+function FeatureCard({ Icon, title, desc, chipClass }) {
+  return (
+    <div className="flex items-start gap-4 p-4 rounded-xl bg-surface/30 border border-subtle/30 backdrop-blur-sm transition-all hover:bg-surface/50">
+      <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 border border-slate-200/50 dark:border-white/5 ${chipClass}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div>
+        <div className="text-sm font-bold text-primary tracking-wide">{title}</div>
+        <div className="text-xs text-secondary mt-1 leading-relaxed">{desc}</div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Inline stroke icons (no icon dependency) ────────────────────────────── */
+
+function IconBase({ className, children }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+function MailIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-10 5L2 7" />
+    </IconBase>
+  )
+}
+
+function LockIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </IconBase>
+  )
+}
+
+function EyeIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </IconBase>
+  )
+}
+
+function EyeOffIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <path d="M17.94 17.94A10.6 10.6 0 0 1 12 19c-6.5 0-10-7-10-7a17.9 17.9 0 0 1 4.06-4.94" />
+      <path d="M9.9 5.24A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17.9 17.9 0 0 1-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </IconBase>
+  )
+}
+
+function AlertIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </IconBase>
+  )
+}
+
+/* Ranked list — numbered rows */
+function RankedIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <line x1="10" y1="6" x2="21" y2="6" />
+      <line x1="10" y1="12" x2="21" y2="12" />
+      <line x1="10" y1="18" x2="21" y2="18" />
+      <path d="M4 6h1v4" />
+      <path d="M4 10h2" />
+      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </IconBase>
+  )
+}
+
+/* Ledger — open book */
+function LedgerIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+    </IconBase>
+  )
+}
+
+/* Candlesticks */
+function CandlesIcon({ className }) {
+  return (
+    <IconBase className={className}>
+      <line x1="7" y1="3" x2="7" y2="8" />
+      <rect x="5" y="8" width="4" height="7" rx="1" />
+      <line x1="7" y1="15" x2="7" y2="21" />
+      <line x1="17" y1="4" x2="17" y2="9" />
+      <rect x="15" y="9" width="4" height="7" rx="1" />
+      <line x1="17" y1="16" x2="17" y2="20" />
+    </IconBase>
   )
 }
 
