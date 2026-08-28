@@ -21,9 +21,9 @@ function LegRow({ label, labelClass, premClass, strike, prem, delta }) {
   return (
     <>
       <span className={`${labelClass} whitespace-nowrap`}>{label}</span>
-      <span className="num text-right text-gray-300">{strike != null ? `$${strike.toFixed(2)}` : '—'}</span>
+      <span className="num text-right text-secondary">{strike != null ? `$${strike.toFixed(2)}` : '—'}</span>
       <span className={`num text-right ${premClass}`}>{prem != null ? `$${prem.toFixed(2)}` : '—'}</span>
-      <span className="num text-right text-gray-400">{delta != null ? delta.toFixed(2) : '—'}</span>
+      <span className="num text-right text-secondary">{delta != null ? delta.toFixed(2) : '—'}</span>
     </>
   )
 }

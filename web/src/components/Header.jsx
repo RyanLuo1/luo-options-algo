@@ -18,15 +18,16 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
   // ── Trade editor: minimal header with back button ──────────────────────────
   if (isTrade) {
     return (
-      <header className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center gap-4">
+      <header className="bg-surface border-b border-subtle px-6 py-4 flex items-center gap-4">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-gray-100 text-sm font-medium transition-colors"
+          className="flex items-center gap-1.5 text-secondary hover:text-primary text-sm font-medium transition-colors"
         >
           ← Back to Screener
         </button>
-        <span className="text-gray-700">|</span>
-        <span className="text-white font-semibold text-sm">Trade Editor</span>
+        {/* text-subtle used AS TEXT (decorative divider): fine on dark, near-invisible on white — revisit in the app-wide light pass */}
+        <span className="text-subtle">|</span>
+        <span className="text-primary font-semibold text-sm">Trade Editor</span>
       </header>
     )
   }
@@ -34,15 +35,15 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
   // ── Tradebook: minimal header with back button ─────────────────────────────
   if (isTradebook) {
     return (
-      <header className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center gap-4">
+      <header className="bg-surface border-b border-subtle px-6 py-4 flex items-center gap-4">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-gray-100 text-sm font-medium transition-colors"
+          className="flex items-center gap-1.5 text-secondary hover:text-primary text-sm font-medium transition-colors"
         >
           ← Back to Screener
         </button>
-        <span className="text-gray-700">|</span>
-        <span className="text-white font-semibold text-sm">Tradebook</span>
+        <span className="text-subtle">|</span>
+        <span className="text-primary font-semibold text-sm">Tradebook</span>
       </header>
     )
   }
@@ -75,8 +76,8 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
               placeholder="Enter tickers or a @watchlist to scan"
               title="Tickers (NVDA, META) or @watchlist (@semis)"
               disabled={loading}
-              className={`flex-1 min-w-0 h-[34px] bg-surface-raised text-gray-100 border rounded-md px-3
-                          text-sm font-mono placeholder-gray-600 focus:outline-none disabled:opacity-50
+              className={`flex-1 min-w-0 h-[34px] bg-surface-raised text-primary border rounded-md px-3
+                          text-sm font-mono placeholder-tertiary focus:outline-none disabled:opacity-50
                           ${tickersError ? 'border-loss' : 'border-subtle focus:border-accent'}`}
             />
 
@@ -162,7 +163,7 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
                           ? 'bg-surface-raised text-tertiary cursor-not-allowed'
                           : isStale
                             ? 'bg-amber-500 hover:bg-amber-400 text-gray-900 cursor-pointer'
-                            : 'bg-accent hover:bg-accent-hover text-primary cursor-pointer'}`}
+                            : 'bg-accent hover:bg-accent-hover text-white cursor-pointer'}`}
           >
             {loading ? 'Running…' : isStale ? '⚠ Rescan needed' : 'Run Scan'}
           </button>
@@ -199,14 +200,15 @@ function MarketBadge({ open }) {
   if (open === null) {
     return <span className="text-tertiary text-xs font-mono">Market —</span>
   }
+  // Semantic stretch: profit/loss tokens are documented as money-only; reused here for market OPEN/CLOSED status.
   return open ? (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-profit">
+      <span className="w-2 h-2 rounded-full bg-profit animate-pulse" />
       OPEN
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400">
-      <span className="w-2 h-2 rounded-full bg-red-400" />
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-loss">
+      <span className="w-2 h-2 rounded-full bg-loss" />
       CLOSED
     </span>
   )

@@ -531,7 +531,7 @@ export default function App() {
   // h-screen + overflow-hidden locks the page to viewport height so only the
   // table body scrolls (see internal scroll in ResultsTable).
   return (
-    <div className="h-screen overflow-hidden bg-gray-950 text-gray-100 flex flex-col">
+    <div className="h-screen overflow-hidden bg-base text-primary flex flex-col">
       <Header
         marketOpen={marketOpen}
         lastRun={lastRun}
@@ -550,11 +550,11 @@ export default function App() {
       {saveError && (
         <div
           style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className="bg-gray-800 border border-red-700 rounded-lg shadow-xl px-4 py-3 max-w-xs"
+          className="bg-surface border border-loss-dim rounded-lg shadow-xl px-4 py-3 max-w-xs"
         >
           <div className="flex items-start gap-2">
-            <span className="text-red-400 text-sm font-semibold flex-1">{saveError}</span>
-            <button onClick={() => setSaveError(null)} className="text-gray-500 hover:text-gray-300 text-xs leading-none mt-0.5">×</button>
+            <span className="text-loss text-sm font-semibold flex-1">{saveError}</span>
+            <button onClick={() => setSaveError(null)} className="text-tertiary hover:text-secondary text-xs leading-none mt-0.5">×</button>
           </div>
         </div>
       )}
@@ -565,11 +565,11 @@ export default function App() {
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-3 text-center px-6">
-      <p className="text-gray-400 text-base font-medium">Ready to scan</p>
-      <p className="text-gray-600 text-sm max-w-sm">
+      <p className="text-secondary text-base font-medium">Ready to scan</p>
+      <p className="text-tertiary text-sm max-w-sm">
         Enter tickers and click Run Scan to find call spread risk reversal opportunities.
       </p>
-      <p className="text-gray-700 text-xs mt-2">
+      <p className="text-subtle text-xs mt-2">
         Make sure the Flask server is running: <span className="font-mono">python3 server/app.py</span>
       </p>
     </div>
@@ -578,9 +578,9 @@ function EmptyState() {
 
 function ErrorBanner({ error }) {
   return (
-    <div className="mx-6 mt-6 p-4 rounded border border-red-800/60 bg-red-950/30">
-      <p className="text-red-400 font-semibold text-sm mb-1">Error</p>
-      <p className="text-gray-400 text-xs font-mono break-all">{error}</p>
+    <div className="mx-6 mt-6 p-4 rounded border border-loss-dim bg-loss/10">
+      <p className="text-loss font-semibold text-sm mb-1">Error</p>
+      <p className="text-secondary text-xs font-mono break-all">{error}</p>
     </div>
   )
 }

@@ -29,11 +29,11 @@ export default function WeeksRangeSlider({
   return (
     <div className="relative w-44 h-7 select-none">
       {/* Track background */}
-      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 bg-gray-700 rounded" />
+      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 bg-subtle rounded" />
 
       {/* Active range fill */}
       <div
-        className="absolute top-1/2 -translate-y-1/2 h-1 bg-indigo-500 rounded"
+        className="absolute top-1/2 -translate-y-1/2 h-1 bg-accent rounded"
         style={{ left: `${leftPct}%`, right: `${100 - rightPct}%` }}
       />
 

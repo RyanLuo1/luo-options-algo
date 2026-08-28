@@ -34,25 +34,25 @@ function calcMetrics(legA, legB, legC) {
 
 function ChainTable({ contracts, selectedStrike, onSelect, loading, error, priceKey, priceLabel }) {
   if (loading) {
-    return <div className="text-gray-600 text-xs py-4 text-center">Loading chain…</div>
+    return <div className="text-tertiary text-xs py-4 text-center">Loading chain…</div>
   }
   if (error) {
-    return <div className="text-red-400 text-xs py-4 text-center">{error}</div>
+    return <div className="text-loss text-xs py-4 text-center">{error}</div>
   }
   if (!contracts || contracts.length === 0) {
-    return <div className="text-gray-600 text-xs py-4 text-center">No contracts in range.</div>
+    return <div className="text-tertiary text-xs py-4 text-center">No contracts in range.</div>
   }
 
   return (
     <div className="overflow-y-auto" style={{ maxHeight: '340px' }}>
       <table className="w-full text-xs font-mono border-collapse">
-        <thead className="sticky top-0 bg-gray-900 z-10">
-          <tr className="border-b border-gray-700">
-            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Strike</th>
-            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">{priceLabel}</th>
-            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Delta</th>
-            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">Volume</th>
-            <th className="px-2 py-1.5 text-right text-gray-500 font-semibold">OI</th>
+        <thead className="sticky top-0 bg-surface z-10">
+          <tr className="border-b border-subtle">
+            <th className="px-2 py-1.5 text-right text-tertiary font-semibold">Strike</th>
+            <th className="px-2 py-1.5 text-right text-tertiary font-semibold">{priceLabel}</th>
+            <th className="px-2 py-1.5 text-right text-tertiary font-semibold">Delta</th>
+            <th className="px-2 py-1.5 text-right text-tertiary font-semibold">Volume</th>
+            <th className="px-2 py-1.5 text-right text-tertiary font-semibold">OI</th>
           </tr>
         </thead>
         <tbody>
@@ -63,25 +63,25 @@ function ChainTable({ contracts, selectedStrike, onSelect, loading, error, price
                 key={c.strike}
                 onClick={() => onSelect(c)}
                 className={`
-                  border-b border-gray-800/50 cursor-pointer transition-colors
+                  border-b border-subtle/50 cursor-pointer transition-colors
                   ${isSelected
-                    ? 'ring-1 ring-inset ring-indigo-500 bg-indigo-950/40'
-                    : 'hover:bg-gray-800/60'}
+                    ? 'ring-1 ring-inset ring-accent bg-accent/20'
+                    : 'hover:bg-subtle/40'}
                 `}
               >
-                <td className={`px-2 py-1.5 text-right ${isSelected ? 'text-indigo-300' : 'text-gray-300'}`}>
+                <td className={`px-2 py-1.5 text-right ${isSelected ? 'text-accent' : 'text-secondary'}`}>
                   ${c.strike.toFixed(2)}
                 </td>
-                <td className="px-2 py-1.5 text-right text-gray-300">
+                <td className="px-2 py-1.5 text-right text-secondary">
                   {c[priceKey] != null ? `$${c[priceKey].toFixed(4)}` : '—'}
                 </td>
-                <td className="px-2 py-1.5 text-right text-gray-400">
+                <td className="px-2 py-1.5 text-right text-secondary">
                   {c.delta?.toFixed(4) ?? '—'}
                 </td>
-                <td className="px-2 py-1.5 text-right text-gray-500">
+                <td className="px-2 py-1.5 text-right text-tertiary">
                   {c.volume ?? '—'}
                 </td>
-                <td className="px-2 py-1.5 text-right text-gray-500">
+                <td className="px-2 py-1.5 text-right text-tertiary">
                   {c.oi ?? '—'}
                 </td>
               </tr>
@@ -99,34 +99,34 @@ function ChainTable({ contracts, selectedStrike, onSelect, loading, error, price
 // 'ask' for the leg we buy (A), 'bid' for the legs we sell (B, C).
 function LegColumn({ label, sublabel, selected, contracts, chainLoading, chainError, onSelect, priceKey, priceLabel }) {
   return (
-    <div className="flex flex-col min-w-0 flex-1 bg-gray-900 rounded border border-gray-800">
+    <div className="flex flex-col min-w-0 flex-1 bg-surface rounded border border-subtle">
 
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-800">
-        <div className="text-xs font-bold text-gray-100">{label}</div>
-        <div className="text-xs text-gray-500 mt-0.5">{sublabel}</div>
+      <div className="px-4 py-3 border-b border-subtle">
+        <div className="text-xs font-bold text-primary">{label}</div>
+        <div className="text-xs text-tertiary mt-0.5">{sublabel}</div>
       </div>
 
       {/* Current selection details */}
-      <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/50">
-        <div className="text-xs text-gray-500 mb-1.5 font-semibold uppercase tracking-wide">Selected</div>
+      <div className="px-4 py-3 border-b border-subtle bg-surface/50">
+        <div className="text-xs text-tertiary mb-1.5 font-semibold uppercase tracking-wide">Selected</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono">
-          <div className="text-gray-500">Strike</div>
-          <div className="text-gray-100 text-right">
+          <div className="text-tertiary">Strike</div>
+          <div className="text-primary text-right">
             {selected.strike != null ? `$${selected.strike.toFixed(2)}` : '—'}
           </div>
-          <div className="text-gray-500">Premium</div>
-          <div className="text-gray-100 text-right">
+          <div className="text-tertiary">Premium</div>
+          <div className="text-primary text-right">
             {selected.premium != null ? `$${selected.premium.toFixed(4)}` : '—'}
           </div>
-          <div className="text-gray-500">Delta</div>
-          <div className="text-gray-100 text-right">
+          <div className="text-tertiary">Delta</div>
+          <div className="text-primary text-right">
             {selected.delta != null ? selected.delta.toFixed(4) : '—'}
           </div>
-          <div className="text-gray-500">Volume</div>
-          <div className="text-gray-100 text-right">{selected.volume ?? '—'}</div>
-          <div className="text-gray-500">OI</div>
-          <div className="text-gray-100 text-right">{selected.oi ?? '—'}</div>
+          <div className="text-tertiary">Volume</div>
+          <div className="text-primary text-right">{selected.volume ?? '—'}</div>
+          <div className="text-tertiary">OI</div>
+          <div className="text-primary text-right">{selected.oi ?? '—'}</div>
         </div>
       </div>
 
@@ -299,13 +299,13 @@ export default function TradePage() {
   // ── Guard: no state passed ───────────────────────────────────────────────────
   if (!triplet) {
     return (
-      <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+      <div className="min-h-screen bg-base text-primary flex flex-col">
         <Header />
         <div className="flex flex-col items-center justify-center py-32 gap-4">
-          <p className="text-gray-400 text-sm">No triplet data. Navigate here from a scan.</p>
+          <p className="text-secondary text-sm">No triplet data. Navigate here from a scan.</p>
           <button
             onClick={() => navigate('/')}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded transition-colors"
+            className="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded transition-colors"
           >
             Go to Screener
           </button>
@@ -316,13 +316,13 @@ export default function TradePage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+    <div className="min-h-screen bg-base text-primary flex flex-col">
       <Header />
 
       {/* Summary bar */}
-      <div className="px-6 py-3 border-b border-gray-800 bg-gray-900/50 flex items-center gap-8 flex-wrap">
-        <div className="text-xs text-gray-500">
-          <span className="font-semibold text-gray-300 text-sm">{triplet.ticker}</span>
+      <div className="px-6 py-3 border-b border-subtle bg-surface/50 flex items-center gap-8 flex-wrap">
+        <div className="text-xs text-tertiary">
+          <span className="font-semibold text-secondary text-sm">{triplet.ticker}</span>
           <span className="ml-2">· {triplet.expiration}</span>
         </div>
 
@@ -374,16 +374,16 @@ export default function TradePage() {
       </div>
 
       {/* Action bar */}
-      <div className="px-6 py-4 border-t border-gray-800 flex items-center justify-center gap-4">
+      <div className="px-6 py-4 border-t border-subtle flex items-center justify-center gap-4">
         <button
           onClick={handleRecalculate}
-          className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-gray-100 text-sm font-semibold rounded transition-colors"
+          className="px-6 py-2 bg-subtle hover:bg-strong text-primary text-sm font-semibold rounded transition-colors"
         >
           Recalculate
         </button>
         <button
           onClick={handleSave}
-          className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded transition-colors"
+          className="px-6 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-semibold rounded transition-colors"
         >
           Save to Tradebook
         </button>
@@ -393,11 +393,11 @@ export default function TradePage() {
       {saveError && (
         <div
           style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
-          className="bg-gray-800 border border-red-700 rounded-lg shadow-xl px-4 py-3 max-w-xs"
+          className="bg-surface border border-loss-dim rounded-lg shadow-xl px-4 py-3 max-w-xs"
         >
           <div className="flex items-start gap-2">
-            <span className="text-red-400 text-sm font-semibold flex-1">{saveError}</span>
-            <button onClick={() => setSaveError(null)} className="text-gray-500 hover:text-gray-300 text-xs leading-none mt-0.5">×</button>
+            <span className="text-loss text-sm font-semibold flex-1">{saveError}</span>
+            <button onClick={() => setSaveError(null)} className="text-tertiary hover:text-secondary text-xs leading-none mt-0.5">×</button>
           </div>
         </div>
       )}
@@ -408,8 +408,8 @@ export default function TradePage() {
 function MetricCell({ label, value, highlight }) {
   return (
     <div className="flex flex-col items-end gap-0.5">
-      <span className="text-gray-600 text-xs">{label}</span>
-      <span className={highlight ? 'text-white font-bold text-sm' : 'text-gray-300 text-sm'}>
+      <span className="text-tertiary text-xs">{label}</span>
+      <span className={highlight ? 'text-primary font-bold text-sm' : 'text-secondary text-sm'}>
         {value}
       </span>
     </div>

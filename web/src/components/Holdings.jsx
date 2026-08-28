@@ -11,7 +11,7 @@ export default function Holdings({ tickers, skipped, onRemove, onToggleFilter, a
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-gray-500 text-xs">Scanning:</span>
+      <span className="text-tertiary text-xs">Scanning:</span>
       {tickers.map(t => {
         const isFiltered = activeFilter === t
         return (
@@ -24,13 +24,13 @@ export default function Holdings({ tickers, skipped, onRemove, onToggleFilter, a
                         ${onToggleFilter ? 'cursor-pointer' : ''}
                         ${isFiltered
                           ? 'bg-accent/20 text-primary border border-accent'
-                          : 'bg-gray-800 text-gray-300 border border-gray-700 hover:border-strong'}`}
+                          : 'bg-surface-raised text-secondary border border-subtle hover:border-strong'}`}
           >
             {t}
             {onRemove && (
               <button
                 onClick={e => { e.stopPropagation(); onRemove(t) }}
-                className="ml-0.5 text-gray-600 hover:text-red-400 transition-colors leading-none cursor-pointer"
+                className="ml-0.5 text-tertiary hover:text-loss transition-colors leading-none cursor-pointer"
                 title={`Remove ${t}`}
               >
                 ×
@@ -43,7 +43,7 @@ export default function Holdings({ tickers, skipped, onRemove, onToggleFilter, a
         <span className="text-tertiary text-[11px] ml-1">· filtered to {activeFilter} (double-click chip to clear)</span>
       )}
       {skipped && skipped.length > 0 && (
-        <span className="text-gray-600 text-xs ml-1">
+        <span className="text-tertiary text-xs ml-1">
           (skipped: {skipped.join(', ')} — no options chain)
         </span>
       )}

@@ -47,7 +47,7 @@ export default function WatchlistManager({ watchlists, onCreate, onUpdate, onDel
   }
 
   const inputCls = "h-[30px] bg-base border border-subtle rounded px-2 text-xs font-mono " +
-                   "text-gray-100 placeholder-gray-600 focus:outline-none focus:border-accent"
+                   "text-primary placeholder-tertiary focus:outline-none focus:border-accent"
 
   return (
     <div className="flex flex-col gap-2 border-t border-subtle pt-4">
@@ -121,14 +121,14 @@ export default function WatchlistManager({ watchlists, onCreate, onUpdate, onDel
           onChange={e => setName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleCreate()}
           placeholder="name (e.g. semis)"
-          className="h-[32px] bg-surface-raised border border-subtle rounded-md px-2.5 text-xs font-mono text-gray-100 placeholder-gray-600 focus:outline-none focus:border-accent"
+          className="h-[32px] bg-surface-raised border border-subtle rounded-md px-2.5 text-xs font-mono text-primary placeholder-tertiary focus:outline-none focus:border-accent"
         />
         <input
           value={tickers}
           onChange={e => setTickers(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleCreate()}
           placeholder="tickers (NVDA, AMD, MU)"
-          className="h-[32px] bg-surface-raised border border-subtle rounded-md px-2.5 text-xs font-mono text-gray-100 placeholder-gray-600 focus:outline-none focus:border-accent"
+          className="h-[32px] bg-surface-raised border border-subtle rounded-md px-2.5 text-xs font-mono text-primary placeholder-tertiary focus:outline-none focus:border-accent"
         />
         {error && <p className="text-[11px] text-loss">{error}</p>}
         <button

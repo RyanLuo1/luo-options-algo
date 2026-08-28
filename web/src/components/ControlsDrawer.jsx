@@ -101,8 +101,8 @@ export default function ControlsDrawer({
                 onKeyDown={e => e.key === 'Enter' && !loading && minPremiumValid && onRun()}
                 disabled={loading}
                 placeholder="5.00"
-                className="flex-1 min-w-0 bg-transparent text-gray-100 text-sm font-mono text-center
-                           placeholder-gray-600 focus:outline-none disabled:opacity-50"
+                className="flex-1 min-w-0 bg-transparent text-primary text-sm font-mono text-center
+                           placeholder-tertiary focus:outline-none disabled:opacity-50"
               />
               <button
                 onClick={() => bumpMinPremium(+0.50)}
@@ -134,8 +134,8 @@ export default function ControlsDrawer({
                 onKeyDown={e => e.key === 'Enter' && !loading && minPProfitValid && onRun()}
                 disabled={loading}
                 placeholder="50"
-                className="flex-1 min-w-0 bg-transparent text-gray-100 text-sm font-mono text-center
-                           placeholder-gray-600 focus:outline-none disabled:opacity-50"
+                className="flex-1 min-w-0 bg-transparent text-primary text-sm font-mono text-center
+                           placeholder-tertiary focus:outline-none disabled:opacity-50"
               />
               <button
                 onClick={() => bumpMinPProfit(+1)}

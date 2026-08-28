@@ -53,8 +53,8 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
   if (!rows || rows.length === 0) {
     return (
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center py-24 gap-3">
-        <p className="text-gray-500 text-sm">No valid triplets found.</p>
-        <p className="text-gray-600 text-xs">
+        <p className="text-tertiary text-sm">No valid triplets found.</p>
+        <p className="text-tertiary text-xs">
           Try lowering min premium, reducing min P(profit), or adding more weeks.
         </p>
       </div>
@@ -82,23 +82,23 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
       {/* metadata bar */}
-      <div className="shrink-0 px-6 py-2 flex items-center gap-4 text-xs text-gray-500 border-b border-gray-800 flex-wrap">
-        <span>Algorithm: <span className="text-gray-400">Call Spread Risk Reversal</span></span>
+      <div className="shrink-0 px-6 py-2 flex items-center gap-4 text-xs text-tertiary border-b border-subtle flex-wrap">
+        <span>Algorithm: <span className="text-secondary">Call Spread Risk Reversal</span></span>
         {weeksMinUsed != null && weeksMaxUsed != null && (
-          <><span>·</span><span>Weeks: <span className="text-gray-400">
+          <><span>·</span><span>Weeks: <span className="text-secondary">
             {weeksMinUsed === weeksMaxUsed ? `W${weeksMinUsed}` : `W${weeksMinUsed} – W${weeksMaxUsed}`}
           </span></span></>
         )}
         {minPremiumUsed != null && (
-          <><span>·</span><span>Min Premium: <span className="text-gray-400">${minPremiumUsed.toFixed(2)}</span></span></>
+          <><span>·</span><span>Min Premium: <span className="text-secondary">${minPremiumUsed.toFixed(2)}</span></span></>
         )}
         {minPProfitUsed != null && (
-          <><span>·</span><span>Min P(Profit): <span className="text-gray-400">{(minPProfitUsed * 100).toFixed(0)}%</span></span></>
+          <><span>·</span><span>Min P(Profit): <span className="text-secondary">{(minPProfitUsed * 100).toFixed(0)}%</span></span></>
         )}
         <span>·</span>
         <span><span className="num">{rows.length}</span> triplets ranked</span>
         {totalEvaluated > 0 && (
-          <><span>·</span><span className="text-gray-600"><span className="num">{totalEvaluated.toLocaleString()}</span> evaluated</span></>
+          <><span>·</span><span className="text-tertiary"><span className="num">{totalEvaluated.toLocaleString()}</span> evaluated</span></>
         )}
       </div>
 
@@ -118,21 +118,21 @@ export default function ResultsTable({ rows, totalEvaluated, weeksMinUsed, weeks
                   key={col.key}
                   onClick={() => toggleSort(col.key)}
                   className={`
-                    sticky top-0 z-10 bg-gray-900 border-b border-gray-700
-                    px-3 py-2.5 font-semibold text-gray-400 cursor-pointer select-none
-                    hover:text-gray-200 whitespace-nowrap
+                    sticky top-0 z-10 bg-surface border-b border-subtle
+                    px-3 py-2.5 font-semibold text-secondary cursor-pointer select-none
+                    hover:text-primary whitespace-nowrap
                     ${col.align === 'right' ? 'text-right' : 'text-left'}
-                    ${sortKey === col.key ? 'text-indigo-400' : ''}
+                    ${sortKey === col.key ? 'text-accent' : ''}
                   `}
                 >
                   {col.label}
                   {sortKey === col.key && (
-                    <span className="ml-1 text-indigo-400">{sortAsc ? '↑' : '↓'}</span>
+                    <span className="ml-1 text-accent">{sortAsc ? '↑' : '↓'}</span>
                   )}
                 </th>
               ))}
               {/* Spacer header cell — sits over the leftover-width <col>. */}
-              <th aria-hidden="true" className="sticky top-0 z-10 bg-gray-900 border-b border-gray-700 p-0" />
+              <th aria-hidden="true" className="sticky top-0 z-10 bg-surface border-b border-subtle p-0" />
             </tr>
           </thead>
           <tbody>
@@ -158,12 +158,12 @@ function ResultsRow({ row, idx, minPP, selected, onRowClick }) {
   const borderline = row.p_max_profit >= minPP && row.p_max_profit <= minPP + 0.10
 
   const rowBg = selected
-    ? 'bg-gray-700/60'
+    ? 'bg-subtle/60'
     : borderline
-      ? 'bg-red-950/30 hover:bg-red-950/50'
+      ? 'bg-loss/10 hover:bg-loss/20'
       : idx % 2 === 0
-        ? 'bg-gray-950 hover:bg-gray-900'
-        : 'bg-gray-900/50 hover:bg-gray-900'
+        ? 'bg-base hover:bg-surface'
+        : 'bg-surface/50 hover:bg-surface'
 
   const collected = (row.net_premium ?? 0) * 100
   const maxProfit = ((row.net_premium ?? 0) + spreadOf(row)) * 100
@@ -171,20 +171,20 @@ function ResultsRow({ row, idx, minPP, selected, onRowClick }) {
   return (
     <tr
       onClick={() => onRowClick?.(row)}
-      className={`border-b border-gray-800/60 transition-colors cursor-pointer ${rowBg}`}
+      className={`border-b border-subtle/60 transition-colors cursor-pointer ${rowBg}`}
     >
       {/* Rank — carries the accent left-marker when this row is the open setup */}
-      <td className={`px-3 py-2 text-left text-gray-500 num border-l-2 ${selected ? 'border-accent' : 'border-transparent'}`}>
+      <td className={`px-3 py-2 text-left text-tertiary num border-l-2 ${selected ? 'border-accent' : 'border-transparent'}`}>
         {row.rank}
       </td>
 
       {/* Ticker */}
-      <td className="px-3 py-2 text-left font-bold text-gray-100">{row.ticker}</td>
+      <td className="px-3 py-2 text-left font-bold text-primary">{row.ticker}</td>
 
       {/* Expiration (with Wk) */}
-      <td className="px-3 py-2 text-left text-gray-300 num whitespace-nowrap">
+      <td className="px-3 py-2 text-left text-secondary num whitespace-nowrap">
         {row.expiration}
-        <span className="ml-2 text-gray-500">W{row.week}</span>
+        <span className="ml-2 text-tertiary">W{row.week}</span>
       </td>
 
       {/* Net Premium — collected credit, per contract */}

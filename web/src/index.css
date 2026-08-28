@@ -92,9 +92,9 @@
 }
 
 body {
-  /* Dark pair preserves the exact pre-theming body colors (gray-950/gray-100);
-     light falls back to the token palette. */
-  @apply bg-base text-primary dark:bg-gray-950 dark:text-gray-100;
+  /* Token-driven in both themes — the .dark block redefines the vars, so no
+     dark: overrides are needed. */
+  @apply bg-base text-primary;
 }
 
 /* Tabular numeric display — fixed-width digits so number columns align.
@@ -174,32 +174,32 @@ input[type="range"].dual-thumb::-webkit-slider-thumb {
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  background: #6366f1; /* indigo-500 */
-  border: 2px solid #1f2937; /* gray-800 */
+  background: var(--accent); /* accent token */
+  border: 2px solid var(--bg-surface); /* surface token */
   cursor: pointer;
   margin-top: 0;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
   transition: background 0.15s;
 }
 input[type="range"].dual-thumb::-webkit-slider-thumb:hover {
-  background: #818cf8; /* indigo-400 */
+  background: var(--accent-hover); /* accent-hover token */
 }
 input[type="range"].dual-thumb::-moz-range-thumb {
   pointer-events: auto;
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  background: #6366f1;
-  border: 2px solid #1f2937;
+  background: var(--accent);
+  border: 2px solid var(--bg-surface);
   cursor: pointer;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
   transition: background 0.15s;
 }
 input[type="range"].dual-thumb:disabled::-webkit-slider-thumb {
-  background: #4b5563; /* gray-600 */
+  background: var(--border-strong); /* border-strong token */
   cursor: not-allowed;
 }
 input[type="range"].dual-thumb:disabled::-moz-range-thumb {
-  background: #4b5563;
+  background: var(--border-strong);
   cursor: not-allowed;
 }

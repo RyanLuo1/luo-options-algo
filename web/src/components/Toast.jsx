@@ -23,10 +23,10 @@ export default function Toast({ message, visible }) {
         opacity,
         transition: 'opacity 0.3s ease',
       }}
-      className="bg-gray-800 border border-emerald-700 rounded-lg shadow-xl px-4 py-3 flex items-center gap-2"
+      className="bg-surface border border-profit-dim rounded-lg shadow-xl px-4 py-3 flex items-center gap-2"
     >
-      <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-      <span className="text-emerald-400 text-sm font-semibold">{message}</span>
+      <span className="w-2 h-2 rounded-full bg-profit flex-shrink-0" />
+      <span className="text-profit text-sm font-semibold">{message}</span>
     </div>
   )
 }
