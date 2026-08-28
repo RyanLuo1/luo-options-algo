@@ -45,6 +45,36 @@ KNOWN_SYMBOLOGY = ["BRKB"]
 # Point-in-time analysis of the audit's surprises (2026-08-27), carried into
 # every regenerated ledger. Evidence: day_aggs root counts quoted inline.
 FINDINGS = """\
+## Remediation closeout (2026-08-28) — VERIFIED HEALED
+
+**Era boundary.** Gapped era ends at the last pre-fix claims: fleet
+2026-02-09 (claimed 2026-08-27T20:00:36Z) and t3 2026-08-21 (claimed
+18:05Z, banked 00:28Z — verified 0/12 + 0 BRKB, the final gapped
+extract). Healed era begins 2026-08-27T23:15:41Z (first rollover
+relaunch; universe-file fix alone was live for any claim after 20:27Z);
+all 8 fleet workers on the full fix by 2026-08-28T00:51:22Z, the t3 from
+its 00:34Z process onward.
+
+**Named verification (first post-fix parquets, row counts):**
+
+| File | Scope | The 12 | MU rows | JPM | XOM | BRKB | Underlyings |
+|---|---|---|---|---|---|---|---|
+| 2026-02-18.parquet | fleet, post-roll | 12/12 | 18,832 | 7,959 | 5,150 | 7,447 | 238 |
+| 2026-02-19.parquet | fleet, post-roll | 12/12 | 19,021 | 8,060 | 5,362 | 7,744 | 238 |
+| 2026-08-24.parquet | t3, fresh process | 12/12 | 43,550 | 7,007 | 4,683 | 7,565 | 240 |
+| 2026-08-21.parquet | control (pre-fix) | 0/12 | 0 | 0 | 0 | 0 | 219 |
+
+The t3's 08-24 run also logged `universe OK: 240 extract roots ⊇ 118
+scan names` before streaming a byte — the guard live in a fresh process.
+Every extract from these onward carries the full universe; the per-date
+table below shows the healed dates as complete. Final gapped-scope counts
+for the re-stream pass: re-run this audit at fleet completion (runbook
+2.6). One pre-fix in-flight date (2026-02-02) died with OOM #3 and
+re-queued post-fix — it banks healed, shrinking the gapped set by one.
+
+"""
+
+_FINDINGS_2026_08_27 = """\
 ## Findings — the surprises explained (investigated 2026-08-27)
 
 **BRK-B — missing from EVERY extract banked pre-mapping, both eras
@@ -72,6 +102,8 @@ deliverables; the replay should not trade them), so HON has no coverage on
 the documented adjusted-class limitation surfacing, not an extraction bug —
 replay coverage accounting must treat 2025-10-30 as a HON holiday.
 """
+
+FINDINGS = FINDINGS + _FINDINGS_2026_08_27
 
 
 def scan_names():
