@@ -66,6 +66,16 @@ its 00:34Z process onward.
 
 The t3's 08-24 run also logged `universe OK: 240 extract roots ⊇ 118
 scan names` before streaming a byte — the guard live in a fresh process.
+
+**Re-stream pass completed 2026-09-02** (147 scoped dates healed, launched
+automatically 2026-08-30T11:06Z). The final audit caught three residuals:
+**2026-02-06** stayed gapped via a rollover race (extract finished, kill
+landed before mark_done, post-cutoff reclaim re-marked the old file done
+via the exists-skip path) — re-streamed 2026-09-02; **HON 2026-06-29**
+(chain under `HON2`, 135 contracts — Honeywell's second corporate action)
+and **SPGI 2026-07-01** (all 139 contracts under `SPGI1`) are additional
+adjusted-class name-holidays, same class as HON 2025-10-30 — legitimate,
+not extraction gaps.
 Every extract from these onward carries the full universe; the per-date
 table below shows the healed dates as complete. Final gapped-scope counts
 for the re-stream pass: re-run this audit at fleet completion (runbook
