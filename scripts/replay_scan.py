@@ -226,25 +226,36 @@ def spot_at_slot(ticker, date_str, slot, retries=3):
     return None
 
 
-def vix_at_slot(date_str, slot):
+def vix_at_slot(date_str, slot, max_stale_days=4):
     """^VIX at the slot from yfinance 60m bars (hourly granularity; indices
-    are blocked on our Massive plan). Raises if unavailable — the spec
-    forbids silently substituting a non-point-in-time value."""
+    are blocked on our Massive plan). Point-in-time rule: use the LAST real
+    bar timestamped at/before the slot. Yahoo's hourly history has partial
+    days (2026-02-02's bars start 13:00 ET — discovered when it failed the
+    year-replay's open slot), so the query window reaches back
+    `max_stale_days` calendar days and a prior-session bar is acceptable —
+    it was known at slot time, so it IS point-in-time, merely stale; a
+    stale hit is logged. Raises only when no bar exists in the window —
+    the spec still forbids substituting a NON-point-in-time value."""
     y, mo, d = (int(x) for x in date_str.split("-"))
     h, m = SLOTS[slot]
     slot_dt = datetime(y, mo, d, h, m, tzinfo=ET)
     hist = yf.Ticker("^VIX").history(
-        start=date_str, end=(date_cls(y, mo, d) + timedelta(days=1)).isoformat(),
+        start=(date_cls(y, mo, d) - timedelta(days=max_stale_days)).isoformat(),
+        end=(date_cls(y, mo, d) + timedelta(days=1)).isoformat(),
         interval="60m")
     if hist.empty:
         raise RuntimeError(f"no point-in-time ^VIX bars for {date_str} — refusing to substitute")
-    best = None
+    best, best_ts = None, None
     for ts, row in hist.iterrows():
         t = ts.tz_convert(ET) if ts.tzinfo else ts.tz_localize(ET)
         if t <= slot_dt:
-            best = float(row["Close"])
+            best, best_ts = float(row["Close"]), t
     if best is None:
-        raise RuntimeError(f"no ^VIX bar at/before {slot} slot on {date_str}")
+        raise RuntimeError(f"no ^VIX bar at/before {slot} slot on {date_str} "
+                           f"within {max_stale_days}d lookback")
+    if best_ts.date().isoformat() != date_str:
+        print(f"    [vix-stale] {date_str} {slot}: using bar from "
+              f"{best_ts.isoformat()} (Yahoo partial-day gap)", flush=True)
     return round(best, 2)
 
 
