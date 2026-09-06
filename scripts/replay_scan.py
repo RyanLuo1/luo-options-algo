@@ -74,6 +74,7 @@ import yfinance as yf  # noqa: E402
 
 from options_screener import get_next_fridays, massive_client  # noqa: E402
 from screener import scan_ticker, passes_quote_guards, MIN_VOLUME  # noqa: E402
+from extract_quotes import opra_root  # noqa: E402 — extracts key by OPRA root (BRK-B → BRKB)
 from lib.bs import implied_vol, delta as bs_delta, RISK_FREE_RATE  # noqa: E402
 from sector_scan import (  # noqa: E402
     select_top_n, write_picked, write_nonpicked, _make_supabase,
@@ -136,7 +137,9 @@ class ExtractStore:
         bucket = self.buckets[window]
 
         def provider(ticker, exp, side, strike_low, strike_high):
-            rows = bucket.get((ticker, exp, side), [])
+            # Extract buckets key by OPRA root (dry-run 2026-09-06: BRK-B
+            # returned empty chains against 2,006 banked BRKB contracts).
+            rows = bucket.get((opra_root(ticker), exp, side), [])
             exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
             T = (exp_date - as_of).days / 365.0
             if T <= 0:
@@ -261,6 +264,7 @@ def implied_spot(store, ticker, window, as_of, n_strikes=3):
     mirroring the REST-failure skip path)."""
     import math
     bucket = store.buckets[window]
+    ticker = opra_root(ticker)   # buckets key by OPRA root (BRK-B → BRKB)
     exps = sorted({exp for (root, exp, side) in bucket if root == ticker})
     for exp in exps:                       # nearest expiration first
         T = (datetime.strptime(exp, "%Y-%m-%d").date() - as_of).days / 365.0
@@ -351,7 +355,14 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
     source = f"backtest_{slot}"
 
     store = ExtractStore(date_str)
-    spy = spot_at_slot("SPY", date_str, slot)
+    # SPY context: parity-implied from the extract first (SPY is in the
+    # extraction universe; zero network) — REST minute-aggs only as fallback
+    # (429-prone on historical dates: ~15% of dry-run slots came back None).
+    spy = implied_spot(store, "SPY", slot, as_of)
+    if spy is not None:
+        spy = round(spy, 2)
+    else:
+        spy = spot_at_slot("SPY", date_str, slot)
     vix = vix_at_slot(date_str, slot)
     pit = load_macro_proximity_pit(as_of)
     if pit is not None:
