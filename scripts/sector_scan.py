@@ -274,6 +274,31 @@ def _make_supabase():
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
+def _exec_retry(op, what, attempts=4):
+    """Run a PostgREST call with transient retry — connection resets and
+    timeouts (the 2026-09-06 year-replay hit pooler resets mid-write-burst;
+    the live cron shares this path and the same failure class). Every op
+    passed here must be safe to re-run whole (upserts, deletes, or a
+    delete+insert composite — never a bare insert, whose lost-response
+    retry would trip the unique index). Non-transient errors raise."""
+    for i in range(attempts):
+        try:
+            return op()
+        except Exception as e:  # noqa: BLE001
+            msg = f"{type(e).__name__}: {e}"
+            transient = any(s in msg for s in (
+                "Connection reset", "ReadError", "WriteError", "ConnectError",
+                "ReadTimeout", "RemoteProtocolError", "timed out",
+                "Server disconnected", "ConnectionTerminated"))
+            if transient and i < attempts - 1:
+                wait = 2 ** i
+                print(f"  [db-retry] {what}: {msg[:90]} — retry {i + 1} "
+                      f"in {wait}s", flush=True)
+                time.sleep(wait)
+                continue
+            raise
+
+
 def _delete_ml(supabase, source, scan_date, sector):
     supabase.table("ml_dataset").delete() \
         .eq("source", source).eq("scan_date", scan_date).eq("sector", sector) \
@@ -293,28 +318,41 @@ def write_picked(supabase, run_row, ml_rows, source, scan_date, sector):
     # 1. Upsert run row with the link cleared so any prior ml rows are freed
     #    (the FK has no ON DELETE, so the reference must be released before delete).
     run_row = {**run_row, "ml_dataset_id": None}
-    supabase.table("sector_scan_runs").upsert(run_row, on_conflict=RUN_CONFLICT).execute()
-    # 2. Drop ALL stale ml rows for this slot (old best + old runners-up).
-    _delete_ml(supabase, source, scan_date, sector)
-    # 3. Batch-insert the fresh N rows (cheap — pure DB, no Massive/network scan).
-    resp = supabase.table("ml_dataset").insert(ml_rows).execute()
+    _exec_retry(lambda: supabase.table("sector_scan_runs")
+                .upsert(run_row, on_conflict=RUN_CONFLICT).execute(),
+                "run upsert")
+
+    # 2+3. Replace the slot's ml rows: delete ALL stale rows (old best + old
+    # runners-up) then batch-insert the fresh N. Retried as ONE unit — a
+    # lost-response insert retried alone would trip the unique index, but
+    # delete+insert re-run whole is idempotent.
+    def _replace():
+        _delete_ml(supabase, source, scan_date, sector)
+        return supabase.table("ml_dataset").insert(ml_rows).execute()
+    resp = _exec_retry(_replace, "ml replace")
+
     # 4. Point the run row at the BEST row (the one flagged is_best_in_sector).
     best_id = next((r["id"] for r in (resp.data or []) if r.get("is_best_in_sector")), None)
     if best_id is None and resp.data:        # defensive fallback
         best_id = resp.data[0]["id"]
     if best_id:
-        supabase.table("sector_scan_runs").update({"ml_dataset_id": best_id}) \
-            .eq("source", source).eq("scan_date", scan_date).eq("sector", sector) \
-            .execute()
+        _exec_retry(lambda: supabase.table("sector_scan_runs")
+                    .update({"ml_dataset_id": best_id})
+                    .eq("source", source).eq("scan_date", scan_date)
+                    .eq("sector", sector).execute(),
+                    "run link update")
     return best_id
 
 
 def write_nonpicked(supabase, run_row, source, scan_date, sector):
     """Persist a non-picked sector (none_qualified / no_tickers / error)."""
     run_row = {**run_row, "ml_dataset_id": None}
-    supabase.table("sector_scan_runs").upsert(run_row, on_conflict=RUN_CONFLICT).execute()
+    _exec_retry(lambda: supabase.table("sector_scan_runs")
+                .upsert(run_row, on_conflict=RUN_CONFLICT).execute(),
+                "run upsert")
     # Clear any stale pick from a previous 'picked' run of this slot.
-    _delete_ml(supabase, source, scan_date, sector)
+    _exec_retry(lambda: _delete_ml(supabase, source, scan_date, sector),
+                "ml clear")
 
 
 # ── Market-day guard ──────────────────────────────────────────────────────────
