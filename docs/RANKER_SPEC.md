@@ -324,6 +324,51 @@ The process artifact is valuable independent of the P&L answer.
 
 ---
 
+## 5b. Backtest v2 replay — SPEC ONLY, not yet run (2026-09-06)
+
+Motivated by two Phase C findings (details in `docs/private/PHASE_C_FINDINGS.md`,
+"Bake-off corrected"): the flat `min_premium ≥ $5.00` threshold biases the
+universe toward expensive underlyings, and — the binding limitation — the
+corpus only contains the incumbent pipeline's top-10-per-sector survivors
+(410,712 setups qualified across the year; ~7k logged), so no alternative
+ranking can be evaluated on the candidates it would actually have picked.
+
+**Changes vs v1 (nothing here touches the live scanner):**
+
+1. **Dual-gate entry threshold.** Replace the flat $5 with:
+   `net_premium / (K_C − net_premium) ≥ 1.0%` (min return-on-collateral —
+   aligns the entry filter with the capital-normalized metric) **AND**
+   `net_premium ≥ $1.00` (absolute friction floor). Floor derivation: legs
+   pass the ≤15% spread guard with observed medians 4–7% of mid; worst-case
+   half-spread cost across three legs on a $1.00 credit ≈ $0.15–0.25
+   round-trip plus ~$4/position commissions ≈ ≤ 30% of credit at the floor,
+   shrinking rapidly above it. Below $1.00, friction routinely exceeds a
+   third of the credit — not worth trading, whatever the ratio says.
+2. **Deep qualifier logging — the headline requirement.** All-qualifiers
+   logging is impractical (410,712 rows ≈ 55× the current `ml_dataset`,
+   ~400+ MB). Log instead, per sector-slot: **top-50 by incumbent score ∪
+   top-50 by return-on-collateral ∪ 20 uniformly random qualifiers**
+   (deduped; random rows flagged `sample_random=true` for unbiased
+   calibration). Estimate: ~60–100 rows across 2,091 qualifier-bearing
+   sector-slots ≈ **130–200k rows (~150–200 MB)** — captures BOTH
+   rankings' true tops plus an unbiased slice, which is what re-ranking
+   evaluation actually needs. If that still strains the DB, halve to
+   25/25/10 (~65–100k rows) before thinning anything else.
+3. **Source tags end-to-end:** `backtest2_open` / `backtest2_close` (CHECK
+   constraints on `ml_dataset` + `sector_scan_runs`, de-dup keys inherit
+   slot-awareness automatically). v1 rows are never touched — fork
+   discipline: thresholds only change between corpora, never within one.
+4. **Evaluation identical to the corrected bake-off:** per-collateral-day
+   annualized as the primary unit, tail metrics beside every table, the
+   three views (full / ex-top-2-names / within-ticker), within-slot test,
+   and half-year split — `scripts/phase_c_bakeoff_corrected.py` extended to
+   the new sources.
+
+Prerequisites before running: the CHECK-constraint migration, a `--top-n`
+/logging-mode extension to `replay_scan.py`, and a row-volume dry-run on
+one month. Extracts, `lib/bs.py`, and the PIT context stack are reused
+unchanged.
+
 ## 6. Open questions (resolve before/during Phase B)
 
 1. ~~**Flat files:** does Massive serve bulk historical option quotes?~~
