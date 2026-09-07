@@ -154,9 +154,14 @@ def scan_one_ticker(ticker, week_exps, min_premium, min_p_profit, delays=TICKER_
                 raise ValueError("no price data from yfinance")
             price = round(float(hist["Close"].iloc[-1]), 2)
 
+            # Scan down to the dual-gate floor; callers split production
+            # (>= min_premium) from shadow admits. min_premium is a pure
+            # per-triplet filter in scan_ticker (no pruning/ordering), so
+            # scan-low-then-filter is identical to scanning at min_premium.
             triplets, evaluated = scan_ticker(
                 ticker, price, week_exps,
-                min_premium, min_p_profit=min_p_profit,
+                min(min_premium, SHADOW_GATE_MIN_PREMIUM),
+                min_p_profit=min_p_profit,
             )
             return triplets, evaluated, price
         except Exception as e:  # noqa: BLE001 — retry/skip, never fatal
@@ -259,6 +264,19 @@ def select_top_n(ranked, top_n, max_per_ticker=MAX_PER_TICKER):
 # ── ROC shadow ranking (Phase E shadow clock, started 2026-09-08) ─────────────
 
 SHADOW_ROC_N = 5
+
+# Dual-gate shadow (extension, first scan 2026-09-08): the scan evaluates
+# down to the $1.00 floor and logs sub-$5 admits passing the 1% ROC gate as
+# extra shadow rows. Production is UNTOUCHED: min_premium remains the
+# production threshold everywhere (ranked/qualified/best/site all filter to
+# it first — byte-identity unit-enforced), and admits are derivable at eval
+# time as rows with net_premium < the run row's min_net_premium. Limitation
+# (accepted): admits are logged only in sectors that are 'picked' under
+# production rules, so run rows stay byte-identical; dual-gate-only sectors
+# are covered by the v2 backtest, not the live shadow.
+SHADOW_GATE_MIN_PREMIUM = 1.00
+SHADOW_GATE_MIN_ROC = 0.01
+SHADOW_ADMIT_N = 5
 
 
 def roc_value(t):
@@ -676,6 +694,7 @@ def main():
 
         try:
             sector_triplets = []
+            sector_admits = []
             scanned = skipped = evaluated_total = 0
             price_by_ticker = {}
 
@@ -686,7 +705,15 @@ def main():
                     total_skipped += 1
                     time.sleep(sleep_s)
                     continue
-                triplets, evaluated, price = result
+                all_triplets, evaluated, price = result
+                # Split: production (>= min_premium, byte-identical to the
+                # pre-shadow scan) vs dual-gate shadow admits.
+                triplets = [t for t in all_triplets
+                            if t["net_premium"] >= min_premium]
+                sector_admits.extend(
+                    t for t in all_triplets
+                    if t["net_premium"] < min_premium
+                    and roc_value(t) >= SHADOW_GATE_MIN_ROC)
                 scanned += 1
                 evaluated_total += evaluated
                 sector_triplets.extend(triplets)
@@ -718,8 +745,12 @@ def main():
             # take more rows from `ranked`, which scan_ticker already produced.
             ranked = sorted(sector_triplets, key=lambda t: t["score"], reverse=True)
             # Production picks + the ROC shadow union (selected[0] is still
-            # the incumbent global best; shadow rows are plain runners-up).
+            # the incumbent global best; shadow rows are plain runners-up),
+            # then the dual-gate admits (sub-$5, ROC-gated; disjoint from
+            # production by premium so no dedup needed).
             selected = select_with_shadow(ranked, top_n)
+            selected += sorted(sector_admits, key=roc_value,
+                               reverse=True)[:SHADOW_ADMIT_N]
             best = selected[0]
 
             # One ml_dataset row per selected setup; only index 0 is the best.

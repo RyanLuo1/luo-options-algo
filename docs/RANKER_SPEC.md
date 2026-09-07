@@ -386,6 +386,21 @@ per-collateral-day annualized + tail (loss count, mean loss, p5), both
 rankings' picks vs live labeled outcomes, with the ex-top-names and
 within-ticker views from the corrected bake-off harness.
 
+**Extension — dual-gate shadow (first scan 2026-09-08, same clock):** the
+live scan additionally evaluates down to the $1.00 floor and logs sub-$5
+admits passing the 1% ROC gate (top-5 by ROC per picked sector) as extra
+shadow rows. Production remains byte-identical (unit-enforced,
+`tests/test_shadow_gate.py` — min_premium is a pure per-triplet filter);
+admits are derivable at eval time as rows with `net_premium <` the run
+row's `min_net_premium`. Known limitation: admits log only in
+production-picked sectors (run rows stay byte-identical); dual-gate-only
+sectors are covered by the v2 backtest.
+
+**Blend candidate: REJECTED (2026-09-07, prespecified single run)** — the
+two-stage blend (B-ticker → A-setup) scored 13.8%/yr vs B's 20.3 on the v2
+corpus and does not join the shadow; no further blend variants on that
+dataset (details in the findings doc).
+
 ## 6. Open questions (resolve before/during Phase B)
 
 1. ~~**Flat files:** does Massive serve bulk historical option quotes?~~
