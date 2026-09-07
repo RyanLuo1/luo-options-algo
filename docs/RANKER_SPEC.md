@@ -369,6 +369,23 @@ Prerequisites before running: the CHECK-constraint migration, a `--top-n`
 one month. Extracts, `lib/bs.py`, and the PIT context stack are reused
 unchanged.
 
+## 5c. Phase E shadow clock — STARTED (first shadow scan 2026-09-08)
+
+The live scanner logs a **ROC shadow ranking** alongside production
+(deployed 2026-09-06; first scan Tue 2026-09-08 — Mon 09-07 is Labor Day).
+Mechanism: `select_with_shadow()` in `sector_scan.py` appends the sector's
+top-5 by return-on-collateral to the logged rows (deduped), so ROC's true
+best-in-sector is always in `ml_dataset`; production picks, the site, and
+the tradebook are byte-identical to before (unit-enforced,
+`tests/test_shadow_roc.py`). No schema change: the ROC value is derivable
+from stored columns and the ROC-best flag is derived at evaluation time as
+the max-ROC row of a slot's logged set.
+
+**Grading (minimum 4–8 weeks before any capital decision):**
+per-collateral-day annualized + tail (loss count, mean loss, p5), both
+rankings' picks vs live labeled outcomes, with the ex-top-names and
+within-ticker views from the corrected bake-off harness.
+
 ## 6. Open questions (resolve before/during Phase B)
 
 1. ~~**Flat files:** does Massive serve bulk historical option quotes?~~

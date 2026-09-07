@@ -256,6 +256,43 @@ def select_top_n(ranked, top_n, max_per_ticker=MAX_PER_TICKER):
     return selected
 
 
+# ── ROC shadow ranking (Phase E shadow clock, started 2026-09-08) ─────────────
+
+SHADOW_ROC_N = 5
+
+
+def roc_value(t):
+    """Return-on-collateral: net_premium / (K_C − net_premium). Derivable
+    from stored columns, so no schema change is needed to evaluate it."""
+    coll = float(t["leg_c_strike"]) - float(t["net_premium"])
+    return float(t["net_premium"]) / coll if coll > 0 else 0.0
+
+
+def select_with_shadow(ranked, top_n, max_per_ticker=MAX_PER_TICKER,
+                       shadow_n=SHADOW_ROC_N):
+    """Production picks (select_top_n — UNCHANGED: list[0] is the incumbent
+    best, is_best_in_sector semantics identical) plus the ROC SHADOW UNION:
+    the sector's top `shadow_n` setups by return-on-collateral are appended
+    (deduped by setup identity) so ROC's TRUE best-in-sector is always
+    among the logged rows. Shadow rows are ordinary runners-up
+    (is_best_in_sector=False, never linked from sector_scan_runs, never
+    shown by the site); the ROC-best flag is DERIVED at evaluation time as
+    the max-ROC row of a slot's logged set — max-ROC-of-logged equals
+    max-ROC-of-qualified precisely because this union is logged. Pure
+    selection: zero additional network calls."""
+    picks = list(select_top_n(ranked, top_n, max_per_ticker))
+
+    def key(t):
+        return (t["ticker"], t["expiration"], t["leg_a_strike"],
+                t["leg_b_strike"], t["leg_c_strike"])
+    have = {key(t) for t in picks}
+    for t in sorted(ranked, key=roc_value, reverse=True)[:shadow_n]:
+        if key(t) not in have:
+            picks.append(t)
+            have.add(key(t))
+    return picks
+
+
 # ── Supabase writes (service role) ─────────────────────────────────────────────
 # Idempotent on re-run. Notes on the foreign key:
 #   sector_scan_runs.ml_dataset_id → ml_dataset(id) has NO ON DELETE clause, so
@@ -680,7 +717,9 @@ def main():
             # PURE selection: zero additional Massive/network calls — we just
             # take more rows from `ranked`, which scan_ticker already produced.
             ranked = sorted(sector_triplets, key=lambda t: t["score"], reverse=True)
-            selected = select_top_n(ranked, top_n)   # selected[0] is the global best
+            # Production picks + the ROC shadow union (selected[0] is still
+            # the incumbent global best; shadow rows are plain runners-up).
+            selected = select_with_shadow(ranked, top_n)
             best = selected[0]
 
             # One ml_dataset row per selected setup; only index 0 is the best.
