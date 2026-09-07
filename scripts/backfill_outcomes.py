@@ -123,7 +123,16 @@ def _fetch_close_yfinance(ticker, expiration_date):
         )
         if hist.empty:
             return None
-        return round(float(hist["Close"].iloc[-1]), 4)
+        close = float(hist["Close"].iloc[-1])
+        # ⚠ Modern yfinance back-adjusts for SPLITS even with
+        # auto_adjust=False (that flag only governs dividends now) — Yahoo's
+        # history is in TODAY'S share basis. Convert back to the actual
+        # close of the expiration day by re-applying splits dated after it
+        # (discovered 2026-09-06: NFLX 2025-09-19 came back 122.74 vs the
+        # actual ~1,227 — its 10:1 split was 2025-11-17). The Massive REST
+        # fallback serves actual prices and needs no conversion.
+        close *= split_factor(ticker, expiration_date, date.today())
+        return round(close, 4)
     except Exception as e:
         print(f"  ⟳ {ticker} {expiration_date}: yfinance close failed ({e}) "
               f"— falling back to Massive REST", file=sys.stderr)
@@ -153,6 +162,38 @@ def fetch_close_price(ticker, expiration_date, *, delays=(2, 5), use_cache=True)
         price = _fetch_with_retry(ticker, expiration_date, delays=delays)
     _price_cache[key] = price
     return price
+
+
+# ── Corporate-action (split) adjustment ──────────────────────────────────────
+
+_splits_cache = {}
+
+
+def split_factor(ticker, basis_date, expiration_date):
+    """Cumulative split factor over (basis_date, expiration_date], from
+    yfinance's split series (memoized per ticker). Multiplying the raw
+    expiration close by this factor expresses it in the share basis the
+    row's strikes were written in — OCC adjusts real contracts through a
+    split, so settling pre-split strikes against a post-split close
+    fabricates catastrophic losses (discovered 2026-09-06: the year-replay
+    backfill produced −$33.5M of phantom losses across 493 NFLX/CRWD/KLAC/
+    NOW rows that straddled 2025–26 splits). Forward split (10:1 → yf value
+    10.0): S_pre_basis = S_post × 10. Reverse splits (value < 1) come out
+    correspondingly. 1.0 when no splits — the overwhelmingly common case."""
+    if ticker not in _splits_cache:
+        try:
+            s = yf.Ticker(ticker).splits
+            _splits_cache[ticker] = ([(ts.date(), float(v)) for ts, v in s.items()]
+                                     if s is not None and len(s) else [])
+        except Exception as e:  # noqa: BLE001 — degrade to no adjustment, loudly
+            print(f"  [splits] {ticker}: split-series fetch failed ({e}) — "
+                  f"assuming none", file=sys.stderr)
+            _splits_cache[ticker] = []
+    factor = 1.0
+    for d, v in _splits_cache[ticker]:
+        if basis_date < d <= expiration_date and v > 0:
+            factor *= v
+    return factor
 
 
 # ── P&L math ─────────────────────────────────────────────────────────────────
@@ -282,6 +323,16 @@ def main():
             print(f"  ! Skipping {ticker} {exp_date}: no stock price found "
                   f"(rate-limited or unavailable after all retries)")
             continue
+
+        # Strikes were written when the trade was saved — settle in that
+        # share basis (split_factor is 1.0 unless a split intervened).
+        basis = datetime.fromisoformat(str(trade["saved_at"]).replace("Z", "+00:00")).date() \
+            if trade.get("saved_at") else exp_date
+        factor = split_factor(ticker, basis, exp_date)
+        if factor != 1.0:
+            print(f"  [splits] {ticker} {exp_date}: ×{factor:g} split "
+                  f"adjustment (basis {basis})")
+            stock_close = round(stock_close * factor, 4)
 
         outcome = compute_outcome(trade, stock_close)
 

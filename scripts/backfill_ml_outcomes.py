@@ -55,7 +55,9 @@ sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'scripts'))
 # memo that fetch_close_price populates — we read it directly in the process
 # pass, exactly like backfill_outcomes.main() does.
 import backfill_outcomes as _bo  # noqa: E402
-from backfill_outcomes import compute_outcome, fetch_close_price, supabase  # noqa: E402
+from backfill_outcomes import (  # noqa: E402
+    compute_outcome, fetch_close_price, split_factor, supabase,
+)
 
 _PAGE = 1000  # PostgREST caps responses at 1000 rows; page past it
 
@@ -90,7 +92,16 @@ def build_update(row, stock_close):
     per-contract max and capture ratio are ml_dataset-specific:
       max  = (net_premium + (K_B - K_A)) * 100   — strike-derived spread
       capture = pnl_per_contract / max            — NULL when pnl ≤ 0 or max ≤ 0
+
+    The close is settled in the row's scan-date share basis (split_factor —
+    a split between scan and expiration otherwise fabricates losses).
     """
+    factor = split_factor(row['ticker'], date.fromisoformat(row['scan_date']),
+                          date.fromisoformat(row['expiration']))
+    if factor != 1.0:
+        print(f"  [splits] {row['ticker']} {row['scan_date']}→"
+              f"{row['expiration']}: ×{factor:g} split adjustment")
+        stock_close = round(stock_close * factor, 4)
     outcome = compute_outcome(row, stock_close)
 
     spread_from_strikes = float(row['leg_b_strike']) - float(row['leg_a_strike'])
