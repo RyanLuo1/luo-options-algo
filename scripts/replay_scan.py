@@ -77,9 +77,42 @@ from screener import scan_ticker, passes_quote_guards, MIN_VOLUME  # noqa: E402
 from extract_quotes import opra_root  # noqa: E402 — extracts key by OPRA root (BRK-B → BRKB)
 from lib.bs import implied_vol, delta as bs_delta, RISK_FREE_RATE  # noqa: E402
 from sector_scan import (  # noqa: E402
-    select_top_n, write_picked, write_nonpicked, _make_supabase,
+    select_top_n, roc_value, write_picked, write_nonpicked, _make_supabase,
     load_macro_proximity, _next_event_days, DEFAULT_TOP_N,
 )
+
+# ── v2 replay selection (RANKER_SPEC §5b) ─────────────────────────────────────
+
+V2_TOP_EACH = 50      # deep slice per ranking
+V2_RANDOM_N = 20      # unbiased calibration sample per sector-slot
+V2_MIN_PREMIUM = 1.00 # absolute friction floor (dual gate's second half)
+V2_MIN_ROC = 0.01     # min return-on-collateral (dual gate's first half)
+
+
+def v2_select(ranked, date_str, slot):
+    """Deep-slice logging: top-50 by incumbent score ∪ top-50 by ROC ∪ 20
+    uniformly random qualifiers (deduped; deterministic per (date, slot)).
+    ranked[0] stays list[0] (is_best_in_sector). Membership in either
+    top-50 — and the random flag — are DERIVED at evaluation time by
+    re-ranking the slot's logged rows: each ranking's qualified top-50 is
+    fully logged, so recomputed membership is exact."""
+    import random as _random
+
+    def key(t):
+        return (t["ticker"], t["expiration"], t["leg_a_strike"],
+                t["leg_b_strike"], t["leg_c_strike"])
+    picks, have = [], set()
+    for t in list(ranked[:V2_TOP_EACH]) + sorted(
+            ranked, key=roc_value, reverse=True)[:V2_TOP_EACH]:
+        if key(t) not in have:
+            picks.append(t)
+            have.add(key(t))
+    rest = [t for t in ranked if key(t) not in have]
+    rng = _random.Random(f"{date_str}-{slot}")
+    for t in (rng.sample(rest, min(V2_RANDOM_N, len(rest))) if rest else []):
+        picks.append(t)
+        have.add(key(t))
+    return picks
 
 ET = ZoneInfo("America/New_York")
 EXTRACT_DIR = os.path.join(_HERE, "..", "data", "extracts")
@@ -354,7 +387,7 @@ def days_to_earnings_pit(ticker, ref):
 # ── Replay one (date, slot) ───────────────────────────────────────────────────
 
 def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
-                min_premium=DEFAULT_MIN_PREMIUM, min_pp=DEFAULT_MIN_PP, write=False,
+                min_premium=DEFAULT_MIN_PREMIUM, min_pp=DEFAULT_MIN_PP, write=False, v2=False,
                 sleep_s=0.15, spot_source="rest"):
     as_of = datetime.strptime(date_str, "%Y-%m-%d").date()
     h, m = SLOTS[slot]
@@ -363,7 +396,7 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
     # (source, scan_date, sector)-shaped, so the slot must live inside source
     # or a both-slots replay's close pass would replace the open pass's rows.
     # Requires docs/backtest_slot_split_migration.sql applied.
-    source = f"backtest_{slot}"
+    source = f"backtest2_{slot}" if v2 else f"backtest_{slot}"
 
     store = ExtractStore(date_str)
     # SPY context: parity-implied from the extract first (SPY is in the
@@ -418,7 +451,13 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
             price_by_ticker[ticker] = spot
 
         ranked = sorted(sector_triplets, key=lambda t: t["score"], reverse=True)
-        picks = select_top_n(ranked, top_n)
+        if v2:
+            # v2 dual gate (RANKER_SPEC §5b): scan_ticker already applied the
+            # $1.00 absolute floor via min_premium; apply min 1% ROC here.
+            ranked = [t for t in ranked if roc_value(t) >= V2_MIN_ROC]
+            picks = v2_select(ranked, date_str, slot)
+        else:
+            picks = select_top_n(ranked, top_n)
         elapsed_ms = int((_time.time() - t0) * 1000)
 
         run_row = {
@@ -494,6 +533,12 @@ def main():
                     help="write to ml_dataset/sector_scan_runs (source='backtest_<slot>'); default is dry-run")
     ap.add_argument("--sleep", type=float, default=0.15,
                     help="pause between per-ticker spot lookups (default 0.15s)")
+    ap.add_argument("--v2", action="store_true",
+                    help="v2 replay (RANKER_SPEC §5b): dual-gate threshold "
+                         "(min $1.00 credit AND min 1% return-on-collateral), "
+                         "deep-slice logging (top-50 by score ∪ top-50 by ROC "
+                         "∪ 20 random per sector-slot), sources backtest2_* "
+                         "(run docs/backtest2_migration.sql before --write)")
     ap.add_argument("--spot-source", choices=["rest", "implied"], default="rest",
                     help="underlying spot source: 'rest' = Massive minute aggs "
                          "(near-present; 429-prone at volume), 'implied' = "
@@ -518,9 +563,17 @@ def main():
 
     supabase = _make_supabase() if args.write else None
     slots = ["open", "close"] if args.slot == "both" else [args.slot]
+    min_prem = V2_MIN_PREMIUM if args.v2 else DEFAULT_MIN_PREMIUM
+    if args.v2:
+        print(f"[v2] dual gate: net_premium >= ${V2_MIN_PREMIUM:.2f} AND "
+              f"ROC >= {V2_MIN_ROC:.0%}; deep-slice logging "
+              f"{V2_TOP_EACH}+{V2_TOP_EACH}+{V2_RANDOM_N}; "
+              f"sources backtest2_* (migration required before --write)",
+              flush=True)
     for ds in args.date:
         for slot in slots:
             replay_slot(ds, slot, supabase, top_n=args.top_n, write=args.write,
+                        v2=args.v2, min_premium=min_prem,
                         sleep_s=args.sleep, spot_source=args.spot_source)
 
 
