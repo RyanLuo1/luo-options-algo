@@ -15,13 +15,13 @@ import RankedTable      from './components/lc/RankedTable'
 import SetupPanel       from './components/lc/SetupPanel'
 import WatchlistManager from './components/WatchlistManager'
 import { Card, Button, Pill, XIcon } from './components/lc/ui'
+import { ProgressStrip, ErrorStrip, MarketClosedBanner, NoResults } from './components/lc/States'
 import { expiryInfo, rowKey, creditShareOfMax } from './components/lc/format'
 
 // ── Screener (/app) — rebuilt on the v1 design system (DESIGN.md). ──────────
-// Stage 2: ranked table (e) with sort override + keyboard nav + the metric
-// bar, and the detail panel (f) with Save / Open in editor / toast. Stage 3
-// (g) adds the remaining states. The scan API, scoring, watchlists, and
-// session persistence are unchanged.
+// Shell (b), controls (c), chips (d), ranked table (e), detail panel (f) and
+// the non-happy states (g). The scan API, scoring, watchlists, and session
+// persistence are unchanged.
 export default function App() {
   const navigate = useNavigate()
   const { user, plan } = useAuth()
@@ -151,15 +151,25 @@ export default function App() {
   )
 
   // ── Run scan ───────────────────────────────────────────────────────────────
-  const handleRun = useCallback(() => {
+  const [lastRunTickers, setLastRunTickers] = useState([])
+  const [dismissedError, setDismissedError] = useState(null)
+  const runWith = useCallback((overrides = {}) => {
     if (loading) return
     const { tickers, error: resolveErr } = resolveScanTickers(tickerInput, watchlists)
     if (resolveErr) { setScanInputError(resolveErr); return }
     if (tickers.length === 0) { setScanInputError('Enter one or more tickers, or a @watchlist, then run the scan.'); tickersRef.current?.focus(); return }
     setScanInputError(null)
+    setDismissedError(null)
     setActiveTab('screener')
-    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit })
+    setLastRunTickers(tickers)
+    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit, ...overrides })
   }, [loading, tickerInput, watchlists, weeksMin, weeksMax, minPremium, minPProfit, runScan])
+  const handleRun = useCallback(() => runWith(), [runWith])
+
+  // No-results actions: apply the lower threshold to the controls AND rerun with it.
+  function lowerCreditAndRerun() { setMinPremium(3.00); setMinCreditStr('300'); runWith({ minPremium: 3.00 }) }
+  function lowerPAndRerun()      { setMinPProfit(0.40); setMinPProfitStr('40'); runWith({ minPProfit: 0.40 }) }
+  const showError = !!error && error !== dismissedError
 
   // Keyboard: ⌘/Ctrl+Enter runs from anywhere; `/` focuses the tickers input.
   useEffect(() => {
@@ -289,9 +299,13 @@ export default function App() {
             <ScanChips tickers={activeTickers} counts={counts} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
           )}
 
-          {!hasResult && !loading && !error ? (
-            <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
-          ) : hasResult && tableRows.length > 0 ? (
+          {loading && <ProgressStrip tickerCount={lastRunTickers.length} />}
+          {showError && <ErrorStrip message={error} hadResults={hasResult} onRetry={handleRun} onDismiss={() => setDismissedError(error)} />}
+          {hasResult && marketOpen === false && <MarketClosedBanner />}
+
+          {!hasResult ? (
+            !loading && <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
+          ) : tableRows.length > 0 ? (
             <div className="grid grid-cols-[minmax(0,60fr)_minmax(0,40fr)] gap-4 items-start">
               <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">
                 <RankedTable
@@ -307,9 +321,11 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <Card>
-              <p className="text-lc-ink-2">{loading ? 'Scanning…' : error ? error : 'No setups matched. Cause-specific states arrive in the next build step.'}</p>
-            </Card>
+            <NoResults
+              tickersUsed={tickersUsed} tickersSkipped={tickersSkipped} marketOpen={marketOpen}
+              minCredit={Math.round((minPremiumUsed ?? minPremium) * 100)} minPP={minPProfitUsed ?? minPProfit}
+              onLowerCredit={lowerCreditAndRerun} onLowerP={lowerPAndRerun} onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
+            />
           )}
         </div>
       )}

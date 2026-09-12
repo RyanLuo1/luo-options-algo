@@ -101,7 +101,7 @@ export default function RankedTable({
         tabIndex={0}
         onKeyDown={onKeyDown}
         aria-label="Ranked setups table. Use the arrow keys to move the selection and Enter to open the editor."
-        className="overflow-auto flex-1 min-h-0 px-3 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset"
+        className="overflow-auto flex-1 min-h-0 px-3 max-xl:px-1.5 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset"
       >
         <table className="w-full border-collapse text-[0.95rem] [font-variant-numeric:tabular-nums]">
           <thead>
@@ -141,28 +141,28 @@ export default function RankedTable({
                   aria-selected={selected}
                   className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}
                 >
-                  <td className="px-2 py-2.5">
+                  <td className="px-2 max-xl:px-1.5 py-2.5">
                     <span className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>
                   </td>
-                  <td className="px-2 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink">{r.ticker}</td>
-                  <td className="px-2 py-2.5 whitespace-nowrap">
+                  <td className="px-2 max-xl:px-1.5 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink">{r.ticker}</td>
+                  <td className="px-2 max-xl:px-1.5 py-2.5 whitespace-nowrap">
                     <span className="text-lc-ink">{exp.short}</span><span className="text-lc-ink-2 max-xl:hidden"> · W{r.week}</span><span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
                   </td>
-                  <td className="px-2 py-2.5 whitespace-nowrap text-lc-ink-2 max-xl:text-[0.9rem] [font-variant-numeric:tabular-nums]">
+                  <td className="px-2 max-xl:px-1.5 py-2.5 whitespace-nowrap text-lc-ink-2 max-xl:text-[0.9rem] [font-variant-numeric:tabular-nums]">
                     {r.leg_c_strike} / <span className="text-lc-ink font-semibold">{r.leg_a_strike}</span> / {r.leg_b_strike}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-bold text-lc-ink whitespace-nowrap">{fmtMoney0(f.credit)}</td>
-                  <td className="px-2 py-2.5 text-right whitespace-nowrap">
+                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right font-bold text-lc-ink whitespace-nowrap">{fmtMoney0(f.credit)}</td>
+                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
                       <span className="text-lc-ink">{fmtMoney0(f.maxProfit)}</span>
-                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem]" />
+                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem] max-xl:w-[3.5rem]" />
                     </div>
                   </td>
-                  <td className="px-2 py-2.5 text-right whitespace-nowrap">
+                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <span className="text-lc-ink">{fmtPct0(r.p_max_profit)}</span>
                     {borderline && <Pill tone="quiet" size="sm" className="ml-1.5 max-xl:hidden" title={`Within 10 points of your ${Math.round(minPP * 100)}% minimum`}>borderline</Pill>}
                   </td>
-                  <td className="px-2 py-2.5 text-right text-lc-ink whitespace-nowrap max-xl:hidden">{fmtMoney0(f.collateral)}</td>
+                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right text-lc-ink whitespace-nowrap max-xl:hidden">{fmtMoney0(f.collateral)}</td>
                 </tr>
               )
             })}

@@ -255,3 +255,7 @@ body:has(> #root > .lc), body:has(.lc) { background: #F1EEF3; }
   --surface-rgb: 255 255 255; --subtle-rgb: 227 222 233; --tertiary-rgb: 126 117 144;
   --accent-rgb: 101 71 230; --loss-rgb: 200 50 90; --link-rgb: 101 71 230;
 }
+
+/* Indeterminate progress (scan in flight): one bar sliding across its track. */
+@keyframes lc-indeterminate { from { left: -35%; } to { left: 100%; } }
+.lc .lc-indeterminate { animation: lc-indeterminate 1.4s cubic-bezier(.4, 0, .6, 1) infinite; }
