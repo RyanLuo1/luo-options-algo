@@ -313,7 +313,7 @@ export default function App() {
           {!hasResult ? (
             !loading && <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
           ) : tableRows.length === 0 && ranked.length > 0 ? (
-            <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the removed tickers' : tickerFilter)} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
+            <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the tickers you removed' : activeTickers.join(', '))} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
           ) : tableRows.length > 0 ? (
             <div className="grid grid-cols-[minmax(0,60fr)_minmax(0,40fr)] gap-4 items-start">
               <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">

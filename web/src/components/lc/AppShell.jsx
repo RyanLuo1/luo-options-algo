@@ -30,7 +30,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
           </button>
 
           {/* Tab strip */}
-          <div role="tablist" aria-label="App sections" onKeyDown={e => { const i = TABS.findIndex(t => t.id === activeTab); if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); const n = (i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length; pick(TABS[n]) } }} className="justify-self-center flex gap-1 p-1.5 bg-lc-ground-deep/60 rounded-lc-plus">
+          <div role="tablist" aria-label="App sections" onKeyDown={e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; e.preventDefault(); const tabs = [...e.currentTarget.querySelectorAll('[role="tab"]')]; const i = tabs.indexOf(document.activeElement); const n = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length; tabs[n]?.focus() }} className="justify-self-center flex gap-1 p-1.5 bg-lc-ground-deep/60 rounded-lc-plus">
             {TABS.map(tab => {
               const active = activeTab === tab.id
               return (
@@ -40,6 +40,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
                   type="button"
                   aria-selected={active}
                   tabIndex={active ? 0 : -1}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(tab) } }}
                   onClick={() => pick(tab)}
                   className={`flex items-center gap-2 h-10 px-3.5 max-lc:px-2.5 max-lc:gap-1.5 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors
                     ${active ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}
