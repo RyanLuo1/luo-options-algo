@@ -14,6 +14,10 @@ colors:
   lime: "#D4F53C"
   lime-hover: "#C8EE22"
   mini-bar-deep: "#D9D2E3"
+  profit: "#1F7A4D"
+  profit-tint: "#DDF3E6"
+  loss: "#C8325A"
+  loss-tint: "#FBE3E9"
 typography:
   display:
     fontFamily: "Bricolage Grotesque, Helvetica Neue, Arial, sans-serif"
@@ -239,6 +243,57 @@ components:
   table-row-hover:
     backgroundColor: "{colors.ground}"
     rounded: "{rounded.base}"
+  table-row-selected:
+    backgroundColor: "{colors.violet-soft}"
+    textColor: "{colors.ink}"
+  rank-marker-selected:
+    backgroundColor: "{colors.violet}"
+    textColor: "{colors.card}"
+    rounded: "{rounded.base}"
+    size: "26px"
+  button-confirm:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.card}"
+    rounded: "{rounded.base}"
+    padding: "14px 24px"
+    typography: "{typography.body}"
+  button-confirm-hover:
+    backgroundColor: "{colors.ink-2}"
+    textColor: "{colors.card}"
+  button-disabled:
+    backgroundColor: "{colors.ground-deep}"
+    textColor: "{colors.ink-3}"
+    rounded: "{rounded.base}"
+  input:
+    backgroundColor: "{colors.card}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.half}"
+    padding: "0 14px"
+    height: "44px"
+    border: "1.5px solid {colors.line}"
+    typography: "{typography.table}"
+  input-error:
+    border: "1.5px solid {colors.loss}"
+    textColor: "{colors.ink}"
+  input-disabled:
+    backgroundColor: "{colors.ground-deep}"
+    textColor: "{colors.ink-3}"
+  field-label:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+  field-error-text:
+    textColor: "{colors.loss}"
+    typography: "{typography.label}"
+  pill-profit:
+    backgroundColor: "{colors.profit-tint}"
+    textColor: "{colors.profit}"
+    rounded: "{rounded.base}"
+    padding: "5px 12px"
+  pill-loss:
+    backgroundColor: "{colors.loss-tint}"
+    textColor: "{colors.loss}"
+    rounded: "{rounded.base}"
+    padding: "5px 12px"
 ---
 
 # Design System: Luo Capital
@@ -291,7 +346,7 @@ A restrained two-accent palette on tinted neutrals: violet does structure, chart
 
 **The Tinted Gray Rule.** No neutral gray anywhere. Every gray in the system is warmed toward the ground's lilac hue (`ink-2`, `ink-3`, `line`, `ground-deep`).
 
-**Open token — profit and loss.** The system defines no profit or loss pair. The landing page never shows a graded outcome in color; the Tradebook's graded outcomes (win, loss, breakeven, borderline) will need a tinted pair that is distinct from both violet (structure) and lime (action), carries a text or sign cue as well as color, and never appears on chrome. Do not reuse lime for profit or invent the pair ad hoc; define it as a system decision.
+**The Profit / Loss Rule** (decided 2026-09-12 in the Screener shape). Profit is `profit` ink `#1F7A4D` on `profit-tint` `#DDF3E6`; loss is `loss` ink `#C8325A` on `loss-tint` `#FBE3E9`. Both clear 4.5:1 on white and read apart from violet (structure) and lime (action). They color only realized or projected P&L: Tradebook outcomes, Performance, the loss zone of a payoff curve, and the error state of a field (loss ink only). Never chrome, never a border on a card, never color alone: every P&L value carries a sign or a word, every zone a label. Borderline probability is a quiet pill, not a tint.
 
 ## Typography
 
@@ -451,6 +506,15 @@ A card laid out as a column with 16px gaps: a 36px violet circle badge (white di
 - **Picks** → the setup dashboard (leg tiles, curve box, stat grid with gauge) as the per-pick page, and the lock glyph in `ink-3` for gated rows.
 - **Performance** → the two-curve chart from the Performance mini scaled up: violet solid for the book, `mini-bar-deep` dotted for SPY, round caps, ending level, inside a curve box; stat cards for the headline figures.
 - **Everywhere** → 24px outer radius with 18 / 12 derived inner radii; ground tiles inside white cards; money in ink, display 800, tabular, with a caption beneath.
+
+### Inputs, states, and selection (decided 2026-09-12 in the Screener shape)
+
+- **Input / field:** white field, 1.5px `line` border, 12px radius (`rounded.half`), 44px tall, 14px side padding, table type. Label above in `ink-2` at label size and weight; a helper or error line beneath at the same size. Focus is the system ring (3px violet, 3px offset). Steppers keep their − and + buttons inside the field; every numeric field is tabular.
+- **Error:** the field border and the line beneath turn `loss` ink; the message names the problem and the recovery. The focus ring stays violet.
+- **Disabled:** `ground-deep` fill, `ink-3` text, no shadow, default cursor. A disabled primary button keeps its size and drops lime for `ground-deep`.
+- **Loading:** a control keeps its size and changes its label ("Scanning…"); results dim to 60% opacity rather than unmount, so sort and selection survive.
+- **Selected row:** `violet-soft` row fill, the rank marker turns `violet` with a white numeral, the ticker stays ink at 700. No left border. Hover is the `ground` fill.
+- **Confirm button:** a fourth button role for in-panel commits (Save to Tradebook): `ink` fill, white text, `ink-2` on hover, same radius and padding as primary. It exists so lime remains the page's single action.
 
 ## Do's and Don'ts
 

@@ -49,10 +49,45 @@ export default {
         },
         // link / info
         link: 'rgb(var(--link-rgb) / <alpha-value>)',
+
+        // ── v1 design system (DESIGN.md), namespaced `lc-*`. Scoped by the
+        // `.lc` class on the rebuilt Screener shell; untouched pages keep the
+        // slate tokens above. Light-only by design (no .dark variants).
+        'lc-ground':      '#F1EEF3',
+        'lc-ground-deep': '#E6E1EB',
+        'lc-card':        '#FFFFFF',
+        'lc-ink':         '#15121A',
+        'lc-ink-2':       '#5A5266',
+        'lc-ink-3':       '#7E7590',
+        'lc-line':        '#E3DEE9',
+        'lc-violet':      '#6547E6',
+        'lc-violet-soft': '#EEE9FF',
+        'lc-lime':        '#D4F53C',
+        'lc-lime-hover':  '#C8EE22',
+        'lc-bar-deep':    '#D9D2E3',
+        // profit / loss pair — P&L only, never chrome, never color alone (shape §7)
+        'lc-profit':      '#1F7A4D',
+        'lc-profit-tint': '#DDF3E6',
+        'lc-loss':        '#C8325A',
+        'lc-loss-tint':   '#FBE3E9',
       },
       fontFamily: {
         // `font-mono` now resolves to the JetBrains Mono stack in --font-mono.
         mono: ['var(--font-mono)'],
+        // v1 design system (DESIGN.md): display + body faces, self-hosted in public/fonts.
+        display: ['"Bricolage Grotesque"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+        figtree: ['Figtree', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+      },
+      // v1 design system radii, shadows (DESIGN.md → Shapes / Elevation)
+      borderRadius: {
+        lc: '24px',
+        'lc-half': '12px',
+        'lc-plus': '18px',
+      },
+      boxShadow: {
+        lc: '0 16px 40px rgba(40, 30, 70, .10)',
+        'lc-hover': '0 22px 56px rgba(40, 30, 70, .14)',
+        'lc-lift': '0 28px 64px rgba(40, 30, 70, .16)',
       },
     },
   },
