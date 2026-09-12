@@ -12,7 +12,13 @@ Primary users are **external options traders** (confirmed 2026-09-12). The opera
 
 Situation: **at a desk, on a laptop, during US market hours**. The job is to run a scan, compare the ranked setups, inspect one, then either save it to the tradebook or open the trade editor to adjust strikes, and finally enter the trade at their broker. Density, scan speed, and keyboard-driven re-scans matter more than mobile layout; phone use is secondary and not a design target today.
 
-Access model: public sign-up is currently **disabled** on the Supabase side (accounts are created by the operator). How external traders get accounts (invite, paid, open signup) is an **undecided product fact**; do not design a self-serve funnel as if it were live.
+Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromoted.** Anyone who reaches luo-capital.com can create an account and use the free tier; nothing drives traffic there yet (robots disallow + noindex on the landing page until public launch). New accounts default to **plan = free** (entitlement lives in the auth user's `app_metadata.plan`; absence means free; only the service role can change it). Paid is a plan value the app will gate on, not a product that exists yet.
+
+**Public-launch gate** (checklist; nothing on it is started, and it exists so the list cannot drift):
+- [ ] Massive business-tier conversation (data licensing for a public product)
+- [ ] Legal review of the disclosures (risk statement, "not advice", options-specific language)
+- [ ] Remove `robots.txt` Disallow and the landing page's `noindex, nofollow` meta (together)
+- [ ] Pricing decided for the paid plan
 
 ## Product Purpose
 
@@ -31,7 +37,7 @@ Longer-term purpose: every scan and every saved trade is logged so realized outc
 ## Operating Context
 
 - **Live site:** https://luo-capital.com (Flask + Gunicorn behind Nginx on AWS EC2; React SPA served from the same origin).
-- **Routes:** `/login` (auth), `/` (screener), `/trade` (three-leg trade editor with live chain tables), `/tradebook` (saved trades).
+- **Routes:** `/` (public landing page, unlisted), `/login` (sign in / create account), `/app` (screener), `/trade` (three-leg trade editor with live chain tables), `/tradebook` (saved trades).
 - **Screener flow:** tickers or an `@watchlist` typed in the header, filter controls (weeks range 1 to 12, minimum net premium, minimum P(max profit)) in a left drawer, results in a ranked table with a setup-detail band above it and a TradingView chart beside it. Removing a ticker chip or double-clicking one filters client-side without a rescan.
 - **Data sources:** Massive (Options Advanced plan) for options chains, quotes, Greeks, and historical stock bars; yfinance for today's stock price, indices (VIX, SPY), and earnings dates; Supabase for auth and persistence.
 - **Market rhythm:** a scan takes seconds to tens of seconds depending on ticker count; quotes are real-time during the session and placeholder-filtered when the market is closed. The header shows a market open/closed badge and last-run time.
@@ -52,10 +58,9 @@ Constraints future work must respect:
 - **Massive rate limits are shared** with scheduled EC2 sector scans; the UI must not add background polling of options data.
 - **Today's stock data and indices come from yfinance** and can fail silently; any display depending on them needs a graceful absent state.
 - The frontend is Vite + React 19 + Tailwind 3.4 with semantic color tokens defined as CSS variables (`web/src/index.css`, wired in `web/tailwind.config.js`). Dark is the default theme; light exists only on `/login`.
-- Public sign-up is disabled at the auth provider; the login page's sign-up path is currently dead-ended.
+- Public sign-up is open (Supabase: sign-ups enabled, email auto-confirm on, so a new account gets a session immediately); the login page's "Create Account" mode is the live path. Verified end-to-end 2026-09-12 with a fresh test account.
 
 Undecided product facts (do not invent):
-- Account access model for external traders (invite vs. paid vs. open).
 - Phase 2 signal delivery (alerts, scheduled scrapes) has no committed channel or cadence.
 - Pricing, plans, and any commercial terms.
 
@@ -63,7 +68,7 @@ Undecided product facts (do not invent):
 
 Name: **Luo Capital**. Product label used in the UI: **Options Screener**.
 
-The user confirmed (2026-09-12) that **nothing about the current visual system is binding**: the dark-first slate palette, purple accent, JetBrains Mono numerics, and profit/loss color reservation are all provisional and may be replaced by a future redesign. Existing assets: `web/public/favicon.svg`, `web/public/icons.svg`. No logo file beyond the favicon exists.
+Visual authority (**decided 2026-09-12**): the landing page `design/landing/v1` ("Soft Fintech Cards": warm lilac ground, white 24px cards, violet structure, lime reserved for the one primary action, Bricolage Grotesque + Figtree) is the design system, recorded in `DESIGN.md` and `.impeccable/design.json`. The old app frontend (dark slate, purple accent, JetBrains Mono) is **superseded**, not binding, and is being replaced screen by screen. Existing assets: `web/public/favicon.svg`, `web/public/icons.svg`, `design/landing/v1/hero.svg`. No logo file beyond the favicon exists.
 
 Practical conventions that any replacement should still solve for (functional, not stylistic): money and P&L must be visually distinguishable from action and status color; numeric columns must align (tabular figures).
 

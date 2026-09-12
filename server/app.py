@@ -61,6 +61,16 @@ def verify_token(req):
         return None
 
 
+def user_plan(user):
+    """Entitlement scaffold: 'free' | 'paid' from the auth user's app_metadata.plan.
+    Absence means free (every new sign-up). Only the service role can write
+    app_metadata, so the claim is unforgeable from the client. See CLAUDE.md → Entitlements."""
+    if user is None:
+        return 'free'
+    meta = getattr(user, 'app_metadata', None) or {}
+    return 'paid' if meta.get('plan') == 'paid' else 'free'
+
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Catch-all — ensures every unhandled exception returns JSON, never an empty body."""
@@ -945,6 +955,21 @@ def chart_cache_stats():
 # ─────────────────────────────────────────────────────────────
 # Serve React SPA (must be registered after all /api/* routes)
 # ─────────────────────────────────────────────────────────────
+
+@app.route("/fonts/<path:name>")
+def landing_fonts(name):
+    """Self-hosted landing-page fonts (design/landing/v1/fonts). Immutable, long-cached."""
+    response = send_from_directory(os.path.join(LANDING_HTML, "fonts"), name)
+    response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    """Unlisted until public launch: disallow all crawlers. Launch-day removal —
+    delete this route and the <meta name="robots"> tag in design/landing/v1/index.html together."""
+    return app.response_class("User-agent: *\nDisallow: /\n", mimetype="text/plain")
+
 
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { getPlan } from '../lib/entitlements'
 
 export default function useAuth() {
   const [user,    setUser]    = useState(null)
@@ -24,5 +25,6 @@ export default function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
-  return { user, session, loading }
+  // plan: 'free' | 'paid', read from the JWT's app_metadata (absence = free)
+  return { user, session, loading, plan: getPlan(user) }
 }
