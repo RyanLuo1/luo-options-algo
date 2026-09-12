@@ -40,3 +40,12 @@ export const TABS = [
   { id: 'picks',       label: 'Picks',       locked: true },
   { id: 'performance', label: 'Performance', locked: true },
 ]
+
+/** Stable identity for a ranked row (ticker + expiration + the three strikes). */
+export const rowKey = r => `${r.ticker}-${r.expiration}-${r.leg_a_strike}-${r.leg_b_strike}-${r.leg_c_strike}`
+
+/** The incumbent Screener metric: credit as a share of max profit. */
+export const creditShareOfMax = row => {
+  const max = row.net_premium + row.spread_width
+  return max > 0 ? row.net_premium / max : 0
+}

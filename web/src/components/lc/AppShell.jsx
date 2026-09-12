@@ -17,12 +17,12 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
   return (
     <div className="lc min-h-screen flex flex-col">
       <header className="shrink-0 px-6 pt-5">
-        <div className="mx-auto max-w-[1400px] grid grid-cols-[auto_1fr_auto] items-center gap-4">
+        <div className="mx-auto max-w-[1400px] grid grid-cols-[auto_1fr_auto] items-center gap-4 max-xl:gap-3">
           {/* Wordmark */}
           <button
             type="button"
             onClick={() => onTabChange?.('screener')}
-            className="flex items-center gap-2.5 text-lc-ink font-display font-bold text-[1.15rem] tracking-[-0.01em] shrink-0"
+            className="flex items-center gap-2.5 text-lc-ink font-display font-bold text-[1.15rem] tracking-[-0.01em] shrink-0 whitespace-nowrap"
             aria-label="Luo Capital, go to the screener"
           >
             <Mark />
@@ -40,7 +40,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
                   type="button"
                   aria-selected={active}
                   onClick={() => pick(tab)}
-                  className={`flex items-center gap-2 h-10 px-3.5 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors
+                  className={`flex items-center gap-2 h-10 px-3.5 max-xl:px-2.5 max-xl:gap-1.5 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors
                     ${active ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}
                 >
                   {tab.locked && <LockIcon className="w-3.5 h-3.5 text-lc-ink-3" />}
@@ -54,9 +54,9 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
           </div>
 
           {/* Status cluster */}
-          <div className="flex items-center gap-3 shrink-0 justify-self-end">
+          <div className="flex items-center gap-3 max-xl:gap-2 shrink-0 justify-self-end">
             <MarketBadge open={marketOpen} lastRun={lastRun} />
-            <Pill tone="quiet" aria-label={`Plan: ${plan}`}>{plan === 'paid' ? 'Paid plan' : 'Free plan'}</Pill>
+            <Pill tone="quiet" className="whitespace-nowrap" aria-label={`Plan: ${plan}`}>{plan === 'paid' ? 'Paid plan' : 'Free plan'}</Pill>
             <button
               type="button"
               onClick={onLogout}

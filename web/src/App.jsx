@@ -7,18 +7,21 @@ import { loadScreenerState, saveScreenerState, clearScreenerSession } from './li
 import { parseTickersUnique, normalizeWatchlistName, validateWatchlistName, resolveScanTickers } from './lib/watchlists'
 import useOptionsData from './hooks/useOptionsData'
 
-import AppShell        from './components/lc/AppShell'
-import LockedTeaser    from './components/lc/LockedTeaser'
-import ControlsBar     from './components/lc/ControlsBar'
-import ScanChips       from './components/lc/ScanChips'
+import AppShell         from './components/lc/AppShell'
+import LockedTeaser     from './components/lc/LockedTeaser'
+import ControlsBar      from './components/lc/ControlsBar'
+import ScanChips        from './components/lc/ScanChips'
+import RankedTable      from './components/lc/RankedTable'
+import SetupPanel       from './components/lc/SetupPanel'
 import WatchlistManager from './components/WatchlistManager'
-import { Card, Button, Pill } from './components/lc/ui'
+import { Card, Button, Pill, XIcon } from './components/lc/ui'
+import { expiryInfo, rowKey, creditShareOfMax } from './components/lc/format'
 
 // ── Screener (/app) — rebuilt on the v1 design system (DESIGN.md). ──────────
-// Build stage 1: shell (b), controls bar (c), scanning chips (d), first-run
-// state. The ranked table (e), detail panel (f) and the remaining states (g)
-// follow in later stages. The scan API, scoring, watchlists, and session
-// persistence are unchanged.
+// Stage 2: ranked table (e) with sort override + keyboard nav + the metric
+// bar, and the detail panel (f) with Save / Open in editor / toast. Stage 3
+// (g) adds the remaining states. The scan API, scoring, watchlists, and
+// session persistence are unchanged.
 export default function App() {
   const navigate = useNavigate()
   const { user, plan } = useAuth()
@@ -26,20 +29,23 @@ export default function App() {
   const persisted = useMemo(() => loadScreenerState() ?? {}, [])
 
   // ── Controls (persisted) ───────────────────────────────────────────────────
-  const [tickerInput,   setTickerInputRaw] = useState(persisted.tickerInput ?? '')
+  const [tickerInput,    setTickerInputRaw] = useState(persisted.tickerInput ?? '')
   const [scanInputError, setScanInputError] = useState(null)
-  // Editing the input clears its inline error.
   const setTickerInput = v => { setTickerInputRaw(v); setScanInputError(null) }
   const [activeTickers, setActiveTickers] = useState(persisted.activeTickers ?? [])
   const [weeksMin,      setWeeksMin]      = useState(persisted.weeksMin ?? 1)
   const [weeksMax,      setWeeksMax]      = useState(persisted.weeksMax ?? 12)
-  // minPremium stays PER SHARE (the API's unit). The UI shows $ per contract:
-  // minCreditStr is the per-contract string the user types; default $500 = $5/share.
+  // minPremium stays PER SHARE (the API's unit). The UI shows $ per contract.
   const [minPremium,    setMinPremium]    = useState(persisted.minPremium ?? 5.00)
   const [minCreditStr,  setMinCreditStr]  = useState(persisted.minCreditStr ?? String(Math.round((persisted.minPremium ?? 5.00) * 100)))
   const [minPProfit,    setMinPProfit]    = useState(persisted.minPProfit ?? 0.50)
   const [minPProfitStr, setMinPProfitStr] = useState(persisted.minPProfitStr ?? '50')
   const [tickerFilter,  setTickerFilter]  = useState(persisted.tickerFilter ?? null)
+  // Sort override: null = the scanner's order. Persists across rescans of the
+  // same scan context; a fresh context resets it (see below).
+  const [sort,        setSort]        = useState(persisted.sort ?? null)
+  const [sortCtx,     setSortCtx]     = useState(persisted.sortCtx ?? null)
+  const [selectedKey, setSelectedKey] = useState(persisted.selectedKey ?? null)
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   const [activeTab,  setActiveTab]  = useState('screener')
@@ -90,31 +96,49 @@ export default function App() {
 
   // ── Scan data (unchanged hook) ─────────────────────────────────────────────
   const {
-    marketOpen, lastRun, ranked, tickersUsed, tickersSkipped,
+    marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped,
     weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed,
-    totalEvaluated, hasResult, loading, error, runScan,
+    totalEvaluated, hasResult, scanId, loading, error, runScan,
   } = useOptionsData()
 
-  // A new scan result re-seeds the scan-set chips (state adjusted during render,
-  // the React-endorsed pattern; the first render after hydration is a no-op).
-  const [seenTickersUsed, setSeenTickersUsed] = useState(tickersUsed)
-  if (tickersUsed !== seenTickersUsed) {
-    setSeenTickersUsed(tickersUsed)
+  // A new scan result re-seeds the chips, resets the selection, and resets the
+  // sort override when the scan context (tickers + thresholds) changed. State
+  // is adjusted during render (React's pattern); hydration is a no-op.
+  const scanCtx = hasResult ? JSON.stringify([tickersUsed, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed]) : null
+  const [seenRanked, setSeenRanked] = useState(ranked)
+  if (ranked !== seenRanked) {
+    setSeenRanked(ranked)
     setActiveTickers(tickersUsed)
+    setTickerFilter(null)
+    setSelectedKey(null)
+    if (scanCtx !== sortCtx) { setSort(null); setSortCtx(scanCtx) }
   }
 
-  // Persist controls
   useEffect(() => {
-    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter })
-  }, [tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter])
+    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey })
+  }, [tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey])
 
   // ── Derived rows ───────────────────────────────────────────────────────────
-  const baseRanked = ranked.filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
+  // `rank` is the scanner's rank (position in `ranked`); filters never re-rank.
+  const rankedWithRank = useMemo(() => ranked.map((r, i) => ({ ...r, rank: i + 1 })), [ranked])
+  const baseRanked = rankedWithRank.filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
+  const tableRows  = tickerFilter ? baseRanked.filter(r => r.ticker === tickerFilter) : baseRanked
   const counts = useMemo(() => {
     const m = {}
     for (const r of ranked) m[r.ticker] = (m[r.ticker] ?? 0) + 1
     return m
   }, [ranked])
+  const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
+  const displayedKey = displayed ? rowKey(displayed) : null
+
+  // Macro events (FOMC / CPI / PPI / NFP) dated before a setup's expiration, shown
+  // in the detail panel head. They are scan-wide, not per-row, so the table does
+  // not carry them. Per-ticker earnings flags are not in the API's row shape; a follow-up.
+  const macroList = useMemo(() => parseMacro(macroEvents), [macroEvents])
+  const flagsFor = useCallback(r => {
+    const exp = new Date(r.expiration + 'T00:00:00')
+    return macroList.filter(ev => ev.date <= exp).map(ev => `${ev.name} ${ev.label}`)
+  }, [macroList])
 
   // ── Staleness ──────────────────────────────────────────────────────────────
   const resolvedStale = resolveScanTickers(tickerInput, watchlists)
@@ -150,10 +174,11 @@ export default function App() {
   }, [handleRun])
 
   // ── Chips ──────────────────────────────────────────────────────────────────
-  function toggleTickerFilter(t) { setTickerFilter(prev => (prev === t ? null : t)) }
+  function toggleTickerFilter(t) { setSelectedKey(null); setTickerFilter(prev => (prev === t ? null : t)) }
   function removeTicker(t) {
     setActiveTickers(prev => prev.filter(x => x !== t))
     setTickerFilter(prev => (prev === t ? null : prev))
+    if (displayed?.ticker === t) setSelectedKey(null)
   }
 
   // ── Min credit ($ per contract in the UI; per share for the API) ──────────
@@ -193,6 +218,44 @@ export default function App() {
     setMinPProfit(parseFloat((next / 100).toFixed(4))); setMinPProfitStr(String(next))
   }
 
+  // ── Save to Tradebook (double-insert-safe) + toast ────────────────────────
+  const [saving,    setSaving]    = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [toast,     setToast]     = useState(null)   // { text, href } | null
+  const toastTimer = useRef(null)
+  function showToast(text, href) {
+    clearTimeout(toastTimer.current)
+    setToast({ text, href })
+    toastTimer.current = setTimeout(() => setToast(null), 6000)
+  }
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
+
+  async function saveToTradebook(row) {
+    if (!user || saving) return
+    setSaving(true); setSaveError(null)
+    const trade = {
+      ticker: row.ticker, expiration: row.expiration, saved_at: new Date().toISOString(),
+      leg_a_strike: row.leg_a_strike, leg_a_premium: row.leg_a_prem, leg_a_delta: row.leg_a_delta,
+      leg_b_strike: row.leg_b_strike, leg_b_premium: row.leg_b_prem, leg_b_delta: row.leg_b_delta,
+      leg_c_strike: row.leg_c_strike, leg_c_premium: row.leg_c_prem, leg_c_delta: row.leg_c_delta,
+      net_premium: row.net_premium, spread_width: row.spread_width, score: row.score, p_max_profit: row.p_max_profit,
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res  = await fetch('/api/tradebook/save', { method: 'POST', headers, body: JSON.stringify({ scan_id: scanId, result_id: row.result_id ?? null, trade }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setSaveError(`Couldn’t save this trade (${data.error || res.status}). Nothing was written; try again.`); return }
+      showToast(`Saved ${row.ticker} ${expiryInfo(row.expiration).short} · ${row.leg_c_strike} / ${row.leg_a_strike} / ${row.leg_b_strike} to your Tradebook.`, '/tradebook')
+    } catch (e) {
+      setSaveError(`Couldn’t reach the server to save (${e.message}). Nothing was written; try again.`)
+    } finally {
+      setSaving(false)
+    }
+  }
+  function handleEdit(row) { navigate('/trade', { state: { triplet: row, scan_id: scanId } }) }
+
   // ── Logout ─────────────────────────────────────────────────────────────────
   async function handleLogout() {
     clearScreenerSession()
@@ -226,18 +289,56 @@ export default function App() {
             <ScanChips tickers={activeTickers} counts={counts} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
           )}
 
-          {/* Results area — stage 1 placeholder: first-run state, or a count line until the table lands in stage 2. */}
           {!hasResult && !loading && !error ? (
             <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
+          ) : hasResult && tableRows.length > 0 ? (
+            <div className="grid grid-cols-[minmax(0,60fr)_minmax(0,40fr)] gap-4 items-start">
+              <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">
+                <RankedTable
+                  rows={tableRows}
+                  sort={sort} onSort={setSort} onResetSort={() => setSort(null)}
+                  selectedKey={displayedKey} onSelect={r => setSelectedKey(rowKey(r))} onOpen={handleEdit}
+                  minPP={minPProfitUsed} metric={creditShareOfMax} metricLabel="Credit as a share of max profit"
+                  totalEvaluated={totalEvaluated} dimmed={loading}
+                />
+              </div>
+              <div className="min-w-0">
+                <SetupPanel row={displayed} flags={displayed ? flagsFor(displayed) : []} minPP={minPProfitUsed} onSave={saveToTradebook} saving={saving} saveError={saveError} onEdit={handleEdit} dimmed={loading} />
+              </div>
+            </div>
           ) : (
             <Card>
-              <p className="text-lc-ink-2">{loading ? 'Scanning…' : error ? error : `${baseRanked.length} setups ranked from ${totalEvaluated.toLocaleString()} evaluated. Table arrives in the next build step.`}</p>
+              <p className="text-lc-ink-2">{loading ? 'Scanning…' : error ? error : 'No setups matched. Cause-specific states arrive in the next build step.'}</p>
             </Card>
           )}
         </div>
       )}
+
+      {toast && (
+        <div role="status" aria-live="polite" className="fixed bottom-6 right-6 z-50 bg-lc-card rounded-lc shadow-lc-lift px-5 py-4 max-w-sm flex items-start gap-3">
+          <div className="flex flex-col gap-1 text-[0.95rem]">
+            <span className="text-lc-ink">{toast.text}</span>
+            {toast.href && <button type="button" onClick={() => navigate(toast.href)} className="text-left font-semibold text-lc-violet hover:underline">View Tradebook</button>}
+          </div>
+          <button type="button" onClick={() => setToast(null)} aria-label="Dismiss" className="text-lc-ink-3 hover:text-lc-ink mt-0.5"><XIcon /></button>
+        </div>
+      )}
     </AppShell>
   )
+}
+
+// "NFP 4/3  |  CPI 4/10" → [{ name: 'NFP', label: '4/3', date }]. Dates without a year
+// are placed in the current year, or the next one if that would be in the past.
+function parseMacro(s) {
+  if (!s || typeof s !== 'string' || /None/i.test(s)) return []
+  const now = new Date()
+  return s.split('|').map(p => p.trim()).filter(Boolean).map(p => {
+    const m = /^([A-Z]+)\s+(\d{1,2})\/(\d{1,2})$/.exec(p)
+    if (!m) return null
+    let date = new Date(now.getFullYear(), Number(m[2]) - 1, Number(m[3]))
+    if (date < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)) date = new Date(now.getFullYear() + 1, Number(m[2]) - 1, Number(m[3]))
+    return { name: m[1], label: `${m[2]}/${m[3]}`, date }
+  }).filter(Boolean)
 }
 
 // First-run empty state: what a scan does, example tickers, the watchlist hint. No developer text.
