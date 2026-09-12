@@ -231,6 +231,8 @@ input[type="range"].dual-thumb:disabled::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
   scrollbar-color: #D9D2E3 var(--lc-ground); scrollbar-width: thin;
 }
+/* the document behind the shell matches the shell, so any edge never shows the slate body */
+body:has(> #root > .lc), body:has(.lc) { background: #F1EEF3; }
 .lc ::selection { background: var(--lc-violet-soft); color: var(--lc-ink); }
 .lc :focus-visible { outline: 3px solid var(--lc-violet); outline-offset: 3px; border-radius: var(--lc-radius); }
 .lc ::-webkit-scrollbar { width: 10px; height: 10px; }
