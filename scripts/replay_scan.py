@@ -388,7 +388,8 @@ def days_to_earnings_pit(ticker, ref):
 
 def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
                 min_premium=DEFAULT_MIN_PREMIUM, min_pp=DEFAULT_MIN_PP, write=False, v2=False,
-                sleep_s=0.15, spot_source="rest"):
+                sleep_s=0.15, spot_source="rest",
+                universe_path=None, source_tag="backtest2"):
     as_of = datetime.strptime(date_str, "%Y-%m-%d").date()
     h, m = SLOTS[slot]
     scan_timestamp = datetime(as_of.year, as_of.month, as_of.day, h, m, tzinfo=ET).isoformat()
@@ -396,7 +397,7 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
     # (source, scan_date, sector)-shaped, so the slot must live inside source
     # or a both-slots replay's close pass would replace the open pass's rows.
     # Requires docs/backtest_slot_split_migration.sql applied.
-    source = f"backtest2_{slot}" if v2 else f"backtest_{slot}"
+    source = f"{source_tag}_{slot}" if v2 else f"backtest_{slot}"
 
     store = ExtractStore(date_str)
     # SPY context: parity-implied from the extract first (SPY is in the
@@ -418,8 +419,13 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
           f"macro: fomc={d_fomc} cpi={d_cpi} any={d_macro}  "
           f"{'WRITE' if write else 'DRY-RUN'} ===", flush=True)
 
-    with open(os.path.join(_HERE, "..", "data", "universe.json")) as f:
-        sectors = json.load(f)["sectors"]           # the REAL $100B scan universe
+    with open(universe_path or os.path.join(_HERE, "..", "data", "universe.json")) as f:
+        # default: the REAL $100B scan universe; --universe swaps in another
+        # (e.g. the 240-name extraction universe for backtest3). Underscore-
+        # prefixed groups (_index_etf: SPY/QQQ context instruments) are
+        # never scanned as strategy candidates.
+        sectors = {s: ts for s, ts in json.load(f)["sectors"].items()
+                   if not s.startswith("_")}
 
     fridays = get_next_fridays(WEEKS_MAX, as_of=as_of)
     week_exps = [(i + 1, d.strftime("%Y-%m-%d")) for i, d in enumerate(fridays)]
@@ -533,6 +539,15 @@ def main():
                     help="write to ml_dataset/sector_scan_runs (source='backtest_<slot>'); default is dry-run")
     ap.add_argument("--sleep", type=float, default=0.15,
                     help="pause between per-ticker spot lookups (default 0.15s)")
+    ap.add_argument("--universe", default=None,
+                    help="universe JSON to scan (default data/universe.json; "
+                         "pass data/universe_extract.json for the 240-name "
+                         "expansion test — '_'-prefixed groups are skipped)")
+    ap.add_argument("--source-tag", choices=["backtest2", "backtest3"],
+                    default="backtest2",
+                    help="source prefix for --v2 writes (backtest3 = the "
+                         "prespecified 240-name universe-expansion run; run "
+                         "docs/backtest3_migration.sql first)")
     ap.add_argument("--v2", action="store_true",
                     help="v2 replay (RANKER_SPEC §5b): dual-gate threshold "
                          "(min $1.00 credit AND min 1% return-on-collateral), "
@@ -574,7 +589,8 @@ def main():
         for slot in slots:
             replay_slot(ds, slot, supabase, top_n=args.top_n, write=args.write,
                         v2=args.v2, min_premium=min_prem,
-                        sleep_s=args.sleep, spot_source=args.spot_source)
+                        sleep_s=args.sleep, spot_source=args.spot_source,
+                        universe_path=args.universe, source_tag=args.source_tag)
 
 
 if __name__ == "__main__":
