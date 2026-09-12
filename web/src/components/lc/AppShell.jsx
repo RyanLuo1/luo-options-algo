@@ -17,7 +17,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
   return (
     <div className="lc min-h-screen flex flex-col">
       <header className="shrink-0 px-6 pt-5">
-        <div className="mx-auto max-w-[1400px] grid grid-cols-[auto_1fr_auto] items-center gap-4 max-xl:gap-3">
+        <div className="mx-auto max-w-[1400px] grid grid-cols-[auto_1fr_auto] items-center gap-4 max-lc:gap-3">
           {/* Wordmark */}
           <button
             type="button"
@@ -30,7 +30,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
           </button>
 
           {/* Tab strip */}
-          <div role="tablist" aria-label="App sections" className="justify-self-center flex gap-1 p-1.5 bg-lc-ground-deep/60 rounded-lc-plus">
+          <div role="tablist" aria-label="App sections" onKeyDown={e => { const i = TABS.findIndex(t => t.id === activeTab); if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); const n = (i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length; pick(TABS[n]) } }} className="justify-self-center flex gap-1 p-1.5 bg-lc-ground-deep/60 rounded-lc-plus">
             {TABS.map(tab => {
               const active = activeTab === tab.id
               return (
@@ -39,8 +39,9 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
                   role="tab"
                   type="button"
                   aria-selected={active}
+                  tabIndex={active ? 0 : -1}
                   onClick={() => pick(tab)}
-                  className={`flex items-center gap-2 h-10 px-3.5 max-xl:px-2.5 max-xl:gap-1.5 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors
+                  className={`flex items-center gap-2 h-10 px-3.5 max-lc:px-2.5 max-lc:gap-1.5 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors
                     ${active ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}
                 >
                   {tab.locked && <LockIcon className="w-3.5 h-3.5 text-lc-ink-3" />}
@@ -54,7 +55,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
           </div>
 
           {/* Status cluster */}
-          <div className="flex items-center gap-3 max-xl:gap-2 shrink-0 justify-self-end">
+          <div className="flex items-center gap-3 max-lc:gap-2 shrink-0 justify-self-end">
             <MarketBadge open={marketOpen} lastRun={lastRun} />
             <Pill tone="quiet" className="whitespace-nowrap" aria-label={`Plan: ${plan}`}>{plan === 'paid' ? 'Paid plan' : 'Free plan'}</Pill>
             <button

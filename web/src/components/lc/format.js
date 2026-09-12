@@ -9,7 +9,7 @@ export const fmtStrike = k => (k == null ? '—' : String(k))
 
 export const INPUT_CLASS =
   'h-11 w-full min-w-0 px-3.5 rounded-lc-half bg-lc-card text-lc-ink border-[1.5px] border-lc-line ' +
-  'placeholder:text-lc-ink-3 disabled:bg-lc-ground-deep disabled:text-lc-ink-3 ' +
+  'placeholder:text-lc-ink-2 disabled:bg-lc-ground-deep disabled:text-lc-ink-2 ' +
   'text-[0.95rem] font-figtree [font-variant-numeric:tabular-nums]'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']

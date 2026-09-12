@@ -15,7 +15,7 @@ import RankedTable      from './components/lc/RankedTable'
 import SetupPanel       from './components/lc/SetupPanel'
 import WatchlistManager from './components/WatchlistManager'
 import { Card, Button, Pill, XIcon } from './components/lc/ui'
-import { ProgressStrip, ErrorStrip, MarketClosedBanner, NoResults } from './components/lc/States'
+import { ProgressStrip, ErrorStrip, MarketClosedBanner, NoResults, FilteredEmpty } from './components/lc/States'
 import { expiryInfo, rowKey, creditShareOfMax } from './components/lc/format'
 
 // ── Screener (/app) — rebuilt on the v1 design system (DESIGN.md). ──────────
@@ -46,6 +46,8 @@ export default function App() {
   const [sort,        setSort]        = useState(persisted.sort ?? null)
   const [sortCtx,     setSortCtx]     = useState(persisted.sortCtx ?? null)
   const [selectedKey, setSelectedKey] = useState(persisted.selectedKey ?? null)
+  // Rows already saved this session (by result_id, else rowKey): Save becomes idempotent.
+  const [savedKeys,   setSavedKeys]   = useState(() => new Set(persisted.savedKeys ?? []))
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   const [activeTab,  setActiveTab]  = useState('screener')
@@ -115,13 +117,13 @@ export default function App() {
   }
 
   useEffect(() => {
-    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey })
-  }, [tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey])
+    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys] })
+  }, [tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys])
 
   // ── Derived rows ───────────────────────────────────────────────────────────
   // `rank` is the scanner's rank (position in `ranked`); filters never re-rank.
   const rankedWithRank = useMemo(() => ranked.map((r, i) => ({ ...r, rank: i + 1 })), [ranked])
-  const baseRanked = rankedWithRank.filter(r => activeTickers.length === 0 || activeTickers.includes(r.ticker))
+  const baseRanked = rankedWithRank.filter(r => activeTickers.includes(r.ticker))
   const tableRows  = tickerFilter ? baseRanked.filter(r => r.ticker === tickerFilter) : baseRanked
   const counts = useMemo(() => {
     const m = {}
@@ -150,11 +152,16 @@ export default function App() {
     (!resolvedStale.error && resolvedStale.tickers.some(t => !tickersUsed.includes(t)))
   )
 
+  // ── Field validity (gates every run path, including ⌘Enter) ───────────────
+  const minCreditValid  = (() => { const s = minCreditStr.trim();  const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
+  const minPProfitValid = (() => { const s = minPProfitStr.trim(); const n = Number(s); return s !== '' && Number.isInteger(n) && n >= 1 && n <= 99 })()
+  const canRun = minCreditValid && minPProfitValid
+
   // ── Run scan ───────────────────────────────────────────────────────────────
   const [lastRunTickers, setLastRunTickers] = useState([])
   const [dismissedError, setDismissedError] = useState(null)
   const runWith = useCallback((overrides = {}) => {
-    if (loading) return
+    if (loading || !canRun) return
     const { tickers, error: resolveErr } = resolveScanTickers(tickerInput, watchlists)
     if (resolveErr) { setScanInputError(resolveErr); return }
     if (tickers.length === 0) { setScanInputError('Enter one or more tickers, or a @watchlist, then run the scan.'); tickersRef.current?.focus(); return }
@@ -163,7 +170,7 @@ export default function App() {
     setActiveTab('screener')
     setLastRunTickers(tickers)
     runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit, ...overrides })
-  }, [loading, tickerInput, watchlists, weeksMin, weeksMax, minPremium, minPProfit, runScan])
+  }, [loading, canRun, tickerInput, watchlists, weeksMin, weeksMax, minPremium, minPProfit, runScan])
   const handleRun = useCallback(() => runWith(), [runWith])
 
   // No-results actions: apply the lower threshold to the controls AND rerun with it.
@@ -192,7 +199,6 @@ export default function App() {
   }
 
   // ── Min credit ($ per contract in the UI; per share for the API) ──────────
-  const minCreditValid = (() => { const s = minCreditStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
   function onMinCreditChange(e) {
     const raw = e.target.value.replace(/[$,]/g, '')
     setMinCreditStr(raw)
@@ -211,7 +217,6 @@ export default function App() {
   }
 
   // ── Min P(max profit) ──────────────────────────────────────────────────────
-  const minPProfitValid = (() => { const s = minPProfitStr.trim(); const n = Number(s); return s !== '' && Number.isInteger(n) && n >= 1 && n <= 99 })()
   function onMinPProfitChange(e) {
     const raw = e.target.value.replace('%', '')
     setMinPProfitStr(raw)
@@ -240,8 +245,9 @@ export default function App() {
   }
   useEffect(() => () => clearTimeout(toastTimer.current), [])
 
+  const saveKeyOf = row => row.result_id ?? rowKey(row)
   async function saveToTradebook(row) {
-    if (!user || saving) return
+    if (!user || saving || savedKeys.has(saveKeyOf(row))) return
     setSaving(true); setSaveError(null)
     const trade = {
       ticker: row.ticker, expiration: row.expiration, saved_at: new Date().toISOString(),
@@ -257,6 +263,7 @@ export default function App() {
       const res  = await fetch('/api/tradebook/save', { method: 'POST', headers, body: JSON.stringify({ scan_id: scanId, result_id: row.result_id ?? null, trade }) })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setSaveError(`Couldn’t save this trade (${data.error || res.status}). Nothing was written; try again.`); return }
+      setSavedKeys(prev => new Set(prev).add(saveKeyOf(row)))
       showToast(`Saved ${row.ticker} ${expiryInfo(row.expiration).short} · ${row.leg_c_strike} / ${row.leg_a_strike} / ${row.leg_b_strike} to your Tradebook.`, '/tradebook')
     } catch (e) {
       setSaveError(`Couldn’t reach the server to save (${e.message}). Nothing was written; try again.`)
@@ -281,7 +288,7 @@ export default function App() {
       ) : (
         <div className="flex flex-col gap-4 pt-6">
           <ControlsBar
-            loading={loading} isStale={isStale} onRun={handleRun}
+            loading={loading} isStale={isStale} onRun={handleRun} canRun={canRun}
             tickersRef={tickersRef} tickerInput={tickerInput} setTickerInput={setTickerInput} tickersError={scanInputError}
             onManageWatchlists={() => setManageOpen(o => !o)} manageOpen={manageOpen}
             weeksMin={weeksMin} weeksMax={weeksMax} setWeeksMin={setWeeksMin} setWeeksMax={setWeeksMax}
@@ -305,6 +312,8 @@ export default function App() {
 
           {!hasResult ? (
             !loading && <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
+          ) : tableRows.length === 0 && ranked.length > 0 ? (
+            <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the removed tickers' : tickerFilter)} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
           ) : tableRows.length > 0 ? (
             <div className="grid grid-cols-[minmax(0,60fr)_minmax(0,40fr)] gap-4 items-start">
               <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">
@@ -317,7 +326,7 @@ export default function App() {
                 />
               </div>
               <div className="min-w-0">
-                <SetupPanel row={displayed} flags={displayed ? flagsFor(displayed) : []} minPP={minPProfitUsed} onSave={saveToTradebook} saving={saving} saveError={saveError} onEdit={handleEdit} dimmed={loading} />
+                <SetupPanel row={displayed} flags={displayed ? flagsFor(displayed) : []} minPP={minPProfitUsed} onSave={saveToTradebook} saving={saving} saved={displayed ? savedKeys.has(saveKeyOf(displayed)) : false} onViewTradebook={() => navigate('/tradebook')} saveError={saveError} onEdit={handleEdit} dimmed={loading} />
               </div>
             </div>
           ) : (

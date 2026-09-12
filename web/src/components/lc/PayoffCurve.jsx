@@ -23,6 +23,8 @@ export default function PayoffCurve({ row, spot }) {
   const hasSpot = Number.isFinite(spot) && spot > 0
   const spotX = hasSpot ? Math.max(X(xMin), Math.min(X(xMax), X(spot))) : null
   const callsClose = X(kb) - X(ka) < 90
+  const zoneWide = { loss: X(kc) - X(xMin) > 56, keep: X(ka) - X(kc) > 64, sweet: X(kb) - X(ka) > 64, capped: X(xMax) - X(kb) > 48 }
+  const needLegend = !Object.values(zoneWide).every(Boolean)
 
   return (
     <div className="border-[1.5px] border-lc-line rounded-lc-plus p-4">
@@ -53,14 +55,22 @@ export default function PayoffCurve({ row, spot }) {
         <text x={callsClose ? X(ka) - 6 : X(ka)} y={H - 22} textAnchor={callsClose ? 'end' : 'middle'} fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">buy {ka} call</text>
         <text x={callsClose ? X(kb) + 6 : X(kb)} y={H - 22} textAnchor={callsClose ? 'start' : 'middle'} fill="#15121A" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">sell {kb} call</text>
         {/* zone words — only where the zone is wide enough to hold them */}
-        {X(kc) - X(xMin) > 56 && <text x={(X(xMin) + X(kc)) / 2} y={H - 6} textAnchor="middle" fill="#C8325A" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">loss zone</text>}
-        {X(ka) - X(kc) > 64 && <text x={(X(kc) + X(ka)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">keep credit</text>}
-        {X(kb) - X(ka) > 64 && <text x={(X(ka) + X(kb)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">sweet spot</text>}
-        {X(xMax) - X(kb) > 48 && <text x={(X(kb) + X(xMax)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">capped</text>}
+        {zoneWide.loss && <text x={(X(xMin) + X(kc)) / 2} y={H - 6} textAnchor="middle" fill="#C8325A" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">loss zone</text>}
+        {zoneWide.keep && <text x={(X(kc) + X(ka)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">keep credit</text>}
+        {zoneWide.sweet && <text x={(X(ka) + X(kb)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">sweet spot</text>}
+        {zoneWide.capped && <text x={(X(kb) + X(xMax)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">capped</text>}
         {/* value labels — the credit label drops below its line when the line sits near the top */}
         <text x={(X(kc) + X(ka)) / 2} y={Y(credit) < TOP + 30 ? Y(credit) + 20 : Y(credit) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">+{fmtMoney0(credit)} credit</text>
         <text x={(X(kb) + X(xMax)) / 2} y={Y(maxP) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">+{fmtMoney0(maxP)} max</text>
       </svg>
+      {needLegend && (
+        <div className="flex gap-x-4 gap-y-1 flex-wrap text-[0.8rem] mt-2" aria-label="Zones, left to right">
+          <span className="inline-flex items-center gap-1.5 text-lc-loss font-semibold"><i className="w-3 h-3 rounded-sm bg-lc-loss-tint border border-lc-loss/40" /> loss zone, below {kc}</span>
+          <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-ground border border-lc-line" /> keep credit, {kc}–{ka}</span>
+          <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-violet-soft border border-lc-violet/30" /> sweet spot, {ka}–{kb}</span>
+          <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-ground border border-lc-line" /> capped, above {kb}</span>
+        </div>
+      )}
       <div className="flex justify-between gap-3 text-[0.85rem] text-lc-ink-2 mt-2 flex-wrap">
         <span>Payoff at expiration, per contract</span>
         <span>{hasSpot ? 'Stock price →' : 'Spot price unavailable right now · stock price →'}</span>

@@ -52,7 +52,7 @@ function humanizeError(message, hadResults) {
   if (/5\d\d|Server error/i.test(m)) {
     return { problem: 'The scan failed on the server.', recovery: `${keep} Try again; if it keeps failing, the data feed may be down.`.trim() }
   }
-  return { problem: 'The scan didn’t complete.', recovery: `${keep} ${m ? `(${m.replace(/\(.*?port \d+.*?\)/i, '').trim()})` : ''} Try again.`.replace(/\s+/g, ' ').trim() }
+  return { problem: 'The scan didn’t complete.', recovery: `${keep} Try again; if it keeps failing, the data feed may be down.`.trim() }
 }
 
 /** Quiet banner above the results when the market is closed (scanning still allowed). */
@@ -84,7 +84,7 @@ export function NoResults({ tickersUsed, tickersSkipped, marketOpen, minCredit, 
         <>
           <h2 className="font-display font-bold text-[1.4rem] leading-[1.1] tracking-[-0.02em] mb-2">No setup cleared your thresholds</h2>
           <p className="text-lc-ink-2 leading-[1.6] max-w-[60ch] mb-4">
-            Every candidate for {tickersUsed.join(', ')} paid less than <Pill tone="quiet" size="sm">${minCredit} per contract</Pill> or had under{' '}
+            Every candidate for {tickersUsed.join(', ')} paid less than <Pill tone="quiet" size="sm">${Number(minCredit).toLocaleString('en-US')} per contract</Pill> or had under{' '}
             <Pill tone="quiet" size="sm">{Math.round(minPP * 100)}% chance of max profit</Pill>.
             {marketOpen === false && ' The market is closed, so quotes are the last ones printed; some names only clear during the session.'}
           </p>
@@ -95,6 +95,16 @@ export function NoResults({ tickersUsed, tickersSkipped, marketOpen, minCredit, 
           </div>
         </>
       )}
+    </Card>
+  )
+}
+
+/** The table is empty because of a client-side filter, not the scan: say so, offer the way back. */
+export function FilteredEmpty({ ticker, onShowAll }) {
+  return (
+    <Card padding="p-6" className="max-w-[52rem] flex items-center gap-4 flex-wrap">
+      <span className="text-lc-ink">No setups for <strong className="font-semibold">{ticker}</strong> in this scan.</span>
+      <Button size="sm" onClick={onShowAll}>Show all tickers</Button>
     </Card>
   )
 }

@@ -73,7 +73,8 @@ export default function RankedTable({
   return (
     <section
       aria-label="Ranked setups"
-      className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60 pointer-events-none' : ''}`}
+      className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60' : ''}`}
+      aria-busy={dimmed || undefined}
     >
       {/* Bar */}
       <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3 flex-wrap">
@@ -94,6 +95,7 @@ export default function RankedTable({
           )}
         </div>
       </div>
+      <p className="px-6 pb-2 -mt-1 text-[0.8rem] text-lc-ink-2">All dollars per contract · the bar under Max profit is the credit as a share of max profit (the ranking).</p>
 
       {/* Table */}
       <div
@@ -101,7 +103,7 @@ export default function RankedTable({
         tabIndex={0}
         onKeyDown={onKeyDown}
         aria-label="Ranked setups table. Use the arrow keys to move the selection and Enter to open the editor."
-        className="overflow-auto flex-1 min-h-0 px-3 max-xl:px-1.5 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset"
+        className="overflow-auto flex-1 min-h-0 px-3 max-lc:px-1.5 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset"
       >
         <table className="w-full border-collapse text-[0.95rem] [font-variant-numeric:tabular-nums]">
           <thead>
@@ -112,7 +114,7 @@ export default function RankedTable({
                   <th
                     key={col.key}
                     scope="col"
-                    className={`sticky top-0 z-10 bg-lc-card text-[0.78rem] font-semibold tracking-[0.03em] text-lc-ink-2 border-b border-lc-line px-2 py-2.5 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.hideBelowXl ? 'max-xl:hidden' : ''}`}
+                    className={`sticky top-0 z-10 bg-lc-card text-[0.78rem] font-semibold tracking-[0.03em] text-lc-ink-2 border-b border-lc-line px-2 py-2.5 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.hideBelowXl ? 'max-lc:hidden' : ''}`}
                     aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
                   >
                     {col.sort ? (
@@ -136,33 +138,33 @@ export default function RankedTable({
                 <tr
                   key={k}
                   data-selected={selected ? 'true' : undefined}
-                  onClick={() => onSelect?.(r)}
-                  onDoubleClick={() => onOpen?.(r)}
-                  aria-selected={selected}
+                  onClick={() => !dimmed && onSelect?.(r)}
+                  onDoubleClick={() => !dimmed && onOpen?.(r)}
+                  aria-current={selected ? 'true' : undefined}
                   className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}
                 >
-                  <td className="px-2 max-xl:px-1.5 py-2.5">
+                  <td className="px-2 max-lc:px-1.5 py-2.5">
                     <span className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>
                   </td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink">{r.ticker}</td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 whitespace-nowrap">
-                    <span className="text-lc-ink">{exp.short}</span><span className="text-lc-ink-2 max-xl:hidden"> · W{r.week}</span><span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
+                  <td className="px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink">{r.ticker}</td>
+                  <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap">
+                    <span className="text-lc-ink">{exp.short}</span><span className="text-lc-ink-2 max-lc:hidden"> · W{r.week}</span><span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
                   </td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 whitespace-nowrap text-lc-ink-2 max-xl:text-[0.9rem] [font-variant-numeric:tabular-nums]">
+                  <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap text-lc-ink-2 max-lc:text-[0.9rem] [font-variant-numeric:tabular-nums]">
                     {r.leg_c_strike} / <span className="text-lc-ink font-semibold">{r.leg_a_strike}</span> / {r.leg_b_strike}
                   </td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right font-bold text-lc-ink whitespace-nowrap">{fmtMoney0(f.credit)}</td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right whitespace-nowrap">
+                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right font-bold text-lc-ink whitespace-nowrap">{fmtMoney0(f.credit)}</td>
+                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
                       <span className="text-lc-ink">{fmtMoney0(f.maxProfit)}</span>
-                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem] max-xl:w-[3.5rem]" />
+                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem] max-lc:w-[3.5rem]" />
                     </div>
                   </td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right whitespace-nowrap">
+                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <span className="text-lc-ink">{fmtPct0(r.p_max_profit)}</span>
-                    {borderline && <Pill tone="quiet" size="sm" className="ml-1.5 max-xl:hidden" title={`Within 10 points of your ${Math.round(minPP * 100)}% minimum`}>borderline</Pill>}
+                    {borderline && <Pill tone="quiet" size="sm" className="ml-1.5 max-lc:hidden" title={`Within 10 points of your ${Math.round(minPP * 100)}% minimum`}>borderline</Pill>}
                   </td>
-                  <td className="px-2 max-xl:px-1.5 py-2.5 text-right text-lc-ink whitespace-nowrap max-xl:hidden">{fmtMoney0(f.collateral)}</td>
+                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right text-lc-ink whitespace-nowrap max-lc:hidden">{fmtMoney0(f.collateral)}</td>
                 </tr>
               )
             })}

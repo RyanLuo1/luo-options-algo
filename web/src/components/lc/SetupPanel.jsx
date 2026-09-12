@@ -3,7 +3,7 @@ import { Button, Pill } from './ui'
 import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, rowFigures } from './format'
 
 // The detail panel: the landing's setup dashboard driven by the selected row.
-export default function SetupPanel({ row, flags = [], minPP = null, onSave, saving = false, saveError = null, onEdit, dimmed = false }) {
+export default function SetupPanel({ row, flags = [], minPP = null, onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook, dimmed = false }) {
   if (!row) return null
   const f = rowFigures(row)
   const exp = expiryInfo(row.expiration)
@@ -14,7 +14,8 @@ export default function SetupPanel({ row, flags = [], minPP = null, onSave, savi
   return (
     <section
       aria-label={`Setup detail: ${row.ticker} ${row.expiration}`}
-      className={`bg-lc-card rounded-lc shadow-lc p-6 flex flex-col gap-5 transition-opacity ${dimmed ? 'opacity-60 pointer-events-none' : ''}`}
+      className={`bg-lc-card rounded-lc shadow-lc p-6 flex flex-col gap-5 transition-opacity ${dimmed ? 'opacity-60' : ''}`}
+      aria-busy={dimmed || undefined}
     >
       {/* Head */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -33,7 +34,7 @@ export default function SetupPanel({ row, flags = [], minPP = null, onSave, savi
       </div>
 
       {/* Legs */}
-      <div className="grid grid-cols-3 max-xl:grid-cols-1 gap-3">
+      <div className="grid grid-cols-3 max-lc:grid-cols-1 gap-3">
         <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay />
         <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" />
         <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" />
@@ -42,23 +43,27 @@ export default function SetupPanel({ row, flags = [], minPP = null, onSave, savi
       <PayoffCurve row={row} spot={spot} />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 max-xl:grid-cols-1 gap-3">
+      <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
         <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub="per contract, up front" hi />
         <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} is above ${row.leg_b_strike}`} />
         <Gauge p={row.p_max_profit} />
-        <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub="tied up while it’s open" />
-        <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-xl:col-span-1" />
+        <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub="cash to secure the put while it’s open" />
+        <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-lc:col-span-1" />
       </div>
 
       <p className="text-[0.95rem] text-lc-ink-2 leading-[1.55]">
-        <strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}. That is the downside in plain dollars.
+        <strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}, which is {fmtMoney0(f.breakeven * worstShares)} of stock. That is the downside in plain dollars.
       </p>
 
       {/* Actions */}
       <div className="flex items-center gap-3 flex-wrap pt-1">
-        <Button variant="confirm" onClick={() => onSave?.(row)} disabled={saving} aria-busy={saving}>
-          {saving ? 'Saving…' : 'Save to Tradebook'}
-        </Button>
+        {saved ? (
+          <Button variant="secondary" onClick={onViewTradebook}>Saved · View Tradebook</Button>
+        ) : (
+          <Button variant="confirm" onClick={() => !dimmed && onSave?.(row)} disabled={saving || dimmed} aria-busy={saving}>
+            {saving ? 'Saving…' : 'Save to Tradebook'}
+          </Button>
+        )}
         <Button variant="secondary" onClick={() => onEdit?.(row)}>Open in editor</Button>
         {saveError && <span role="alert" className="text-[0.85rem] font-semibold text-lc-loss">{saveError}</span>}
       </div>

@@ -19,13 +19,14 @@ export default function ScanChips({ tickers, counts, skipped, activeFilter, onTo
           >
             <button
               type="button"
-              onClick={() => onToggle?.(t)}
+              onClick={() => n > 0 && onToggle?.(t)}
               aria-pressed={on}
-              title={on ? `Show all tickers` : `Show only ${t}`}
+              aria-disabled={n === 0 || undefined}
+              title={n === 0 ? `${t}: no setups in this scan` : on ? `Show all tickers` : `Show only ${t}`}
               className={`flex items-center gap-2 pl-3 pr-2 h-8 text-[0.85rem] font-semibold ${on ? 'text-lc-violet' : 'text-lc-ink'}`}
             >
               {t}
-              <span className={`rounded-lc px-1.5 text-[0.72rem] [font-variant-numeric:tabular-nums] ${n > 0 ? 'bg-lc-ground text-lc-ink-2' : 'bg-lc-ground-deep text-lc-ink-3'}`}>{n}</span>
+              <span className={`rounded-lc px-1.5 text-[0.72rem] [font-variant-numeric:tabular-nums] ${n > 0 ? 'bg-lc-ground text-lc-ink-2' : 'bg-lc-ground-deep text-lc-ink-2'}`}>{n}</span>
             </button>
             <button
               type="button"

@@ -6,7 +6,7 @@ import { INPUT_CLASS } from './format'
 // value/handler is owned by App (lifted state). Enter in any field runs the
 // scan; `/` focus and ⌘/Ctrl+Enter are wired in App at the document level.
 export default function ControlsBar({
-  loading, isStale, onRun,
+  loading, isStale, onRun, canRun = true,
   tickersRef, tickerInput, setTickerInput, tickersError, onManageWatchlists, manageOpen,
   weeksMin, weeksMax, setWeeksMin, setWeeksMax,
   minCreditStr, minCreditValid, onMinCreditChange, onMinCreditBlur, bumpMinCredit,
@@ -93,8 +93,8 @@ export default function ControlsBar({
           <Button
             variant="primary"
             onClick={onRun}
-            disabled={loading}
-            aria-live="polite"
+            disabled={loading || !canRun}
+            title={!canRun ? 'Fix the highlighted field first' : undefined}
             className={isStale ? 'ring-[3px] ring-lc-violet ring-offset-2 ring-offset-lc-card' : ''}
           >
             {loading ? 'Scanning…' : isStale ? 'Rescan needed' : 'Run scan'}

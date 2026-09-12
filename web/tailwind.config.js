@@ -10,6 +10,8 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      // The Screener's in-scope floor (shape §6). `max-lc:` = 1100px and below.
+      screens: { lc: '1101px' },
       // Semantic color tokens — each references a CSS variable defined in
       // src/index.css :root. Using `extend` keeps Tailwind's default palette
       // (gray-*, emerald-*, etc.) intact while adding these on top, so
