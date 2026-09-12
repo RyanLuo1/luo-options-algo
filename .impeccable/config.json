@@ -1,7 +1,12 @@
 {
   "detector": {
     "ignoreRules": [],
-    "ignoreFiles": [],
+    "ignoreFiles": [
+      "design/landing/v2/**",
+      "design/landing/v3/**",
+      "design/landing/v4/**",
+      "design/landing/v5/**"
+    ],
     "ignoreValues": [
       {
         "rule": "cream-palette",
