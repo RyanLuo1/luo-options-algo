@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-12T00:00:00Z",
+  "title": "Design System: Luo Capital",
+  "source": {
+    "artifact": "design/landing/v1/index.html",
+    "notes": "design/landing/v1/NOTES.md",
+    "direction": ".impeccable/surfaces/design-landing.md#v1-soft-fintech-cards",
+    "authority": "The built HTML/CSS is the truth; NOTES.md was the starting inventory."
+  },
+  "extensions": {
+    "colorMeta": {
+      "ground":        { "role": "neutral",   "displayName": "Lilac Ground",         "canonical": "oklch(95.3% 0.007 312.3)", "tonalRamp": ["#0C0B0C", "#232124", "#444145", "#656266", "#888589", "#AFADB1", "#D6D3D8", "#F0EDF1"], "usage": "Page background; every inset tile inside a white card; table row hover; tab bar tray; mini mock panel." },
+      "ground-deep":   { "role": "neutral",   "displayName": "Deep Ground",          "canonical": "oklch(91.7% 0.014 308.3)", "tonalRamp": ["#0C0A0E", "#232026", "#444048", "#65616A", "#88848D", "#B0ACB5", "#D7D2DC", "#F1ECF5"], "usage": "Hero image slot; quiet pill and mute chip background." },
+      "card":          { "role": "neutral",   "displayName": "Card White",           "canonical": "oklch(100% 0 0)",          "tonalRamp": ["#0B0B0B", "#222222", "#424242", "#636363", "#868686", "#AEAEAE", "#D4D4D4", "#EEEEEE"], "usage": "Every card, stat card, active tab, preview tile; bought-leg curve point fill; step-badge numeral. Appears as the literal #fff in the SVGs." },
+      "ink":           { "role": "neutral",   "displayName": "Ink",                  "canonical": "oklch(19.0% 0.017 302.0)", "tonalRamp": ["#0C0A0E", "#232027", "#44404A", "#65616B", "#88848F", "#B0ACB7", "#D6D2DE", "#F0ECF6"], "usage": "Primary text, wordmark, tickers, money figures, sold-leg point ring, text on lime." },
+      "ink-2":         { "role": "neutral",   "displayName": "Ink Two",              "canonical": "oklch(45.4% 0.034 303.3)", "tonalRamp": ["#0D0912", "#241E2D", "#463E51", "#675F73", "#8A8297", "#B2A9C0", "#D8CFE7", "#F2EAFE"], "usage": "Secondary text, captions, column headers, the Sell label, nav links, chart axis labels. 7.5:1 on white, 6.4:1 on ground." },
+      "ink-3":         { "role": "neutral",   "displayName": "Ink Three",            "canonical": "oklch(58.0% 0.042 300.3)", "tonalRamp": ["#0D0913", "#241E30", "#463D56", "#675E78", "#8A819C", "#B2A8C5", "#D8CEEC", "#F2EAFF"], "usage": "Icon tint only (lock glyph, the isn't cross). Never text; fails AA on ground." },
+      "line":          { "role": "neutral",   "displayName": "Hairline",             "canonical": "oklch(90.8% 0.016 306.4)", "tonalRamp": ["#0C0A0E", "#232027", "#444049", "#65616B", "#88848E", "#B0ACB6", "#D7D2DD", "#F0ECF5"], "usage": "1px table rules; 1.5px outlines (secondary/ghost buttons, preview tiles, curve box); dashed payoff baselines; mini mock bars." },
+      "violet":        { "role": "primary",   "displayName": "Structure Violet",     "canonical": "oklch(53.0% 0.226 284.2)", "tonalRamp": ["#0E003C", "#250074", "#4200B2", "#5E3CDC", "#7D66FF", "#A291FF", "#C6B9FF", "#E1DBFF"], "usage": "Links, pill text, highlighted-tile labels, step badge, Buy label, payoff curve stroke, gauge fill, focus ring, scrollbar thumb, secondary/ghost hover border. 5.5:1 on white, 4.9:1 on violet-soft." },
+      "violet-soft":   { "role": "primary",   "displayName": "Violet Tint",          "canonical": "oklch(94.4% 0.030 296.2)", "tonalRamp": ["#0C0A11", "#231F2C", "#443F51", "#646073", "#878397", "#AFAABF", "#D6D1E6", "#F0ECFE"], "usage": "Highlight surface: used quote side, credit KPI/stat tile, default pill background, gauge track, violet chips." },
+      "lime":          { "role": "secondary", "displayName": "Action Lime",          "canonical": "oklch(91.6% 0.199 119.6)", "tonalRamp": ["#080E00", "#1C2800", "#394C00", "#586F00", "#7A9400", "#A0BE00", "#C5E621", "#E1FE78"], "usage": "Primary button, rank-1 disc, Free pill, graded/ok chip, sold-leg point fill, ::selection. Always carries ink text." },
+      "lime-hover":    { "role": "secondary", "displayName": "Action Lime, pressed", "canonical": "oklch(89.1% 0.207 120.9)", "tonalRamp": ["#070F00", "#192800", "#364D00", "#557000", "#769600", "#9CBF00", "#C1E70C", "#DEFF74"], "usage": "Primary button hover fill." },
+      "mini-bar-deep": { "role": "neutral",   "displayName": "Mini Bar Deep",        "canonical": "oklch(87.4% 0.024 304.5)", "tonalRamp": ["#0C0A10", "#241F29", "#453F4D", "#66606F", "#898392", "#B1AABB", "#D8D1E2", "#F1EBFA"], "usage": "Darker bar/dot fill in mini mocks; the dotted SPY comparison curve. UNTOKENIZED in the source (literal #D9D2E3, reused 3x) — promote to a custom property before app use." }
+    },
+    "typographyMeta": {
+      "display":       { "displayName": "Display",       "purpose": "Hero headline only. Bricolage Grotesque 800, opsz 96, text-wrap: balance." },
+      "headline":      { "displayName": "Headline",      "purpose": "Section headings and the closing card heading. Bricolage 700, opsz 72." },
+      "title":         { "displayName": "Title",         "purpose": "Card titles, It is / It isn't columns, tab labels (1rem), preview titles (1.25rem). Bricolage 700, opsz 24." },
+      "money":         { "displayName": "Money",         "purpose": "Dollar figures, strikes, percentages. Bricolage 800, tabular, always with a Figtree caption beneath. Sizes 1.35 / 1.6 / 1.7 / 2 / 2.2rem by context." },
+      "ticker":        { "displayName": "Ticker",        "purpose": "Symbol names. Bricolage 800 at 1.25 / 1.6 / 2rem; 700 at 1.05rem inside the table." },
+      "lede":          { "displayName": "Lede",          "purpose": "The sentence after a heading. Figtree 400, 1.125rem, ink-2, max 66ch (38rem under a section heading)." },
+      "body":          { "displayName": "Body",          "purpose": "Paragraphs. 17px base, 16px under 640px, line-height 1.6." },
+      "table":         { "displayName": "Table",         "purpose": "Table cells. 0.95rem, tabular, nowrap; credit column 700." },
+      "label":         { "displayName": "Label",         "purpose": "Pill text and KPI keys. Figtree 600, 0.8rem, sentence case." },
+      "column-header": { "displayName": "Column header", "purpose": "Table th. 0.78rem 600, ink-2, 0.03em tracking, sentence case." },
+      "chart-label":   { "displayName": "Chart label",   "purpose": "Strike labels under payoff points, in the leg's color. 11px in step cards, 12px in the dashboard." }
+    },
+    "numerics": {
+      "rule": "Every strike, credit, percentage, dollar figure and date carries .num",
+      "css": ".num { font-variant-numeric: tabular-nums; font-feature-settings: \"tnum\"; }",
+      "monoFont": "none — tabular Figtree, not a monospace face"
+    },
+    "fonts": {
+      "load": "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap",
+      "display": { "family": "Bricolage Grotesque", "axes": "opsz 12–96, wght", "weightsUsed": [700, 800], "weightsLoadedUnused": [500] },
+      "body":    { "family": "Figtree", "weightsUsed": [400, 500, 600] }
+    },
+    "shadows": [
+      { "name": "shadow",         "value": "0 16px 40px rgba(40, 30, 70, .10)", "purpose": "Rest. Every white card, stat card, and the active tab." },
+      { "name": "shadow-hover",   "value": "0 22px 56px rgba(40, 30, 70, .14)", "purpose": "Step cards on hover, with translateY(-2px) at 250ms ease." },
+      { "name": "shadow-lift",    "value": "0 28px 64px rgba(40, 30, 70, .16)", "purpose": "The front hero card only — the one surface above other cards." },
+      { "name": "shadow-primary", "value": "0 8px 20px rgba(160, 190, 20, .25)", "purpose": "Lime primary button at rest (lime-tinted glow)." },
+      { "name": "shadow-primary-hover", "value": "0 12px 28px rgba(160, 190, 20, .32)", "purpose": "Lime primary button on hover." },
+      { "name": "shadow-none",    "value": "none", "purpose": "Highlighted (violet-soft) tiles, inset ground tiles, and outlined surfaces (1.5px line border) rest flat." }
+    ],
+    "borders": [
+      { "name": "rule",     "value": "1px solid #E3DEE9",   "purpose": "Table rules; the downside divider." },
+      { "name": "outline",  "value": "1.5px solid #E3DEE9", "purpose": "Secondary/ghost buttons, preview tiles, curve box." },
+      { "name": "used",     "value": "outline: 2px solid #6547E6; outline-offset: -2px", "purpose": "The used quote side." },
+      { "name": "focus",    "value": "outline: 3px solid #6547E6; outline-offset: 3px; border-radius: 24px", "purpose": "Global :focus-visible." }
+    ],
+    "radii": {
+      "rule": "One radius, 24px, on every outer surface. Inner radii are derived: 18px = radius/2 + 6px for a container nested once inside a card (tab bar, preview tile, leg tile, curve box); 12px = radius/2 for a control inside that (tab, mini mock). 999px only for the miniature bars/dots/chips inside mini mocks.",
+      "base": "24px", "half-plus": "18px", "half": "12px", "full": "999px",
+      "circles": "36px step badge and 26px rank marker use 24px and therefore render as full circles."
+    },
+    "motion": [
+      { "name": "ease-settle",      "value": "cubic-bezier(.16, 1, .3, 1)", "purpose": "Every authored animation: hero settle, headline rise, curve draw, gauge fill." },
+      { "name": "hero-settle",      "value": "settle .9s cubic-bezier(.16,1,.3,1) both; from { opacity:0; transform: translateY(28px) rotate(calc(var(--rot) + 2deg)) } to { opacity:1; transform: translateY(0) rotate(var(--rot)) }; delays .05s / .18s / .32s (back / mid / front); --rot -5deg / 3.5deg / 0deg", "purpose": "On load, the three hero cards settle into their stack." },
+      { "name": "hero-rise",        "value": "rise .7s cubic-bezier(.16,1,.3,1) both; from { opacity:0; transform: translateY(14px) }; children delayed 0 / .08s / .16s / .24s", "purpose": "The headline block rises with the cards." },
+      { "name": "curve-draw",       "value": "stroke-dasharray: 1000; stroke-dashoffset 1000 → 0; draw 1.4s cubic-bezier(.16,1,.3,1) forwards", "purpose": "Dashboard payoff curve draws once when .dash gains .is-in (IntersectionObserver threshold .35, then disconnect)." },
+      { "name": "gauge-fill",       "value": "pathLength=264; stroke-dashoffset 264 → 124 (= 264 × (1 − 0.53)); gauge 1.2s .3s cubic-bezier(.16,1,.3,1) forwards", "purpose": "Probability gauge fills after the curve." },
+      { "name": "hover-button",     "value": "transform, box-shadow, background-color, border-color .18s ease; translateY(-1px) on hover, 0 on active", "purpose": "All buttons." },
+      { "name": "hover-card",       "value": "box-shadow, transform .25s ease", "purpose": "Cards; step cards lift 2px." },
+      { "name": "hover-row",        "value": "background-color .15s ease", "purpose": "Table rows." },
+      { "name": "reduced-motion",   "value": "All keyframes and the pre-animation offsets live inside @media (prefers-reduced-motion: no-preference); under reduce the cards are at rest and the curve/gauge render settled with no script; the reveal script adds .is-in immediately when reduce is set or IntersectionObserver is absent.", "purpose": "Reduced-motion contract." },
+      { "name": "scroll",           "value": "scroll-behavior: smooth", "purpose": "In-page anchor links." }
+    ],
+    "browserSurfaces": {
+      "selection": "::selection { background: #D4F53C; color: #15121A; }",
+      "focus": ":focus-visible { outline: 3px solid #6547E6; outline-offset: 3px; border-radius: 24px; }",
+      "scrollbar": "html { scrollbar-color: #6547E6 #F1EEF3; }",
+      "links": "a { color: #6547E6; text-decoration-thickness: 1.5px; text-underline-offset: .18em; }"
+    },
+    "breakpoints": [
+      { "name": "tablet", "value": "980px", "changes": "Hero, proof, scan-output grids → 1 column; steps stack; dashboard stacks with stats 4-up (gauge spans 2); previews 2-up; hero padding 32/64; hero visual +16px top margin." },
+      { "name": "nav",    "value": "760px", "changes": "Nav links hide; brand + ghost button remain." },
+      { "name": "phone",  "value": "640px", "changes": "Base 16px; section padding 64; card padding 24 (cluster 16); back hero cards hide, front card 88% wide, its stat row hidden, credit 1.7rem; leg tiles 1-up; stats 2-up with gauge full-width; tab bar wraps 2-up (10px 8px, .95rem, text may break); previews 1-up; honest card 1 column at 24 padding; closing card 64/16 padding." }
+    ],
+    "layout": {
+      "container": "width: min(100% - 48px, 1180px); margin-inline: auto",
+      "gutter": "24px",
+      "measure": "66ch (lede); 38rem under a section heading",
+      "sectionPadding": "96px block (64px under 640px); hero 64 top / 96 bottom (32 / 64 under 980px)",
+      "sectionHead": "max-width 40rem; h2, 16px, lede, 48px to content",
+      "grids": {
+        "hero": "1.05fr 1fr, gap 64, align center; 4:3 slot with cluster absolutely positioned (back 62% left 2% top 6% rotate -5deg; mid 58% right 3% top 16% rotate 3.5deg; front 72% left 14% bottom 4%)",
+        "proof": "1fr 1fr, gap 64",
+        "steps": "repeat(3, 1fr), gap 24",
+        "dashboard": "1.15fr .85fr, gap 24; stat grid 1fr 1fr gap 16 with gauge grid-column 1 / -1",
+        "scanOutput": "24rem 1fr, gap 24, align start",
+        "previews": "repeat(4, 1fr), gap 16",
+        "honest": "1fr 1fr, gap 48, padding 48"
+      },
+      "spacingScale": { "s-1": "4px", "s-2": "8px", "s-3": "12px", "s-4": "16px", "s-5": "24px", "s-6": "32px", "s-7": "48px", "s-8": "64px", "s-9": "96px", "s-10": "128px", "subScale": "6px and 10px appear as gaps inside compact rows (leg rows, tab bar padding, pill gaps)" }
+    },
+    "payoffSvg": {
+      "viewBox": { "step": "0 0 240 120", "dashboard": "0 0 600 230", "performanceMini": "0 0 200 80", "gauge": "0 0 120 70" },
+      "baseline": { "stroke": "#E3DEE9", "strokeWidth": 1.5, "dash": { "step": "3 5", "dashboard": "4 6" } },
+      "curve": { "stroke": "#6547E6", "strokeWidth": { "step": 4, "dashboard": 5, "performanceMini": 3.5 }, "linecap": "round", "linejoin": "round", "fill": "none" },
+      "points": {
+        "radius": { "step": 5, "dashboard": 6 }, "ringWidth": 3,
+        "boughtLeg": { "fill": "#FFFFFF", "stroke": "#6547E6" },
+        "soldLeg":   { "fill": "#D4F53C", "stroke": "#15121A" }
+      },
+      "labels": { "font": "Figtree, sans-serif", "weight": 600, "size": { "step": 11, "dashboard": 12 }, "anchor": "middle under the point", "color": { "buy": "#6547E6", "sell": "#15121A", "axis": "#5A5266 (400)", "annotation": "#6547E6 (600)" } },
+      "comparisonCurve": { "book": "#6547E6 solid", "benchmark": "#D9D2E3 stroke-dasharray 1 7", "note": "Performance mini; the two curves end level." },
+      "gauge": { "arc": "M12 62 A48 48 0 0 1 108 62", "strokeWidth": 12, "linecap": "round", "track": "#EEE9FF", "fill": "#6547E6", "pathLength": 264, "offsetForP": "264 × (1 − p)" }
+    },
+    "openTokens": [
+      { "name": "profit / loss pair", "status": "undefined", "note": "No color for graded outcomes (win, loss, breakeven, borderline). Must be distinct from violet (structure) and lime (action), carry a text/sign cue, and never appear on chrome. Do not reuse lime." },
+      { "name": "input / field", "status": "provisional", "note": "No input exists in the artifact; the recipe in DESIGN.md and the ds-input component here are derived from the button and tile rules and need confirmation on first app build." },
+      { "name": "error / warning / disabled", "status": "undefined", "note": "No error, warning, or disabled state exists in the build." },
+      { "name": "selected-row", "status": "undefined", "note": "The ranked table has a hover fill (ground) but no selected state; the app needs one." },
+      { "name": "mini-bar-deep", "status": "untokenized literal", "note": "#D9D2E3 reused 3x as a literal; promote to --mini-bar-deep (or fold into the line ramp)." },
+      { "name": "card literal", "status": "untokenized literal", "note": "#fff / #FFFFFF used directly in SVG point fills and the step-badge numeral instead of var(--card)." },
+      { "name": "dark theme", "status": "none", "note": "This world is light-only; no dark palette is defined." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action per viewport: lime fill, ink text, lime-tinted glow, trailing arrow. Reads 'Run a free scan' on the landing page.",
+      "html": "<a class=\"ds-btn ds-btn-primary\" href=\"#\">Run a free scan <svg viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 10h12M11 5l5 5-5 5\"/></svg></a>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 8px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; font-size: 1rem; padding: 14px 24px; border-radius: 24px; border: 1.5px solid transparent; text-decoration: none; cursor: pointer; line-height: 1; transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease; } .ds-btn:hover { transform: translateY(-1px); } .ds-btn:active { transform: translateY(0); } .ds-btn:focus-visible { outline: 3px solid #6547E6; outline-offset: 3px; } .ds-btn svg { width: 18px; height: 18px; } .ds-btn-primary { background: #D4F53C; color: #15121A; box-shadow: 0 8px 20px rgba(160,190,20,.25); } .ds-btn-primary:hover { background: #C8EE22; box-shadow: 0 12px 28px rgba(160,190,20,.32); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "White with a hairline border; border and text turn violet on hover.",
+      "html": "<a class=\"ds-btn ds-btn-secondary\" href=\"#\">See how it works</a>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 8px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; font-size: 1rem; padding: 14px 24px; border-radius: 24px; border: 1.5px solid transparent; text-decoration: none; cursor: pointer; line-height: 1; transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease; } .ds-btn:hover { transform: translateY(-1px); } .ds-btn:active { transform: translateY(0); } .ds-btn:focus-visible { outline: 3px solid #6547E6; outline-offset: 3px; } .ds-btn-secondary { background: #FFFFFF; color: #15121A; border-color: #E3DEE9; } .ds-btn-secondary:hover { border-color: #6547E6; color: #6547E6; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Transparent with a hairline border, smaller padding; the nav's action. Fills white with a violet border on hover.",
+      "html": "<a class=\"ds-btn ds-btn-ghost\" href=\"#\">Run a free scan</a>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 8px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; border-radius: 24px; border: 1.5px solid transparent; text-decoration: none; cursor: pointer; line-height: 1; transition: transform .18s ease, background-color .18s ease, border-color .18s ease; } .ds-btn:hover { transform: translateY(-1px); } .ds-btn:focus-visible { outline: 3px solid #6547E6; outline-offset: 3px; } .ds-btn-ghost { background: transparent; color: #15121A; border-color: #E3DEE9; padding: 10px 18px; font-size: .95rem; } .ds-btn-ghost:hover { background: #FFFFFF; border-color: #6547E6; }"
+    },
+    {
+      "name": "Pills",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Three pills: default (violet on violet-soft) for labels, quiet (ink-2 on ground-deep) for secondary facts and Paid, lime (ink on lime) for Free.",
+      "html": "<span class=\"ds-pill\">Expires Oct 17</span> <span class=\"ds-pill ds-pill-quiet\">5 weeks</span> <span class=\"ds-pill ds-pill-lime\">Free</span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; gap: 6px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; font-size: .8rem; font-weight: 600; letter-spacing: .01em; padding: 5px 12px; border-radius: 24px; background: #EEE9FF; color: #6547E6; } .ds-pill-quiet { background: #E6E1EB; color: #5A5266; } .ds-pill-lime { background: #D4F53C; color: #15121A; }"
+    },
+    {
+      "name": "Setup Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The signature object: ticker and meta, a 2x2 KPI grid with the credit highlighted violet-soft, three ground-tile leg rows with pay/collect captions, and a hairline-ruled downside block.",
+      "html": "<article class=\"ds-card ds-setup\"><div class=\"ds-setup-head\"><span class=\"ds-ticker\">NVDA</span><span class=\"ds-meta ds-num\">Expires Oct 17 · 5 weeks<br>Stock $184.00</span></div><div class=\"ds-kpis\"><div class=\"ds-kpi ds-kpi-hi\"><div class=\"ds-k\">Credit collected</div><div class=\"ds-v ds-num\">$540</div></div><div class=\"ds-kpi\"><div class=\"ds-k\">Max profit</div><div class=\"ds-v ds-num\">$2,040</div></div><div class=\"ds-kpi\"><div class=\"ds-k\">P(max profit)</div><div class=\"ds-v ds-num\">53%</div></div><div class=\"ds-kpi\"><div class=\"ds-k\">Collateral</div><div class=\"ds-v ds-num\">$16,500</div></div></div><ul class=\"ds-legs ds-num\"><li><span class=\"ds-leg-name\"><span><span class=\"ds-buy\">Buy</span> 185 call</span><small>you pay the ask</small></span><span>$11.40</span></li><li><span class=\"ds-leg-name\"><span><span class=\"ds-sell\">Sell</span> 200 call</span><small>you collect the bid</small></span><span>$6.20</span></li><li><span class=\"ds-leg-name\"><span><span class=\"ds-sell\">Sell</span> 165 put</span><small>you collect the bid</small></span><span>$10.60</span></li></ul><div class=\"ds-downside\"><span>Breakeven <b class=\"ds-num\">$159.60</b></span><span>Worst case: you own 100 NVDA at an effective <b class=\"ds-num\">$159.60</b>.</span></div></article>",
+      "css": ".ds-card { background: #FFFFFF; border-radius: 24px; box-shadow: 0 16px 40px rgba(40,30,70,.10); padding: 24px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; font-size: 17px; line-height: 1.6; max-width: 24rem; } .ds-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; } .ds-setup-head { display: flex; justify-content: space-between; align-items: baseline; } .ds-ticker { font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; font-size: 1.6rem; letter-spacing: -0.01em; } .ds-meta { color: #5A5266; font-size: .85rem; text-align: right; } .ds-kpis { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .ds-kpi { background: #F1EEF3; border-radius: 24px; padding: 16px; } .ds-kpi .ds-k { font-size: .8rem; color: #5A5266; font-weight: 600; } .ds-kpi .ds-v { font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; font-size: 1.6rem; letter-spacing: -0.02em; line-height: 1.1; margin-top: 2px; } .ds-kpi-hi { background: #EEE9FF; } .ds-kpi-hi .ds-k { color: #6547E6; } .ds-legs { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 6px; font-size: .9rem; } .ds-legs li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 24px; background: #F1EEF3; } .ds-legs li > span:last-child { font-weight: 600; } .ds-leg-name { display: flex; flex-direction: column; } .ds-leg-name small { color: #5A5266; font-weight: 400; font-size: .8rem; } .ds-buy { color: #6547E6; font-weight: 600; } .ds-sell { color: #5A5266; font-weight: 600; } .ds-downside { margin-top: 16px; border-top: 1px solid #E3DEE9; padding-top: 16px; display: grid; gap: 6px; font-size: .92rem; color: #5A5266; } .ds-downside b { color: #15121A; font-weight: 600; }"
+    },
+    {
+      "name": "Ranked Table",
+      "kind": "custom",
+      "refersTo": "table-cell",
+      "description": "The scan result inside a white card: hairline rules, tabular figures, right-aligned numerics, a lime rank-1 disc, and a ground-fill row hover with rounded ends.",
+      "html": "<article class=\"ds-card ds-table-card\"><div class=\"ds-label-row\"><span class=\"ds-pill\">Sample scan · illustrative</span><span class=\"ds-meta\">Ranked by credit per dollar of spread</span></div><div class=\"ds-table-scroll\"><table class=\"ds-table ds-num\"><thead><tr><th>Rank</th><th>Ticker</th><th>Expires</th><th>Put / Call / Call</th><th class=\"ds-r\">Credit</th><th class=\"ds-r\">P(profit)</th><th class=\"ds-r\">Collateral</th></tr></thead><tbody><tr class=\"ds-top\"><td class=\"ds-rank\"><span>1</span></td><td class=\"ds-tick\">NVDA</td><td>Oct 17</td><td class=\"ds-strikes\"><b>165</b> <span>/</span> <b>185</b> <span>/</span> <b>200</b></td><td class=\"ds-r ds-credit\">$540</td><td class=\"ds-r\">53%</td><td class=\"ds-r\">$16,500</td></tr><tr><td class=\"ds-rank\">2</td><td class=\"ds-tick\">AMD</td><td>Oct 17</td><td class=\"ds-strikes\"><b>150</b> <span>/</span> <b>170</b> <span>/</span> <b>185</b></td><td class=\"ds-r ds-credit\">$505</td><td class=\"ds-r\">55%</td><td class=\"ds-r\">$15,000</td></tr><tr><td class=\"ds-rank\">3</td><td class=\"ds-tick\">META</td><td>Oct 24</td><td class=\"ds-strikes\"><b>680</b> <span>/</span> <b>740</b> <span>/</span> <b>780</b></td><td class=\"ds-r ds-credit\">$1,290</td><td class=\"ds-r\">52%</td><td class=\"ds-r\">$68,000</td></tr></tbody></table></div><p class=\"ds-table-foot\">Credit and collateral are per contract.</p></article>",
+      "css": ".ds-card { background: #FFFFFF; border-radius: 24px; box-shadow: 0 16px 40px rgba(40,30,70,.10); font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; font-size: 17px; line-height: 1.6; } .ds-table-card { padding: 24px 24px 12px; overflow: hidden; } .ds-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; } .ds-label-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 8px 16px; } .ds-pill { display: inline-flex; align-items: center; font-size: .8rem; font-weight: 600; letter-spacing: .01em; padding: 5px 12px; border-radius: 24px; background: #EEE9FF; color: #6547E6; } .ds-meta { color: #5A5266; font-size: .85rem; } .ds-table-scroll { overflow-x: auto; } .ds-table { width: 100%; border-collapse: collapse; font-size: .95rem; min-width: 560px; } .ds-table th, .ds-table td { text-align: left; padding: 14px 12px; white-space: nowrap; } .ds-table th { font-size: .78rem; font-weight: 600; color: #5A5266; letter-spacing: .03em; border-bottom: 1px solid #E3DEE9; } .ds-table td { border-bottom: 1px solid #E3DEE9; } .ds-table tbody tr:last-child td { border-bottom: 0; } .ds-table tbody tr { transition: background-color .15s ease; } .ds-table tbody tr:hover td { background: #F1EEF3; } .ds-table tbody tr:hover td:first-child { border-radius: 24px 0 0 24px; } .ds-table tbody tr:hover td:last-child { border-radius: 0 24px 24px 0; } .ds-table .ds-r { text-align: right; } .ds-table .ds-rank { color: #5A5266; width: 3.5rem; } .ds-table .ds-tick { font-weight: 700; font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-size: 1.05rem; } .ds-table .ds-credit { font-weight: 700; } .ds-table tr.ds-top td.ds-rank span { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 24px; background: #D4F53C; color: #15121A; font-weight: 700; } .ds-strikes span { color: #5A5266; } .ds-strikes b { font-weight: 600; } .ds-table-foot { margin: 0; padding: 12px 8px 8px; color: #5A5266; font-size: .85rem; }"
+    },
+    {
+      "name": "Tab Strip",
+      "kind": "nav",
+      "refersTo": "tabbar",
+      "description": "The app shell's navigation: a ground tray (18px radius) holding equal tabs (12px radius, Bricolage 700) with Free/Paid pills; the active tab is a white card with the rest shadow.",
+      "html": "<div class=\"ds-tabbar\" role=\"list\" aria-label=\"App tabs\"><span class=\"ds-tab ds-tab-active\" role=\"listitem\">Screener <span class=\"ds-pill ds-pill-lime\">Free</span></span><span class=\"ds-tab\" role=\"listitem\">Tradebook <span class=\"ds-pill ds-pill-lime\">Free</span></span><span class=\"ds-tab\" role=\"listitem\">Picks <span class=\"ds-pill ds-pill-quiet\">Paid</span></span><span class=\"ds-tab\" role=\"listitem\">Performance <span class=\"ds-pill ds-pill-quiet\">Paid</span></span></div>",
+      "css": ".ds-tabbar { display: flex; gap: 6px; padding: 6px; background: #F1EEF3; border-radius: 18px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; } .ds-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 14px; border-radius: 12px; font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-weight: 700; font-size: 1rem; color: #5A5266; white-space: nowrap; cursor: pointer; transition: background-color .18s ease, color .18s ease, box-shadow .18s ease; } .ds-tab:hover { color: #15121A; } .ds-tab:focus-visible { outline: 3px solid #6547E6; outline-offset: 3px; } .ds-tab-active { background: #FFFFFF; color: #15121A; box-shadow: 0 16px 40px rgba(40,30,70,.10); } .ds-pill { display: inline-flex; align-items: center; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; font-size: .72rem; font-weight: 600; letter-spacing: .01em; padding: 2px 9px; border-radius: 24px; background: #EEE9FF; color: #6547E6; } .ds-pill-quiet { background: #E6E1EB; color: #5A5266; } .ds-pill-lime { background: #D4F53C; color: #15121A; } @media (max-width: 640px) { .ds-tabbar { flex-wrap: wrap; } .ds-tab { flex: 1 1 45%; min-width: 0; white-space: normal; text-align: center; padding: 10px 8px; font-size: .95rem; } }"
+    },
+    {
+      "name": "Preview Tile with Mini Mock",
+      "kind": "card",
+      "refersTo": "preview-tile",
+      "description": "An outlined tile (1.5px line, 18px radius) holding a ground mini mock (12px radius) of bars, dots, chips and a lock glyph, then a title and a sentence.",
+      "html": "<article class=\"ds-preview\"><div class=\"ds-mini\" aria-hidden=\"true\"><div class=\"ds-row\"><span class=\"ds-bar ds-bar-short ds-bar-ink\"></span><span class=\"ds-bar\"></span><span class=\"ds-chip ds-chip-ok\">graded</span></div><div class=\"ds-row\"><span class=\"ds-dot\"></span><span class=\"ds-bar\"></span><span class=\"ds-chip\">pick</span></div><div class=\"ds-row\"><svg class=\"ds-lock\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><rect x=\"5\" y=\"10\" width=\"14\" height=\"11\" rx=\"3\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M8 10V7a4 4 0 0 1 8 0v3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg><span class=\"ds-bar\"></span><span class=\"ds-chip ds-chip-mute\">open</span></div></div><h3>Tradebook</h3><p>Save the trades you like. When they expire, each one is graded against what the stock actually did.</p></article>",
+      "css": ".ds-preview { border: 1.5px solid #E3DEE9; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #FFFFFF; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; max-width: 280px; } .ds-preview h3 { margin: 0; font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.05; } .ds-preview p { margin: 0; font-size: .95rem; color: #5A5266; line-height: 1.6; } .ds-mini { border-radius: 12px; background: #F1EEF3; padding: 12px; min-height: 96px; display: flex; flex-direction: column; gap: 7px; justify-content: center; } .ds-row { display: flex; align-items: center; gap: 8px; } .ds-bar { height: 8px; border-radius: 999px; background: #E3DEE9; flex: 1; } .ds-bar-short { flex: 0 0 40%; } .ds-bar-ink { background: #D9D2E3; } .ds-dot { width: 10px; height: 10px; border-radius: 999px; background: #6547E6; flex: none; } .ds-chip { height: 16px; border-radius: 999px; padding: 0 8px; font-size: .66rem; font-weight: 700; display: grid; place-items: center; background: #EEE9FF; color: #6547E6; } .ds-chip-ok { background: #D4F53C; color: #15121A; } .ds-chip-mute { background: #E6E1EB; color: #5A5266; } .ds-lock { width: 14px; height: 14px; color: #7E7590; flex: none; }"
+    },
+    {
+      "name": "Step Card with Payoff Curve",
+      "kind": "card",
+      "refersTo": "step-badge",
+      "description": "A how-it-works card: violet circle badge, title, sentence, and a 240x120 payoff SVG pinned to the bottom (violet 4px line, dashed hairline baseline, white/violet bought point, lime/ink sold points). Lifts on hover.",
+      "html": "<article class=\"ds-card ds-step\"><div class=\"ds-badge\" aria-hidden=\"true\">3</div><h3>Sell a put below</h3><p>You collect another premium. If the stock falls to that price, you agree to own it there.</p><div class=\"ds-payoff\"><svg viewBox=\"0 0 240 120\" fill=\"none\" aria-label=\"Payoff of the full three-leg trade\"><line x1=\"12\" y1=\"78\" x2=\"228\" y2=\"78\" stroke=\"#E3DEE9\" stroke-width=\"1.5\" stroke-dasharray=\"3 5\"/><path d=\"M14 108 L62 66 L118 66 L170 22 L226 22\" stroke=\"#6547E6\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"62\" cy=\"66\" r=\"5\" fill=\"#D4F53C\" stroke=\"#15121A\" stroke-width=\"3\"/><circle cx=\"118\" cy=\"66\" r=\"5\" fill=\"#fff\" stroke=\"#6547E6\" stroke-width=\"3\"/><circle cx=\"170\" cy=\"22\" r=\"5\" fill=\"#D4F53C\" stroke=\"#15121A\" stroke-width=\"3\"/><text x=\"62\" y=\"114\" font-family=\"Figtree, sans-serif\" font-size=\"11\" font-weight=\"600\" fill=\"#15121A\" text-anchor=\"middle\">sell 165</text><text x=\"118\" y=\"114\" font-family=\"Figtree, sans-serif\" font-size=\"11\" font-weight=\"600\" fill=\"#6547E6\" text-anchor=\"middle\">buy 185</text><text x=\"170\" y=\"114\" font-family=\"Figtree, sans-serif\" font-size=\"11\" font-weight=\"600\" fill=\"#15121A\" text-anchor=\"middle\">sell 200</text></svg></div></article>",
+      "css": ".ds-card { background: #FFFFFF; border-radius: 24px; box-shadow: 0 16px 40px rgba(40,30,70,.10); padding: 32px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; font-size: 17px; line-height: 1.6; transition: box-shadow .25s ease, transform .25s ease; } .ds-step { display: flex; flex-direction: column; gap: 16px; max-width: 360px; } .ds-step:hover { box-shadow: 0 22px 56px rgba(40,30,70,.14); transform: translateY(-2px); } .ds-badge { width: 36px; height: 36px; border-radius: 24px; display: grid; place-items: center; background: #6547E6; color: #FFFFFF; font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-weight: 700; } .ds-step h3 { margin: 8px 0 0; font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.05; } .ds-step p { margin: 0; color: #5A5266; font-size: 1rem; } .ds-payoff { margin-top: auto; padding-top: 12px; } .ds-payoff svg { width: 100%; height: auto; display: block; }"
+    },
+    {
+      "name": "Stat Card and Gauge",
+      "kind": "card",
+      "refersTo": "stat-card",
+      "description": "Small white stat cards (label / display-800 value / sub) and the probability gauge: a 12px semicircle with a violet-soft track and violet fill via pathLength 264 and stroke-dashoffset 264 x (1 - p). The highlighted stat is violet-soft with no shadow.",
+      "html": "<div class=\"ds-stats\"><div class=\"ds-stat ds-gauge\"><svg viewBox=\"0 0 120 70\" fill=\"none\" aria-hidden=\"true\"><path d=\"M12 62 A48 48 0 0 1 108 62\" stroke=\"#EEE9FF\" stroke-width=\"12\" stroke-linecap=\"round\"/><path d=\"M12 62 A48 48 0 0 1 108 62\" stroke=\"#6547E6\" stroke-width=\"12\" stroke-linecap=\"round\" pathLength=\"264\" stroke-dasharray=\"264\" stroke-dashoffset=\"124\"/></svg><div><span class=\"ds-label\">Chance of max profit</span><span class=\"ds-val ds-num\">53%</span><span class=\"ds-sub\">Based on the options’ own probabilities.</span></div></div><div class=\"ds-stat ds-stat-hi\"><span class=\"ds-label\">Credit collected</span><span class=\"ds-val ds-num\">$540</span><span class=\"ds-sub\">per contract</span></div><div class=\"ds-stat\"><span class=\"ds-label\">Max profit</span><span class=\"ds-val ds-num\">$2,040</span><span class=\"ds-sub\">if NVDA is above $200</span></div></div>",
+      "css": ".ds-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; max-width: 420px; } .ds-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; } .ds-stat { background: #FFFFFF; border-radius: 24px; box-shadow: 0 16px 40px rgba(40,30,70,.10); padding: 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; } .ds-stat .ds-label { font-size: .85rem; color: #5A5266; font-weight: 600; } .ds-stat .ds-val { font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; } .ds-stat .ds-sub { font-size: .9rem; color: #5A5266; } .ds-gauge { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 16px; } .ds-gauge svg { width: 112px; height: auto; flex: none; } .ds-gauge .ds-val { font-size: 2rem; } .ds-gauge > div { display: flex; flex-direction: column; gap: 6px; } .ds-stat-hi { background: #EEE9FF; box-shadow: none; } .ds-stat-hi .ds-label { color: #6547E6; }"
+    },
+    {
+      "name": "Leg Tile and Curve Box",
+      "kind": "custom",
+      "refersTo": "leg-tile",
+      "description": "Dashboard pieces: three ground leg tiles (18px radius; role / strike in display 800 / price with its quote side) and an outlined curve box (1.5px line, 18px radius) with a caption row.",
+      "html": "<div class=\"ds-dash\"><div class=\"ds-legs3\"><div class=\"ds-leg\"><span class=\"ds-role\">Buy call</span><span class=\"ds-strike ds-num\">$185</span><span class=\"ds-px ds-num\">$11.40 · ask</span></div><div class=\"ds-leg\"><span class=\"ds-role\">Sell call</span><span class=\"ds-strike ds-num\">$200</span><span class=\"ds-px ds-num\">$6.20 · bid</span></div><div class=\"ds-leg\"><span class=\"ds-role\">Sell put</span><span class=\"ds-strike ds-num\">$165</span><span class=\"ds-px ds-num\">$10.60 · bid</span></div></div><div class=\"ds-curve\"><svg viewBox=\"0 0 600 230\" fill=\"none\" aria-label=\"Payoff at expiration per contract\"><line x1=\"20\" y1=\"112\" x2=\"580\" y2=\"112\" stroke=\"#E3DEE9\" stroke-width=\"1.5\" stroke-dasharray=\"4 6\"/><text x=\"580\" y=\"106\" font-size=\"11\" text-anchor=\"end\" fill=\"#5A5266\" font-family=\"Figtree, sans-serif\">break even</text><path d=\"M20 198 L195 88.5 L335 88.5 L440 22.6 L580 22.6\" stroke=\"#6547E6\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"195\" cy=\"88.5\" r=\"6\" fill=\"#D4F53C\" stroke=\"#15121A\" stroke-width=\"3\"/><circle cx=\"335\" cy=\"88.5\" r=\"6\" fill=\"#fff\" stroke=\"#6547E6\" stroke-width=\"3\"/><circle cx=\"440\" cy=\"22.6\" r=\"6\" fill=\"#D4F53C\" stroke=\"#15121A\" stroke-width=\"3\"/><text x=\"195\" y=\"222\" font-size=\"12\" text-anchor=\"middle\" fill=\"#5A5266\" font-family=\"Figtree, sans-serif\">$165</text><text x=\"335\" y=\"222\" font-size=\"12\" text-anchor=\"middle\" fill=\"#5A5266\" font-family=\"Figtree, sans-serif\">$185</text><text x=\"440\" y=\"222\" font-size=\"12\" text-anchor=\"middle\" fill=\"#5A5266\" font-family=\"Figtree, sans-serif\">$200</text><text x=\"265\" y=\"78\" font-size=\"12\" text-anchor=\"middle\" fill=\"#6547E6\" font-weight=\"600\" font-family=\"Figtree, sans-serif\">+$540 credit</text><text x=\"510\" y=\"44\" font-size=\"12\" text-anchor=\"middle\" fill=\"#6547E6\" font-weight=\"600\" font-family=\"Figtree, sans-serif\">+$2,040 max</text></svg><div class=\"ds-cap\"><span>Payoff at expiration, per contract</span><span>Stock price →</span></div></div></div>",
+      "css": ".ds-dash { display: flex; flex-direction: column; gap: 24px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; max-width: 620px; } .ds-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; } .ds-legs3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; } .ds-leg { background: #F1EEF3; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 6px; } .ds-role { font-size: .85rem; font-weight: 600; color: #5A5266; } .ds-strike { font-family: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif; font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; } .ds-px { font-size: .92rem; color: #5A5266; } .ds-curve { border: 1.5px solid #E3DEE9; border-radius: 18px; padding: 16px; } .ds-curve svg { width: 100%; height: auto; display: block; } .ds-cap { display: flex; justify-content: space-between; gap: 12px; font-size: .85rem; color: #5A5266; margin-top: 8px; flex-wrap: wrap; } @media (max-width: 640px) { .ds-legs3 { grid-template-columns: 1fr; } }"
+    },
+    {
+      "name": "Text Input (provisional)",
+      "kind": "input",
+      "refersTo": "button-secondary",
+      "description": "PROVISIONAL — no input exists in the built artifact. Derived from the secondary button and tile rules: white, 1.5px hairline, 24px radius, violet border on focus plus the global ring. Confirm on first app build.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Tickers</span><input class=\"ds-input\" type=\"text\" placeholder=\"NVDA, META or @semis\"></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif; color: #15121A; max-width: 360px; } .ds-field-label { font-size: .8rem; font-weight: 600; color: #5A5266; letter-spacing: .01em; } .ds-input { font: inherit; font-size: 1rem; color: #15121A; background: #FFFFFF; border: 1.5px solid #E3DEE9; border-radius: 24px; padding: 14px 20px; transition: border-color .18s ease; } .ds-input::placeholder { color: #5A5266; } .ds-input:hover { border-color: #6547E6; } .ds-input:focus { border-color: #6547E6; } .ds-input:focus-visible { outline: 3px solid #6547E6; outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Card You Can Hold",
+    "overview": "Luo Capital's visual world treats an options trade as a physical object: three white cards you could pick up, turn over, and read the credit off the front. Everything sits on a pale, warm lilac-gray ground that is neither paper nor screen; white surfaces float above it on soft, downward-cast shadows; black ink does the talking; one flat violet draws the structure (links, labels, the \"buy\" leg, the payoff line); and one chartreuse is spent on exactly the thing we want the visitor to do. The density is deliberately low for a finance product: one focal point per section, generous section padding, a 66-character measure, and numbers set large in the display face so a $540 credit reads before a sentence does. It is calm on purpose, because the product's promise is that the number is real, and calm is how a real number looks.\n\nThis world was chosen as direction v1 (\"Soft Fintech Cards\") over four alternatives and then absorbed three components from the rejected v4 (\"Friendly Data\") direction, recolored into this palette: payoff-curve step cards, the tab-strip \"What's inside\" panel, and the setup dashboard with its drawn curve and probability gauge. Those are now native here, not borrowed. The old app frontend (dark slate, purple, JetBrains Mono) is superseded by this system and carries no authority.\n\nConfirmed rejections, from the direction contract and the build: no dark terminal, no candlestick chaos, no dense tables above the fold, no gradients anywhere, no stock photography, no 3D blobs, no icon-grid feature rows, no purple-gradient SaaS, no fake proof.",
+    "keyCharacteristics": [
+      "Warm lilac-gray ground with white cards on soft offset shadows; black ink; two flat accents (violet for structure, lime for the one action); no gradients.",
+      "One radius, 24px, on every outer surface; inner controls derive 12px and 18px from it.",
+      "Bricolage Grotesque for headings, tickers, and money; Figtree for everything else; every figure tabular.",
+      "The pay/collect convention runs through every component: bought leg = violet or white-with-violet-ring; sold legs = lime-with-ink-ring or muted ink.",
+      "One authored entrance (the hero cards settle) and one scroll reveal (the curve draws, the gauge fills); everything else is a 150 to 250 ms ease and all of it is off under reduced motion."
+    ],
+    "rules": [
+      { "name": "The One Action Rule", "section": "colors", "body": "Lime appears only where the visitor can act or has been rewarded for acting: the primary button, the rank-1 marker, the Free pill, a graded/ok status chip, and the sold-leg point on a curve. It is never a background wash, never a border, never body text." },
+      { "name": "The Pay/Collect Rule", "section": "colors", "body": "Anything the trader pays for is violet (the \"Buy\" label, the bought-leg curve point drawn white with a violet ring); anything the trader collects is ink or lime (the \"Sell\" label in ink-2, the sold-leg points drawn lime with an ink ring). The convention holds across the setup card, the leg tiles, the step cards, and the dashboard curve, so a reader learns it once." },
+      { "name": "The Money Is Ink Rule", "section": "colors", "body": "Dollar figures, strikes, and percentages are set in ink, in the display face, with tabular figures. Money never borrows lime or violet, so the eye never confuses a value with an action or a status. (The build carries one exception, the \"+ $540\" result pill after the three steps; it is a rhetorical flourish on the marketing page, not a pattern for the app.)" },
+      { "name": "The Tinted Gray Rule", "section": "colors", "body": "No neutral gray anywhere. Every gray in the system is warmed toward the ground's lilac hue (ink-2, ink-3, line, ground-deep)." },
+      { "name": "The Tabular Rule", "section": "typography", "body": "Every strike, credit, percentage, dollar figure, and date carries .num (font-variant-numeric: tabular-nums; font-feature-settings: \"tnum\"). Tables carry it on the <table> element so every cell inherits it. This is what keeps numeric columns aligned without a monospace face." },
+      { "name": "The Caption Under Money Rule", "section": "typography", "body": "A money figure is never alone: it always has its unit or condition beneath it in the body face (credit per contract, if NVDA is above $200, tied up while it's open), smaller and in ink-2." },
+      { "name": "The Sentence-Case Rule", "section": "typography", "body": "No uppercase labels, no eyebrows, no kickers. Column headers and pill labels are sentence case with at most 0.03em of tracking." },
+      { "name": "The Soft Offset Rule", "section": "elevation", "body": "Every shadow is offset downward (y ≥ 8px), blurred at least 2.5× its offset, and tinted rgba(40, 30, 70, α) with α between .10 and .16. No spread, no inset, no black." },
+      { "name": "The Highlight Tile Rule", "section": "elevation", "body": "A highlighted tile (kpi.hi, dash-stat.hi, quote-side.used) swaps its background to violet-soft and its label to violet, and drops its shadow (box-shadow: none). The \"used\" quote side adds a 2px inset violet outline. Highlight is a color change, never an added shadow." }
+    ],
+    "dos": [
+      "Do put every outer surface on the 24px radius and derive inner radii as 18px (radius/2 + 6px) and 12px (radius/2); never pick a third value.",
+      "Do set every figure with .num (tabular-nums) and right-align numeric columns.",
+      "Do set money in Bricolage Grotesque 800 with tracking -0.02em and a Figtree caption in ink-2 beneath it.",
+      "Do draw the bought leg white-with-violet-ring and the sold legs lime-with-ink-ring on every payoff curve, and label \"Buy\" in violet and \"Sell\" in ink-2 on every leg list.",
+      "Do highlight the tile that is the point of a card by switching it to violet-soft with violet labels and no shadow.",
+      "Do keep shadows soft and offset downward in rgba(40, 30, 70, .10–.16); outline flat surfaces with 1.5px line instead.",
+      "Do house every animation inside prefers-reduced-motion: no-preference and render the settled state by default.",
+      "Do use ink-3 for icon tint only and ink-2 for any secondary text."
+    ],
+    "donts": [
+      "Don't use lime for anything but the primary action, the rank-1 marker, Free/graded chips, and sold-leg curve points; never as a wash, border, or figure color.",
+      "Don't color a dollar figure violet or lime; money is ink.",
+      "Don't use gradients, zero-offset halo shadows, hard shadows, or pure neutral grays.",
+      "Don't set labels in uppercase, or add eyebrows or kickers above headings.",
+      "Don't introduce a monospace face for numbers; tabular Figtree is the rule.",
+      "Don't put a dark surface, a candlestick chart, or a dense table above the fold.",
+      "Don't reuse lime, violet, or an ad-hoc green/red for profit and loss; the pair is an open system decision and must carry a text or sign cue when it lands.",
+      "Don't reuse the untokenized #D9D2E3 or #fff literals from the landing page's SVGs and mini mocks without first promoting them to custom properties (mini-bar-deep, card)."
+    ]
+  }
+}

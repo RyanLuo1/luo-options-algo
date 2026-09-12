@@ -2,7 +2,7 @@
 version: 1
 slug: "design-landing"
 primary_target: "design/landing"
-related_targets: ["design/landing/v1/index.html","design/landing/v2/index.html","design/landing/v3/index.html","design/landing/v4/index.html","design/landing/v5/index.html"]
+related_targets: ["design/landing/v1/index.html"]
 ---
 
 # Surface brief — Luo Capital landing page (design/landing/v1…v5)
@@ -30,4 +30,8 @@ THESIS: a probability number can feel friendly; refuses the terminal and the ico
 ## Direction contract — v5 Sunlit Minimal
 THESIS: confidence in spacing, very few words; refuses copy-heavy marketing. OWN-WORLD: near-white ground, Swiss 12-column discipline, one warm peach-to-cream wash, black ink, black buttons, radius 8px; display Schibsted Grotesk, body Albert Sans; minimal ruled table. STORY: sees one monumental product screenshot, gets it, scans. FIRST VIEWPORT: split; short headline and CTA left; 3:2 screenshot slot right bleeding off the edge. FORM: pinned direction 5 of 5, seed e1680c79. FINISH: as above.
 
-Unresolved: which direction wins (user decision after screenshots); real hero imagery; DESIGN.md is written for the winner only.
+## Decision (2026-09-12)
+
+The user chose **v1 Soft Fintech Cards** as the landing page and the app's design system, after a five-way screenshot review. v1 was then merged with three v4 Friendly Data elements, recolored into v1's palette and treated as native to its world: the payoff-curve step cards, the tab-strip "What's inside", and the "What one setup looks like" dashboard (placed between "Three moves" and "What a scan hands you"). Finish review: ship (eight material fixes scored resolved). v2–v5 remain on disk as reference alternates, not deleted. The v1 direction contract above is the binding one; the other four contracts are archival.
+
+Unresolved: real hero imagery for the 4:3 slot; the NVDA setup appears twice (dashboard + compact card beside the table), deferred by the user; Google Fonts are linked, not self-hosted; DESIGN.md + design.json are being written from v1 by the documenter.
