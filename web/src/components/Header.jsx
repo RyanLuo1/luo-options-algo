@@ -20,7 +20,7 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
     return (
       <header className="bg-surface border-b border-subtle px-6 py-4 flex items-center gap-4">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/app')}
           className="flex items-center gap-1.5 text-secondary hover:text-primary text-sm font-medium transition-colors"
         >
           ← Back to Screener
@@ -37,7 +37,7 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
     return (
       <header className="bg-surface border-b border-subtle px-6 py-4 flex items-center gap-4">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/app')}
           className="flex items-center gap-1.5 text-secondary hover:text-primary text-sm font-medium transition-colors"
         >
           ← Back to Screener

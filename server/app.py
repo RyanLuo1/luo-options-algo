@@ -24,6 +24,11 @@ from screener import scan_ticker, MAX_SPREAD_PCT
 WEB_DIST = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
 )
+# Marketing landing page (design/landing/v1) — served at the exact site root.
+# Self-contained HTML (inline CSS, data-URI hero); the React app lives at /app.
+LANDING_HTML = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "design", "landing", "v1"
+)
 
 app = Flask(__name__, static_folder=None)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
@@ -945,16 +950,20 @@ def chart_cache_stats():
 @app.route("/<path:path>")
 def serve_react(path):
     """
-    Serve built React app for all non-API routes.
-    If the path resolves to a real file in web/dist (e.g. assets/index-*.js),
-    serve it directly. Otherwise fall back to index.html so React Router handles
-    client-side routes like /trade and /tradebook.
+    Serve the landing page at "/" and the built React app for every other
+    non-API route. If the path resolves to a real file in web/dist (e.g.
+    assets/index-*.js), serve it directly. Otherwise fall back to index.html so
+    React Router handles client-side routes like /app, /trade and /tradebook.
     index.html is served with no-cache headers so rebuilds are picked up immediately.
     """
-    if path:
-        candidate = os.path.join(WEB_DIST, path)
-        if os.path.isfile(candidate):
-            return send_from_directory(WEB_DIST, path)
+    if not path:
+        # Site root = the landing page. The screener moved to /app (see web/src/main.jsx).
+        response = send_from_directory(LANDING_HTML, "index.html")
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return response
+    candidate = os.path.join(WEB_DIST, path)
+    if os.path.isfile(candidate):
+        return send_from_directory(WEB_DIST, path)
     response = send_from_directory(WEB_DIST, "index.html")
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'

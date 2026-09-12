@@ -38,7 +38,7 @@ const router = createBrowserRouter([
     element: <ThemeScope />,
     children: [
       { path: '/login',     element: <LoginPage /> },
-      { path: '/',          element: <ProtectedRoute><App /></ProtectedRoute> },
+      { path: '/app',       element: <ProtectedRoute><App /></ProtectedRoute> },
       { path: '/trade',     element: <ProtectedRoute><TradePage /></ProtectedRoute> },
       { path: '/tradebook', element: <ProtectedRoute><TradebookPage /></ProtectedRoute> },
     ],

@@ -132,7 +132,7 @@ Black-Scholes IV solver + delta for the learned-ranker backtest (`docs/RANKER_SP
 
 ### `server/app.py`
 - Flask API server; run with `python3 server/app.py` from the project root
-- Serves the built React app from `web/dist` (single server for API + frontend)
+- Serves the built React app from `web/dist` (single server for API + frontend). **Exception: the exact root `/` serves the landing page** `design/landing/v1/index.html` (`LANDING_HTML`), with `no-store` headers; the React app is mounted at `/app` and every other non-API, non-file path falls through to `web/dist/index.html` for React Router
 - `static_folder=None` — Flask's built-in static serving is disabled; all file serving goes through the catch-all route
 - `app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0` — disables Flask's file cache so rebuilds are picked up immediately
 - `index.html` is served with explicit `no-store, no-cache` headers; JS/CSS assets (content-hashed by Vite) are served without special headers
@@ -528,8 +528,9 @@ Auth is handled via `@supabase/supabase-js`. The client is initialized in `web/s
 
 React Router v7 (`react-router-dom`) with `createBrowserRouter` + `RouterProvider`. All routes are defined in `main.jsx` — **not** in `App.jsx`. This is the correct v7 pattern; nesting `<Routes>` inside a component that is itself a route element causes a double-router conflict where URL changes but page content never switches.
 
-- `/login` → `<LoginPage />` — public; redirects to `/` if already authenticated
-- `/` → `<ProtectedRoute><App /></ProtectedRoute>` — screener page
+- `/` → **not a React route.** Flask serves the marketing landing page (`design/landing/v1/index.html`, self-contained HTML) at the exact site root — see `serve_react()` in `server/app.py`. The landing's "Run a free scan" CTAs link to `/app`.
+- `/login` → `<LoginPage />` — public; redirects to `/app` if already authenticated
+- `/app` → `<ProtectedRoute><App /></ProtectedRoute>` — screener page (moved from `/` on 2026-09-12 when the landing page took the root; every in-app "Back to Screener" / post-login navigation targets `/app`)
 - `/trade` → `<ProtectedRoute><TradePage /></ProtectedRoute>` — trade editor (navigate here with router state `{ triplet }`)
 - `/tradebook` → `<ProtectedRoute><TradebookPage /></ProtectedRoute>` — saved trades
 

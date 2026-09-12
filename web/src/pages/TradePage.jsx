@@ -304,7 +304,7 @@ export default function TradePage() {
         <div className="flex flex-col items-center justify-center py-32 gap-4">
           <p className="text-secondary text-sm">No triplet data. Navigate here from a scan.</p>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/app')}
             className="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded transition-colors"
           >
             Go to Screener

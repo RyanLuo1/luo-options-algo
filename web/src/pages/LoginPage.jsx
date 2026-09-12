@@ -43,7 +43,7 @@ export default function LoginPage() {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (!loading && user) navigate('/', { replace: true })
+    if (!loading && user) navigate('/app', { replace: true })
   }, [user, loading, navigate])
 
   function switchMode(target) {
@@ -77,7 +77,7 @@ export default function LoginPage() {
           }
           throw error
         }
-        navigate('/', { replace: true })
+        navigate('/app', { replace: true })
       } else {
         // Existing signUp path — surfaced, not rewritten.
         const { data, error } = await supabase.auth.signUp({ email, password })
@@ -98,7 +98,7 @@ export default function LoginPage() {
         // If a session came back, email confirmation is OFF — the user is already
         // logged in, so route straight into the screener like a normal sign-in.
         if (data?.session) {
-          navigate('/', { replace: true })
+          navigate('/app', { replace: true })
           return
         }
         // No session → email confirmation is ON. Do NOT log in; tell the user to
