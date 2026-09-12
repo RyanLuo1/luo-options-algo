@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luo Capital — see what an options trade really pays</title>
+<meta name="description" content="Luo Capital scans large-cap stocks for a three-part options credit trade and prices every leg at the live bid and ask. The credit shown is the credit you could actually collect.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ── Tokens ─────────────────────────────────────────────── */
+  :root {
+    --ground:        #F1EEF3;   /* page ground, warm lilac-gray */
+    --ground-deep:   #E6E1EB;   /* hero slot / quiet panels */
+    --card:          #FFFFFF;
+    --ink:           #15121A;
+    --ink-2:         #5A5266;   /* secondary text, tinted from the ground hue */
+    --ink-3:         #7E7590;   /* icon tint only, never text */
+    --line:          #E3DEE9;
+    --violet:        #6547E6;   /* structure, links, labels — text-safe */
+    --violet-soft:   #EEE9FF;
+    --lime:          #D4F53C;   /* primary action only */
+    --lime-hover:    #C8EE22;
+
+    --radius: 24px;             /* the one radius */
+    --shadow:       0 16px 40px rgba(40, 30, 70, .10);
+    --shadow-hover: 0 22px 56px rgba(40, 30, 70, .14);
+    --shadow-lift:  0 28px 64px rgba(40, 30, 70, .16);
+
+    --font-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+    --font-body:    "Figtree", "Helvetica Neue", Arial, sans-serif;
+
+    --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px; --s-5: 24px;
+    --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px; --s-10: 128px;
+
+    --measure: 66ch;
+    --container: 1180px;
+  }
+
+  /* ── Base ───────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scrollbar-color: var(--violet) var(--ground); }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { background: var(--lime); color: var(--ink); }
+  :focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; border-radius: var(--radius); }
+  img, svg { display: block; max-width: 100%; }
+  a { color: var(--violet); text-decoration-thickness: 1.5px; text-underline-offset: .18em; }
+  p { margin: 0; }
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h1 { font-size: clamp(2.6rem, 5.6vw, 4.6rem); font-weight: 800; font-variation-settings: "opsz" 96; }
+  h2 { font-size: clamp(1.9rem, 3.4vw, 2.8rem); font-weight: 700; font-variation-settings: "opsz" 72; }
+  h3 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; font-variation-settings: "opsz" 24; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .lede { color: var(--ink-2); font-size: 1.125rem; max-width: var(--measure); }
+  .wrap { width: min(100% - 2 * var(--s-5), var(--container)); margin-inline: auto; }
+  section { padding-block: var(--s-9); }
+  .section-head { max-width: 40rem; margin-bottom: var(--s-7); }
+  .section-head h2 { margin-bottom: var(--s-4); }
+  .section-head .lede { max-width: 38rem; }
+
+  /* ── Controls ───────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--s-2);
+    font-family: var(--font-body); font-weight: 600; font-size: 1rem;
+    padding: 14px 24px; border-radius: var(--radius); border: 1.5px solid transparent;
+    text-decoration: none; cursor: pointer; line-height: 1;
+    transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary { background: var(--lime); color: var(--ink); box-shadow: 0 8px 20px rgba(160, 190, 20, .25); }
+  .btn-primary:hover { background: var(--lime-hover); box-shadow: 0 12px 28px rgba(160, 190, 20, .32); }
+  .btn-secondary { background: var(--card); color: var(--ink); border-color: var(--line); }
+  .btn-secondary:hover { border-color: var(--violet); color: var(--violet); }
+  .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); padding: 10px 18px; font-size: .95rem; }
+  .btn-ghost:hover { background: var(--card); border-color: var(--violet); }
+  .btn svg { width: 18px; height: 18px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: .8rem; font-weight: 600; letter-spacing: .01em;
+    padding: 5px 12px; border-radius: var(--radius);
+    background: var(--violet-soft); color: var(--violet);
+  }
+  .pill-quiet { background: var(--ground-deep); color: var(--ink-2); }
+  .pill-lime { background: var(--lime); color: var(--ink); }
+
+  .card {
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: var(--s-6);
+    transition: box-shadow .25s ease, transform .25s ease;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header { padding-block: var(--s-5); }
+  .nav { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; }
+  .brand svg { width: 28px; height: 28px; }
+  .nav-links { display: flex; gap: var(--s-6); list-style: none; margin: 0; padding: 0; }
+  .nav-links a { color: var(--ink-2); text-decoration: none; font-weight: 500; }
+  .nav-links a:hover { color: var(--violet); }
+  @media (max-width: 760px) { .nav-links { display: none; } }
+
+  /* ── Hero ───────────────────────────────────────────────── */
+  .hero { padding-block: var(--s-8) var(--s-9); }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: var(--s-8); align-items: center; }
+  .hero-copy h1 { margin-bottom: var(--s-5); }
+  .hero-copy .lede { margin-bottom: var(--s-6); max-width: 32rem; }
+  .hero-copy strong { color: var(--ink); font-weight: 600; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; }
+  .hero-note { margin-top: var(--s-4); color: var(--ink-2); font-size: .95rem; }
+
+  .hero-visual { position: relative; }
+  /* Hero image slot — 4:3, right column.
+     To ship real art: replace this <div> with
+       <img class="hero-slot" src="…" alt="…">
+     (same class, same aspect-ratio, same radius) — the card cluster is
+     absolutely positioned over the slot, so nothing else moves. */
+  .hero-slot {
+    aspect-ratio: 4 / 3; width: 100%; border-radius: var(--radius);
+    background: var(--ground-deep); object-fit: cover;
+    display: grid; place-items: end start; padding: var(--s-4);
+    color: var(--ink-2); font-size: .78rem; font-weight: 500; letter-spacing: .02em;
+  }
+  .cluster { position: absolute; inset: 0; pointer-events: none; }
+  .cluster .card { position: absolute; pointer-events: auto; padding: var(--s-5); }
+  .stack-back {
+    width: 62%; left: 2%; top: 6%; transform: rotate(-5deg);
+    box-shadow: var(--shadow);
+  }
+  .stack-mid {
+    width: 58%; right: 3%; top: 16%; transform: rotate(3.5deg);
+  }
+  .stack-front {
+    width: 72%; left: 14%; bottom: 4%; box-shadow: var(--shadow-lift);
+  }
+
+  .mini-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+  .ticker { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; letter-spacing: -0.01em; }
+  .mini-meta { color: var(--ink-2); font-size: .85rem; }
+  .credit-big { font-family: var(--font-display); font-weight: 800; font-size: 2.2rem; letter-spacing: -0.02em; line-height: 1; margin-top: var(--s-3); }
+  .credit-big small { display: block; font-family: var(--font-body); font-weight: 500; font-size: .85rem; color: var(--ink-2); letter-spacing: 0; margin-top: 6px; }
+  .legs { list-style: none; margin: var(--s-4) 0 0; padding: 0; display: grid; gap: 6px; font-size: .9rem; }
+  .legs li { display: flex; justify-content: space-between; gap: var(--s-3); padding: 8px 12px; border-radius: var(--radius); background: var(--ground); }
+  .legs li span:last-child { font-weight: 600; }
+  .legs .buy { color: var(--violet); font-weight: 600; }
+  .legs .sell { color: var(--ink-2); font-weight: 600; }
+  .stat-row { display: flex; gap: var(--s-4); margin-top: var(--s-4); font-size: .9rem; color: var(--ink-2); }
+  .stat-row b { color: var(--ink); font-weight: 600; }
+
+  /* ── Signature motion: the cluster settles into place on load ── */
+  @media (prefers-reduced-motion: no-preference) {
+    .cluster .card { animation: settle .9s cubic-bezier(.16, 1, .3, 1) both; }
+    .stack-back  { animation-delay: .05s; --rot: -5deg; }
+    .stack-mid   { animation-delay: .18s; --rot: 3.5deg; }
+    .stack-front { animation-delay: .32s; --rot: 0deg; }
+    @keyframes settle {
+      from { opacity: 0; transform: translateY(28px) rotate(calc(var(--rot) + 2deg)); }
+      to   { opacity: 1; transform: translateY(0)    rotate(var(--rot)); }
+    }
+    .hero-copy > * { animation: rise .7s cubic-bezier(.16, 1, .3, 1) both; }
+    .hero-copy > :nth-child(2) { animation-delay: .08s; }
+    .hero-copy > :nth-child(3) { animation-delay: .16s; }
+    .hero-copy > :nth-child(4) { animation-delay: .24s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  }
+
+  /* ── Proof ──────────────────────────────────────────────── */
+  .proof-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-8); align-items: center; }
+  .proof-copy h2 { margin-bottom: var(--s-4); }
+  .proof-copy .lede { margin-bottom: var(--s-4); }
+  .quote-card { padding: var(--s-6); }
+  .quote-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--ink-2); font-size: .9rem; }
+  .quote-head b { color: var(--ink); font-weight: 600; }
+  .quote-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); margin-top: var(--s-4); }
+  .quote-side { border-radius: var(--radius); padding: var(--s-4) var(--s-5); background: var(--ground); }
+  .quote-side.used { background: var(--violet-soft); outline: 2px solid var(--violet); outline-offset: -2px; }
+  .quote-side .lbl { font-size: .8rem; font-weight: 600; color: var(--ink-2); letter-spacing: .02em; }
+  .quote-side.used .lbl { color: var(--violet); }
+  .quote-side .val { font-family: var(--font-display); font-weight: 800; font-size: 2rem; letter-spacing: -0.02em; margin-top: 4px; }
+  .quote-side .why { font-size: .85rem; color: var(--ink-2); margin-top: 6px; }
+  .quote-foot { margin-top: var(--s-4); display: flex; align-items: center; gap: var(--s-3); color: var(--ink-2); font-size: .95rem; }
+  .quote-foot svg { width: 20px; height: 20px; flex: none; color: var(--violet); }
+
+  /* ── How it works ───────────────────────────────────────── */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-5); }
+  .step { display: flex; flex-direction: column; gap: var(--s-4); }
+  .step:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+  .step-badge {
+    width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center;
+    background: var(--violet); color: #fff; font-family: var(--font-display); font-weight: 700;
+  }
+  .step h3 { margin-top: var(--s-2); }
+  .step p { color: var(--ink-2); font-size: 1rem; }
+  .step .payoff { margin-top: auto; padding-top: var(--s-3); }
+  .step .payoff svg { width: 100%; height: auto; display: block; }
+  .result-line {
+    margin-top: var(--s-6); display: flex; align-items: center; gap: var(--s-3);
+    font-weight: 600; font-size: 1.1rem;
+  }
+  .result-line .pill-lime { font-size: .9rem; padding: 8px 14px; }
+
+  /* ── Scan output ────────────────────────────────────────── */
+  .output-grid { display: grid; grid-template-columns: 24rem 1fr; gap: var(--s-5); align-items: start; }
+  .cluster .stack-back > *, .cluster .stack-mid > * { visibility: hidden; }
+  .setup-card .label-row { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); margin-bottom: var(--s-4); }
+  .setup-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .setup-head .ticker { font-size: 1.6rem; }
+  .setup-head .mini-meta { text-align: right; }
+  .setup-credit { margin-top: var(--s-4); display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+  .kpi { background: var(--ground); border-radius: var(--radius); padding: var(--s-4); }
+  .kpi .k { font-size: .8rem; color: var(--ink-2); font-weight: 600; }
+  .kpi .v { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: -0.02em; line-height: 1.1; margin-top: 2px; }
+  .kpi.hi { background: var(--violet-soft); }
+  .kpi.hi .k { color: var(--violet); }
+  .setup-legs { margin-top: var(--s-4); }
+  .setup-legs li { padding: 10px 14px; }
+  .setup-legs .leg-name { display: flex; flex-direction: column; }
+  .setup-legs .leg-name small { color: var(--ink-2); font-weight: 400; font-size: .8rem; }
+  .downside { margin-top: var(--s-4); border-top: 1px solid var(--line); padding-top: var(--s-4); display: grid; gap: 6px; font-size: .92rem; color: var(--ink-2); }
+  .downside b { color: var(--ink); font-weight: 600; }
+
+  /* ── One setup (dashboard card, borrowed from v4) ─────────── */
+  .dash { display: grid; grid-template-columns: 1.15fr .85fr; gap: var(--s-5); }
+  .dash-main { display: flex; flex-direction: column; gap: var(--s-5); }
+  .dash-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; }
+  .dash-head .ticker { font-size: 2rem; display: flex; align-items: baseline; gap: 10px; }
+  .dash-head .ticker small { font-size: 1rem; color: var(--ink-2); font-weight: 500; font-family: var(--font-body); letter-spacing: 0; }
+  .dash-head .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .dash-legs { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-3); }
+  .dash-leg { background: var(--ground); border-radius: calc(var(--radius) / 2 + 6px); padding: var(--s-4); display: flex; flex-direction: column; gap: 6px; }
+  .dash-leg .role { font-size: .85rem; font-weight: 600; color: var(--ink-2); }
+  .dash-leg .strike { font-family: var(--font-display); font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; }
+  .dash-leg .px { font-size: .92rem; color: var(--ink-2); }
+  .curve-box { border: 1.5px solid var(--line); border-radius: calc(var(--radius) / 2 + 6px); padding: var(--s-4); }
+  .curve-box svg { width: 100%; height: auto; display: block; }
+  .curve-box .cap { display: flex; justify-content: space-between; gap: var(--s-3); font-size: .85rem; color: var(--ink-2); margin-top: var(--s-2); flex-wrap: wrap; }
+  .worst { font-size: .95rem; color: var(--ink-2); margin: 0; }
+  .worst strong { color: var(--ink); font-weight: 600; }
+  .dash-side { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-4); align-content: start; }
+  .dash-stat { padding: var(--s-4); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .dash-stat .label { font-size: .85rem; color: var(--ink-2); font-weight: 600; }
+  .dash-stat .val { font-family: var(--font-display); font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .dash-stat .sub { font-size: .9rem; color: var(--ink-2); }
+  .dash-stat.gauge { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: var(--s-4); }
+  .dash-stat.gauge svg { width: 112px; height: auto; flex: none; }
+  .dash-stat.gauge .val { font-size: 2rem; }
+  .dash-stat.hi { background: var(--violet-soft); box-shadow: none; }
+  .dash-stat.hi .label { color: var(--violet); }
+  .draw { stroke-dasharray: 1000; stroke-dashoffset: 0; }
+  .gauge-fill { stroke-dasharray: 264; stroke-dashoffset: 124; }
+  @media (prefers-reduced-motion: no-preference) {
+    .dash .draw { stroke-dashoffset: 1000; }
+    .dash .gauge-fill { stroke-dashoffset: 264; }
+    .dash.is-in .draw { animation: draw 1.4s cubic-bezier(.16, 1, .3, 1) forwards; }
+    .dash.is-in .gauge-fill { animation: gauge 1.2s .3s cubic-bezier(.16, 1, .3, 1) forwards; }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes gauge { to { stroke-dashoffset: 124; } }
+  }
+
+  .table-card { padding: var(--s-5) var(--s-5) var(--s-3); overflow: hidden; }
+  .table-card .label-row { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); padding: 0 var(--s-2) var(--s-4); }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; min-width: 560px; }
+  th, td { text-align: left; padding: 14px 12px; white-space: nowrap; }
+  th { font-size: .78rem; font-weight: 600; color: var(--ink-2); letter-spacing: .03em; border-bottom: 1px solid var(--line); }
+  td { border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { transition: background-color .15s ease; }
+  tbody tr:hover td { background: var(--ground); }
+  tbody tr:hover td:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  tbody tr:hover td:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+  td.r, th.r { text-align: right; }
+  td.rank { color: var(--ink-2); width: 3.5rem; }
+  td.tick { font-weight: 700; font-family: var(--font-display); font-size: 1.05rem; }
+  td.credit { font-weight: 700; }
+  tr.top td.rank span { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: var(--radius); background: var(--lime); color: var(--ink); font-weight: 700; }
+  .strikes span { color: var(--ink-2); }
+  .strikes b { font-weight: 600; }
+  .table-foot { padding: var(--s-3) var(--s-2) var(--s-2); color: var(--ink-2); font-size: .85rem; }
+
+  /* ── What's inside ──────────────────────────────────────── */
+  .inside-panel { padding: var(--s-4); }
+  .tabbar { display: flex; gap: 6px; padding: 6px; background: var(--ground); border-radius: calc(var(--radius) / 2 + 6px); }
+  .tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 14px; border-radius: calc(var(--radius) / 2);
+         font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink-2); white-space: nowrap; }
+  .tab.active { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+  .tab .pill { padding: 2px 9px; font-size: .72rem; }
+  .previews { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4); padding-top: var(--s-4); }
+  .preview { border: 1.5px solid var(--line); border-radius: calc(var(--radius) / 2 + 6px); padding: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); background: var(--card); }
+  .preview h3 { margin: 0; font-size: 1.25rem; font-weight: 700; }
+  .preview p { margin: 0; font-size: .95rem; color: var(--ink-2); }
+  .preview .mini { border-radius: calc(var(--radius) / 2); background: var(--ground); padding: 12px; min-height: 96px; display: flex; flex-direction: column; gap: 7px; justify-content: center; }
+  .mini .row { display: flex; align-items: center; gap: 8px; }
+  .mini .bar { height: 8px; border-radius: 999px; background: var(--line); flex: 1; }
+  .mini .bar.short { flex: 0 0 40%; }
+  .mini .bar.ink { background: #D9D2E3; }
+  .mini .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--violet); flex: none; }
+  .mini .dot.quiet { background: #D9D2E3; }
+  .mini .chip { height: 16px; border-radius: 999px; padding: 0 8px; font-size: .66rem; font-weight: 700; display: grid; place-items: center; background: var(--violet-soft); color: var(--violet); }
+  .mini .chip.ok { background: var(--lime); color: var(--ink); }
+  .mini .chip.mute { background: var(--ground-deep); color: var(--ink-2); }
+  .mini svg { width: 100%; height: auto; display: block; }
+  .mini .lock { width: 14px; height: 14px; color: var(--ink-3); flex: none; }
+
+  /* ── Honest notes ───────────────────────────────────────── */
+  .honest { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-7); padding: var(--s-7); }
+  .honest h3 { margin-bottom: var(--s-4); }
+  .honest ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
+  .honest li { display: flex; gap: var(--s-3); align-items: flex-start; color: var(--ink-2); }
+  .honest li b { color: var(--ink); font-weight: 600; }
+  .honest li svg { width: 22px; height: 22px; flex: none; margin-top: 3px; }
+  .yes svg { color: var(--violet); }
+  .no svg { color: var(--ink-3); }
+
+  /* ── Closing ────────────────────────────────────────────── */
+  .close { text-align: center; padding: var(--s-9) var(--s-6); }
+  .close h2 { margin-bottom: var(--s-4); }
+  .close .lede { margin-inline: auto; margin-bottom: var(--s-6); }
+  .close .cta-row { justify-content: center; }
+
+  footer { padding-block: var(--s-7); color: var(--ink-2); font-size: .9rem; }
+  .foot { display: flex; justify-content: space-between; gap: var(--s-5); flex-wrap: wrap; }
+
+  /* ── Responsive ─────────────────────────────────────────── */
+  @media (max-width: 980px) {
+    .dash { grid-template-columns: 1fr; }
+    .dash-side { grid-template-columns: repeat(4, 1fr); }
+    .dash-stat.gauge { grid-column: span 2; }
+    .previews { grid-template-columns: 1fr 1fr; }
+    .hero-grid, .proof-grid, .output-grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .hero { padding-block: var(--s-6) var(--s-8); }
+    .hero-visual { margin-top: var(--s-4); }
+  }
+  @media (max-width: 640px) {
+    .dash-legs { grid-template-columns: 1fr; }
+    .dash-side { grid-template-columns: 1fr 1fr; }
+    .dash-stat.gauge { grid-column: 1 / -1; }
+    .tabbar { flex-wrap: wrap; }
+    .tab { flex: 1 1 45%; min-width: 0; white-space: normal; text-align: center; padding: 10px 8px; font-size: .95rem; }
+    .previews { grid-template-columns: 1fr; }
+    body { font-size: 16px; }
+    section { padding-block: var(--s-8); }
+    .card { padding: var(--s-5); }
+    .honest { grid-template-columns: 1fr; }
+    .honest { padding: var(--s-5); gap: var(--s-5); }
+    .setup-credit { grid-template-columns: 1fr 1fr; }
+    .cluster .card { padding: var(--s-4); }
+    .stack-back, .stack-mid { display: none; }   /* one card on phones; the slot stays 4:3 */
+    .stack-front { width: 88%; left: 6%; bottom: 6%; }
+    .stack-front .stat-row { display: none; }
+    .credit-big { font-size: 1.7rem; }
+    .legs { font-size: .82rem; }
+    .stat-row { font-size: .82rem; flex-wrap: wrap; }
+    .close { padding: var(--s-8) var(--s-4); }
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <nav class="nav" aria-label="Primary">
+    <a class="brand" href="#top" aria-label="Luo Capital home">
+      <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+        <rect x="3" y="15" width="22" height="8" rx="4" fill="#6547E6"/>
+        <rect x="6" y="9" width="16" height="8" rx="4" fill="#D4F53C"/>
+        <rect x="9" y="3" width="10" height="8" rx="4" fill="#15121A"/>
+      </svg>
+      Luo Capital
+    </a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#inside">What’s inside</a></li>
+      <li><a href="#honest">Honest notes</a></li>
+    </ul>
+    <a class="btn btn-ghost" href="#scan">Run a free scan</a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- ── Hero ─────────────────────────────────────────────── -->
+  <section class="hero wrap" aria-labelledby="hero-h">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <h1 id="hero-h">See what an options trade really pays, before you place it.</h1>
+        <p class="lede">Luo Capital scans large-cap stocks for one calm, three-part credit trade and prices every leg at the live bid and ask. <strong>The credit shown is the credit you could actually collect.</strong></p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#scan">
+            Run a free scan
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>
+          </a>
+          <a class="btn btn-secondary" href="#how">See how it works</a>
+        </div>
+        <p class="hero-note">Free to use. A scan takes under a minute.</p>
+      </div>
+
+      <div class="hero-visual">
+        <!-- Hero image slot · 4:3 · right column.
+             Swap this <div> for <img class="hero-slot" src="…" alt="…"> with no other changes. -->
+        <div class="hero-slot" aria-hidden="true">Hero image · 4:3</div>
+
+        <div class="cluster" aria-label="Sample setups from a scan">
+          <article class="card stack-back" aria-hidden="true">
+            <div class="mini-head"><span class="ticker">AMD</span><span class="mini-meta num">Oct 17 · 5 wk</span></div>
+            <div class="credit-big num">$505<small>credit per contract</small></div>
+            <div class="stat-row"><span>P(profit) <b class="num">55%</b></span><span>Collateral <b class="num">$15,000</b></span></div>
+          </article>
+          <article class="card stack-mid" aria-hidden="true">
+            <div class="mini-head"><span class="ticker">META</span><span class="mini-meta num">Oct 24 · 6 wk</span></div>
+            <div class="credit-big num">$1,290<small>credit per contract</small></div>
+            <div class="stat-row"><span>P(profit) <b class="num">52%</b></span></div>
+          </article>
+          <article class="card stack-front">
+            <div class="mini-head"><span class="ticker">NVDA</span><span class="mini-meta num">Oct 17 · 5 wk · stock $184.00</span></div>
+            <div class="credit-big num">$540<small>credit per contract — priced at the bid and ask</small></div>
+            <ul class="legs num">
+              <li><span><span class="buy">Buy</span> 185 call</span><span>$11.40 ask</span></li>
+              <li><span><span class="sell">Sell</span> 200 call</span><span>$6.20 bid</span></li>
+              <li><span><span class="sell">Sell</span> 165 put</span><span>$10.60 bid</span></li>
+            </ul>
+            <div class="stat-row"><span>Max profit <b class="num">$2,040</b></span><span>P(profit) <b class="num">53%</b></span><span>Collateral <b class="num">$16,500</b></span></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Proof ────────────────────────────────────────────── -->
+  <section class="wrap" aria-labelledby="proof-h">
+    <div class="proof-grid">
+      <div class="proof-copy">
+        <h2 id="proof-h">Why the number is real</h2>
+        <p class="lede">Every option has two prices at once: what buyers will pay and what sellers will take. Most tools quote the last trade, which can be hours old. We quote the side you’d actually transact on.</p>
+        <p class="lede">When you sell, we use the bid. When you buy, we use the ask. So the credit is what a broker would actually fill.</p>
+      </div>
+      <article class="card quote-card" aria-label="Example of a live quote">
+        <div class="quote-head"><span><b>NVDA 200 call</b> · live quote</span><span class="num">Oct 17</span></div>
+        <div class="quote-pair">
+          <div class="quote-side used">
+            <div class="lbl">Bid · what we use when you sell</div>
+            <div class="val num">$6.20</div>
+            <div class="why">The price a buyer is offering right now.</div>
+          </div>
+          <div class="quote-side">
+            <div class="lbl">Ask</div>
+            <div class="val num">$6.40</div>
+            <div class="why">The price a seller is asking for.</div>
+          </div>
+        </div>
+        <div class="quote-foot">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>
+          <span>You’re selling this call, so <b class="num">$6.20</b> goes into the credit. Not $6.30, not the last trade.</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── How it works ─────────────────────────────────────── -->
+  <section id="how" class="wrap" aria-labelledby="how-h">
+    <div class="section-head">
+      <h2 id="how-h">Three moves. One trade.</h2>
+      <p class="lede">The screener looks for one structure only. It’s built to pay you a credit up front, with a defined best case and a downside you choose in advance.</p>
+    </div>
+    <div class="steps">
+      <article class="card step">
+        <div class="step-badge" aria-hidden="true">1</div>
+        <h3>Buy a call near the stock price</h3>
+        <p>This is the part of the trade that gains if the stock rises. You pay for it, at the ask.</p>
+        <div class="payoff" aria-hidden="true">
+          <svg viewBox="0 0 240 120" fill="none" aria-label="Payoff of a long call: flat below the strike, rising above it">
+            <line x1="12" y1="78" x2="228" y2="78" stroke="#E3DEE9" stroke-width="1.5" stroke-dasharray="3 5"/>
+            <path d="M14 96 L120 96 L226 30" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="120" cy="96" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
+            <text x="120" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">buy 185</text>
+          </svg>
+        </div>
+      </article>
+      <article class="card step">
+        <div class="step-badge" aria-hidden="true">2</div>
+        <h3>Sell a higher call</h3>
+        <p>This caps how much you can make, and in return someone pays you a premium, at the bid.</p>
+        <div class="payoff" aria-hidden="true">
+          <svg viewBox="0 0 240 120" fill="none" aria-label="Payoff of a call spread: flat, rising, then capped">
+            <line x1="12" y1="78" x2="228" y2="78" stroke="#E3DEE9" stroke-width="1.5" stroke-dasharray="3 5"/>
+            <path d="M14 96 L96 96 L162 34 L226 34" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="96" cy="96" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
+            <circle cx="162" cy="34" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <text x="96" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">buy 185</text>
+            <text x="162" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 200</text>
+          </svg>
+        </div>
+      </article>
+      <article class="card step">
+        <div class="step-badge" aria-hidden="true">3</div>
+        <h3>Sell a put below</h3>
+        <p>You collect another premium. If the stock falls to that price, you agree to own it there.</p>
+        <div class="payoff" aria-hidden="true">
+          <svg viewBox="0 0 240 120" fill="none" aria-label="Payoff of the full three-leg trade: falling below the put, flat credit, rising, then capped">
+            <line x1="12" y1="78" x2="228" y2="78" stroke="#E3DEE9" stroke-width="1.5" stroke-dasharray="3 5"/>
+            <path d="M14 108 L62 66 L118 66 L170 22 L226 22" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="62" cy="66" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <circle cx="118" cy="66" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
+            <circle cx="170" cy="22" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <text x="62" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 165</text>
+            <text x="118" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">buy 185</text>
+            <text x="170" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 200</text>
+          </svg>
+        </div>
+      </article>
+    </div>
+    <p class="result-line"><span class="pill pill-lime num">+ $540</span> Together they usually pay you a credit to put the trade on.</p>
+  </section>
+
+  <!-- ── One setup ────────────────────────────────────────── -->
+  <section id="setup" class="wrap" aria-labelledby="setup-h">
+    <div class="section-head">
+      <h2 id="setup-h">What one setup looks like</h2>
+      <p class="lede">Every number a trader asks about, on one card. This is what a row in the screener opens into.</p>
+    </div>
+    <div class="dash" data-reveal>
+      <article class="card dash-main">
+        <div class="dash-head">
+          <div class="ticker">NVDA <small>stock at $184.00</small></div>
+          <div class="pills">
+            <span class="pill">Expires Oct 17</span>
+            <span class="pill pill-quiet">5 weeks</span>
+            <span class="pill pill-quiet">Sample setup · illustrative</span>
+          </div>
+        </div>
+        <div class="dash-legs">
+          <div class="dash-leg"><span class="role">Buy call</span><span class="strike num">$185</span><span class="px num">$11.40 · ask</span></div>
+          <div class="dash-leg"><span class="role">Sell call</span><span class="strike num">$200</span><span class="px num">$6.20 · bid</span></div>
+          <div class="dash-leg"><span class="role">Sell put</span><span class="strike num">$165</span><span class="px num">$10.60 · bid</span></div>
+        </div>
+        <div class="curve-box">
+          <svg viewBox="0 0 600 230" fill="none" aria-label="Payoff at expiration per contract: loses below $165, flat at $540 credit between $165 and $185, rises to $2,040 at $200 and stays there above">
+            <line x1="20" y1="112" x2="580" y2="112" stroke="#E3DEE9" stroke-width="1.5" stroke-dasharray="4 6"/>
+            <text x="580" y="106" font-size="11" text-anchor="end" fill="#5A5266" font-family="Figtree, sans-serif">break even</text>
+            <path class="draw" d="M20 198 L195 88.5 L335 88.5 L440 22.6 L580 22.6" stroke="#6547E6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="195" cy="88.5" r="6" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <circle cx="335" cy="88.5" r="6" fill="#fff" stroke="#6547E6" stroke-width="3"/>
+            <circle cx="440" cy="22.6" r="6" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <text x="195" y="222" font-size="12" text-anchor="middle" fill="#5A5266" font-family="Figtree, sans-serif">$165</text>
+            <text x="335" y="222" font-size="12" text-anchor="middle" fill="#5A5266" font-family="Figtree, sans-serif">$185</text>
+            <text x="440" y="222" font-size="12" text-anchor="middle" fill="#5A5266" font-family="Figtree, sans-serif">$200</text>
+            <text x="265" y="78" font-size="12" text-anchor="middle" fill="#6547E6" font-weight="600" font-family="Figtree, sans-serif">+$540 credit</text>
+            <text x="510" y="44" font-size="12" text-anchor="middle" fill="#6547E6" font-weight="600" font-family="Figtree, sans-serif">+$2,040 max</text>
+          </svg>
+          <div class="cap"><span>Payoff at expiration, per contract</span><span>Stock price →</span></div>
+        </div>
+        <p class="worst"><strong>Worst case:</strong> the stock drops below $165 and you own 100 NVDA at an effective $159.60. That is the trade’s downside in plain dollars, not a surprise.</p>
+      </article>
+
+      <div class="dash-side">
+        <div class="card dash-stat gauge">
+          <svg viewBox="0 0 120 70" fill="none" aria-hidden="true">
+            <path d="M12 62 A48 48 0 0 1 108 62" stroke="#EEE9FF" stroke-width="12" stroke-linecap="round"/>
+            <path class="gauge-fill" d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" stroke-width="12" stroke-linecap="round" pathLength="264"/>
+          </svg>
+          <div><span class="label">Chance of max profit</span><span class="val num">53%</span><span class="sub">Based on the options’ own probabilities.</span></div>
+        </div>
+        <div class="card dash-stat hi"><span class="label">Credit collected</span><span class="val num">$540</span><span class="sub">per contract</span></div>
+        <div class="card dash-stat"><span class="label">Max profit</span><span class="val num">$2,040</span><span class="sub">if NVDA is above $200</span></div>
+        <div class="card dash-stat"><span class="label">Collateral</span><span class="val num">$16,500</span><span class="sub">tied up while it’s open</span></div>
+        <div class="card dash-stat"><span class="label">Breakeven</span><span class="val num">$159.60</span><span class="sub">below this you lose money</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Scan output ──────────────────────────────────────── -->
+  <section id="scan" class="wrap" aria-labelledby="scan-h">
+    <div class="section-head">
+      <h2 id="scan-h">What a scan hands you</h2>
+      <p class="lede">A ranked list, and for each trade the four numbers that matter: the credit, the odds, the collateral, and the downside in plain dollars.</p>
+    </div>
+    <div class="output-grid">
+      <article class="card setup-card" aria-label="Sample setup">
+        <div class="label-row"><span class="pill">Sample setup · illustrative</span><span class="mini-meta">Rank 1</span></div>
+        <div class="setup-head">
+          <span class="ticker">NVDA</span>
+          <span class="mini-meta num">Expires Oct 17 · 5 weeks<br>Stock $184.00</span>
+        </div>
+        <div class="setup-credit">
+          <div class="kpi hi"><div class="k">Credit collected</div><div class="v num">$540</div></div>
+          <div class="kpi"><div class="k">Max profit</div><div class="v num">$2,040</div></div>
+          <div class="kpi"><div class="k">P(max profit)</div><div class="v num">53%</div></div>
+          <div class="kpi"><div class="k">Collateral</div><div class="v num">$16,500</div></div>
+        </div>
+        <ul class="legs setup-legs num">
+          <li><span class="leg-name"><span><span class="buy">Buy</span> 185 call</span><small>you pay the ask</small></span><span>$11.40</span></li>
+          <li><span class="leg-name"><span><span class="sell">Sell</span> 200 call</span><small>you collect the bid</small></span><span>$6.20</span></li>
+          <li><span class="leg-name"><span><span class="sell">Sell</span> 165 put</span><small>you collect the bid</small></span><span>$10.60</span></li>
+        </ul>
+        <div class="downside">
+          <span>Breakeven <b class="num">$159.60</b></span>
+          <span>Worst case: you own 100 NVDA at an effective <b class="num">$159.60</b>.</span>
+        </div>
+      </article>
+
+      <article class="card table-card" aria-label="Sample ranked results">
+        <div class="label-row"><span class="pill">Sample scan · illustrative</span><span class="mini-meta">Ranked by credit per dollar of spread</span></div>
+        <div class="table-scroll">
+          <table class="num">
+            <thead>
+              <tr>
+                <th scope="col">Rank</th>
+                <th scope="col">Ticker</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Put / Call / Call</th>
+                <th scope="col" class="r">Credit</th>
+                <th scope="col" class="r">P(profit)</th>
+                <th scope="col" class="r">Collateral</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="top"><td class="rank"><span>1</span></td><td class="tick">NVDA</td><td>Oct 17</td><td class="strikes"><b>165</b> <span>/</span> <b>185</b> <span>/</span> <b>200</b></td><td class="r credit">$540</td><td class="r">53%</td><td class="r">$16,500</td></tr>
+              <tr><td class="rank">2</td><td class="tick">AMD</td><td>Oct 17</td><td class="strikes"><b>150</b> <span>/</span> <b>170</b> <span>/</span> <b>185</b></td><td class="r credit">$505</td><td class="r">55%</td><td class="r">$15,000</td></tr>
+              <tr><td class="rank">3</td><td class="tick">META</td><td>Oct 24</td><td class="strikes"><b>680</b> <span>/</span> <b>740</b> <span>/</span> <b>780</b></td><td class="r credit">$1,290</td><td class="r">52%</td><td class="r">$68,000</td></tr>
+              <tr><td class="rank">4</td><td class="tick">AVGO</td><td>Oct 17</td><td class="strikes"><b>300</b> <span>/</span> <b>335</b> <span>/</span> <b>360</b></td><td class="r credit">$760</td><td class="r">56%</td><td class="r">$30,000</td></tr>
+              <tr><td class="rank">5</td><td class="tick">TSM</td><td>Oct 31</td><td class="strikes"><b>245</b> <span>/</span> <b>270</b> <span>/</span> <b>290</b></td><td class="r credit">$585</td><td class="r">58%</td><td class="r">$24,500</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-foot">Credit and collateral are per contract. Strikes are the put you sell, the call you buy, the call you sell.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── What's inside ────────────────────────────────────── -->
+  <section id="inside" class="wrap" aria-labelledby="inside-h">
+    <div class="section-head">
+      <h2 id="inside-h">What’s inside</h2>
+      <p class="lede">Two free tools to find and track trades. Two paid ones if you’d rather follow a book than build your own.</p>
+    </div>
+    <div class="card inside-panel">
+      <div class="tabbar" role="list" aria-label="App tabs">
+        <span class="tab active" role="listitem">Screener <span class="pill pill-lime">Free</span></span>
+        <span class="tab" role="listitem">Tradebook <span class="pill pill-lime">Free</span></span>
+        <span class="tab" role="listitem">Picks <span class="pill pill-quiet">Paid</span></span>
+        <span class="tab" role="listitem">Performance <span class="pill pill-quiet">Paid</span></span>
+      </div>
+      <div class="previews">
+        <article class="preview">
+          <div class="mini" aria-hidden="true">
+            <div class="row"><span class="chip">NVDA</span><span class="chip">AMD</span><span class="chip mute">+ add</span></div>
+            <div class="row"><span class="dot"></span><span class="bar"></span><span class="bar short ink"></span></div>
+            <div class="row"><span class="dot quiet"></span><span class="bar"></span><span class="bar short ink"></span></div>
+            <div class="row"><span class="dot quiet"></span><span class="bar"></span><span class="bar short ink"></span></div>
+          </div>
+          <h3>Screener</h3>
+          <p>Pick your stocks, set a minimum credit and probability, and get a ranked list. Every row prices at the real bid and ask.</p>
+        </article>
+        <article class="preview">
+          <div class="mini" aria-hidden="true">
+            <div class="row"><span class="bar short ink"></span><span class="bar"></span><span class="chip ok">graded</span></div>
+            <div class="row"><span class="bar short ink"></span><span class="bar"></span><span class="chip ok">graded</span></div>
+            <div class="row"><span class="bar short ink"></span><span class="bar"></span><span class="chip mute">open</span></div>
+          </div>
+          <h3>Tradebook</h3>
+          <p>Save the trades you like. When they expire, each one is graded against what the stock actually did.</p>
+        </article>
+        <article class="preview">
+          <div class="mini" aria-hidden="true">
+            <div class="row"><svg class="lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="bar"></span><span class="chip">pick</span></div>
+            <div class="row"><svg class="lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="bar"></span><span class="chip">pick</span></div>
+            <div class="row"><svg class="lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="bar"></span><span class="chip">pick</span></div>
+          </div>
+          <h3>Picks</h3>
+          <p>A curated model book: the setups we’d actually take, kept small and updated as scans come in.</p>
+        </article>
+        <article class="preview">
+          <div class="mini" aria-hidden="true">
+            <svg viewBox="0 0 200 80" fill="none">
+              <path d="M8 52 C40 58, 70 40, 100 46 S160 34, 192 38" stroke="#6547E6" stroke-width="3.5" stroke-linecap="round"/>
+              <path d="M8 44 C40 40, 70 52, 100 42 S160 44, 192 38" stroke="#D9D2E3" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="1 7"/>
+            </svg>
+            <div class="row" style="justify-content:space-between"><span class="chip">the book</span><span class="chip mute">SPY</span></div>
+          </div>
+          <h3>Performance</h3>
+          <p>The book’s return alongside SPY on a single chart, updated as trades settle. What happened, not what might.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Honest notes ─────────────────────────────────────── -->
+  <section id="honest" class="wrap" aria-labelledby="honest-h">
+    <div class="section-head">
+      <h2 id="honest-h">What this is, and isn’t</h2>
+    </div>
+    <article class="card honest">
+      <div>
+        <h3>It is</h3>
+        <ul>
+          <li class="yes"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="9"/><path d="M7 11.5l3 3 5-6"/></svg><span><b>Priced at the real bid and ask.</b> The credit on screen is one a broker could fill.</span></li>
+          <li class="yes"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="9"/><path d="M7 11.5l3 3 5-6"/></svg><span><b>A scan of about 120 large-cap stocks, twice a day.</b> Plus any list you type in yourself.</span></li>
+          <li class="yes"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="9"/><path d="M7 11.5l3 3 5-6"/></svg><span><b>Plain dollars.</b> Probability, the collateral a trade ties up, and the downside, all spelled out.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3>It isn’t</h3>
+        <ul>
+          <li class="no"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="9"/><path d="M8 8l6 6M14 8l-6 6"/></svg><span><b>Advice.</b> It finds and prices a structure. Whether to trade it is yours to decide.</span></li>
+          <li class="no"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="9"/><path d="M8 8l6 6M14 8l-6 6"/></svg><span><b>A promise.</b> A 53% probability is an estimate from today’s prices, not a return.</span></li>
+          <li class="no"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="9"/><path d="M8 8l6 6M14 8l-6 6"/></svg><span><b>Risk-free.</b> The put means you may end up owning the stock, at a price you picked in advance.</span></li>
+        </ul>
+      </div>
+    </article>
+  </section>
+
+  <!-- ── Closing ──────────────────────────────────────────── -->
+  <section class="wrap" aria-labelledby="close-h">
+    <div class="card close">
+      <h2 id="close-h">Run one scan and see the real credit.</h2>
+      <p class="lede">The screener is free. No returns promised, no countdown. Just the numbers, priced the way they’d fill.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#scan">
+          Run a free scan
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>
+        </a>
+        <a class="btn btn-secondary" href="#how">See how it works</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <div class="foot">
+    <span>© 2026 Luo Capital</span>
+    <span>Options involve risk. Nothing here is investment advice.</span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var el = document.querySelector('[data-reveal]');
+    if (!el) return;
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || !('IntersectionObserver' in window)) { el.classList.add('is-in'); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { el.classList.add('is-in'); io.disconnect(); } });
+    }, { threshold: .35 });
+    io.observe(el);
+  })();
+</script>
+</body>
+</html>

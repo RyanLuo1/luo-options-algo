@@ -32,3 +32,17 @@ docs/private/*
 
 # personal case-study documents live in docs/private/ (untracked); keep the old path ignored too
 docs/POD_SELECTION_CASE_STUDY.md
+
+# Impeccable (design skill) — ephemeral/runtime state and the vendored detector binary.
+# Tracked: .claude/skills/impeccable/*.md + reference/, .claude/agents/, PRODUCT.md, .impeccable/config.json, .impeccable/live/config.json
+.claude/skills/impeccable/scripts/bin/
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/*.png
+.impeccable/review/
+.impeccable/questions/
+.impeccable/live/sessions/
+.impeccable/live/previews/
+.impeccable/live/cache/
+.impeccable/live/inject-journal.json
