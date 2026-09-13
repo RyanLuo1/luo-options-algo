@@ -47,9 +47,6 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
                 >
                   {tab.locked && <LockIcon className="w-3.5 h-3.5 text-lc-ink-3" />}
                   {tab.label}
-                  {tab.free
-                    ? <Pill tone="lime" size="sm">Free</Pill>
-                    : <Pill tone="quiet" size="sm">Paid</Pill>}
                 </button>
               )
             })}
