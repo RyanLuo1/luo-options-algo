@@ -235,7 +235,7 @@ input[type="range"].dual-thumb:disabled::-moz-range-thumb {
 body:has(> #root > .lc), body:has(.lc) { background: #F1EEF3; }
 .lc ::selection { background: var(--lc-violet-soft); color: var(--lc-ink); }
 .lc :focus-visible { outline: 3px solid var(--lc-violet); outline-offset: 3px; border-radius: var(--lc-radius); }
-.lc input:focus-visible, .lc textarea:focus-visible, .lc select:focus-visible { border-radius: 12px; outline-offset: 2px; }
+.lc input:focus-visible, .lc textarea:focus-visible, .lc select:focus-visible, .lc [role="tab"]:focus-visible { border-radius: 12px; outline-offset: 2px; }
 .lc input:-webkit-autofill, .lc input:-webkit-autofill:hover, .lc input:-webkit-autofill:focus { -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset; -webkit-text-fill-color: #15121A; caret-color: #15121A; }
 .lc ::-webkit-scrollbar { width: 10px; height: 10px; }
 .lc ::-webkit-scrollbar-thumb { background: #D9D2E3; border: 3px solid var(--lc-ground); border-radius: 8px; }

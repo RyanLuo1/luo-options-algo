@@ -36,7 +36,8 @@ export default function LoginPage() {
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const { user, loading } = useAuth()
-  const from = location.state?.from
+  const [loggedOut] = useState(() => { try { const v = sessionStorage.getItem('luo-logged-out'); sessionStorage.removeItem('luo-logged-out'); return !!v } catch { return false } })
+  const from = loggedOut || location.state?.loggedOut ? null : location.state?.from
   const returnTo = typeof from === 'string' && RETURNABLE.test(from) ? from : '/app'
   // The hash belongs to the initial page load only (router key 'default'); an in-app
   // navigation back here (e.g. after logging out) must not reopen the recovery state.
@@ -58,7 +59,7 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false)
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)             // reset email sent (this visit)
-  const [strip, setStrip] = useState(() => (linkError ? { tone: 'error', text: 'That reset link has expired. Enter your email and we’ll send a new one.', focus: 'email' } : null))   // { tone, text, action?, focus? }
+  const [strip, setStrip] = useState(() => (linkError ? { tone: 'error', text: 'That reset link has expired. Enter your email and we’ll send a new one.', focus: 'email', mark: false } : null))   // { tone, text, action?, focus? }
   const emailRef = useRef(null), passwordRef = useRef(null), tabsRef = useRef(null)
 
   // A second signal for recovery, in case the hash was consumed before this module evaluated.
@@ -91,7 +92,7 @@ export default function LoginPage() {
     el?.focus({ preventScroll: true })
   }, [strip, busy])
 
-  useEffect(() => { document.title = `${TITLES[mode]} · Luo Capital` }, [mode])
+  useEffect(() => { document.title = `${TITLES[mode]} · Luo Capital`; return () => { document.title = 'Luo Capital' } }, [mode])
 
   function switchMode(next) {
     setMode(next); setStrip(null); setShowPw(false); setSent(false)
@@ -104,8 +105,11 @@ export default function LoginPage() {
   }
   function fail(next) { setStrip(next) }
   function act(action) {
-    if (action.mode) switchMode(action.mode)
-    else if (action.retry) submit()
+    if (action.mode) {
+      switchMode(action.mode)
+      // the strip (and its button) unmounts: put focus where the new state needs it
+      setTimeout(() => (action.mode === 'reset' ? emailRef.current : email ? passwordRef.current : emailRef.current)?.focus({ preventScroll: true }), 0)
+    } else if (action.retry) submit()
   }
 
   async function submit(e) {
@@ -156,7 +160,7 @@ export default function LoginPage() {
   const isForm = mode === 'signin' || mode === 'signup'
   const primaryLabel = sent ? 'Link sent' : { signin: 'Log in', signup: 'Create account', reset: 'Send reset link', recovery: 'Set password' }[mode]
   const busyLabel = { signin: 'Logging in…', signup: 'Creating account…', reset: 'Sending…', recovery: 'Saving…' }[mode]
-  const invalid = strip?.tone === 'error' ? strip.focus : null   // which field the error belongs to
+  const invalid = strip?.tone === 'error' && strip.mark !== false ? strip.focus : null   // which field the error belongs to
   const context = isForm && from ? bounceLine(from, mode) : null
 
   return (
@@ -222,7 +226,7 @@ export default function LoginPage() {
                         {showPw ? 'Hide' : 'Show'}
                       </button>
                     </div>
-                    {(mode === 'signup' || mode === 'recovery') && <span className="text-[0.8rem] text-lc-ink-2 leading-[1.45]">At least {PASSWORD_MIN} characters.</span>}
+                    {(mode === 'signup' || mode === 'recovery') && !/^Passwords need/.test(strip?.text || '') && <span className="text-[0.8rem] text-lc-ink-2 leading-[1.45]">At least {PASSWORD_MIN} characters.</span>}
                   </div>
                 )}
               </fieldset>

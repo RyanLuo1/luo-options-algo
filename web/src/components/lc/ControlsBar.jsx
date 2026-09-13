@@ -40,7 +40,7 @@ export default function ControlsBar({
           </div>
         </Field>
 
-        <Field label="Minimum credit · $ per contract" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter 0 or more.'} help="Rescan to apply."
+        <Field label="Minimum credit" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter 0 or more.'} help="Rescan to apply."
           tip="The friction floor: the credit must cover commissions and bid/ask slippage. Default $100 per contract ($1 per share).">
           <Stepper id="lc-min-credit" value={minCreditStr} onChange={onMinCreditChange} onBlur={onMinCreditBlur} onKeyDown={enterRuns(minCreditValid)}
             onMinus={() => bumpMinCredit(-50)} onPlus={() => bumpMinCredit(+50)} disabled={loading} error={!minCreditValid} inputMode="decimal" prefix="$" />

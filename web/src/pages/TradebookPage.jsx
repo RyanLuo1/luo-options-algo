@@ -80,7 +80,7 @@ export default function TradebookPage() {
     setSelectedKey(null)
     showToast(`Deleted ${t.ticker} ${expiryInfo(t.expiration).short} · ${t.leg_c_strike} / ${t.leg_a_strike} / ${t.leg_b_strike}.`)
   }
-  async function handleLogout() { clearScreenerSession(); await supabase.auth.signOut(); navigate('/login') }
+  async function handleLogout() { clearScreenerSession(); try { sessionStorage.setItem('luo-logged-out', '1') } catch { /* private mode */ } await supabase.auth.signOut(); navigate('/login', { replace: true, state: { loggedOut: true } }) }
 
   const showError = !!error && error !== dismissedError
   const provenance = selected ? (

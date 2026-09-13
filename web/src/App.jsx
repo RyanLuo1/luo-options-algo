@@ -331,8 +331,9 @@ export default function App() {
   // ── Logout ─────────────────────────────────────────────────────────────────
   async function handleLogout() {
     clearScreenerSession()
+    try { sessionStorage.setItem('luo-logged-out', '1') } catch { /* private mode */ }
     await supabase.auth.signOut()
-    navigate('/login')
+    navigate('/login', { replace: true, state: { loggedOut: true } })
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────

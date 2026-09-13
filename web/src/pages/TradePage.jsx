@@ -106,7 +106,7 @@ export default function TradePage() {
       setSaveError(`Couldn’t reach the server to save (${e.message}). Nothing was written; try again.`)
     } finally { setSaving(false) }
   }
-  async function handleLogout() { clearScreenerSession(); await supabase.auth.signOut(); navigate('/login') }
+  async function handleLogout() { clearScreenerSession(); try { sessionStorage.setItem('luo-logged-out', '1') } catch { /* private mode */ } await supabase.auth.signOut(); navigate('/login', { replace: true, state: { loggedOut: true } }) }
   const back = () => navigate(from === 'tradebook' ? '/tradebook' : '/app', from === 'tradebook' && source?.id ? { state: { selected: source.id } } : undefined)
 
   const shellProps = { activeTab, onTabChange: id => (id === 'screener' ? navigate('/app') : setActiveTab(id)), plan, marketOpen: null, lastRun: null, onLogout: handleLogout }

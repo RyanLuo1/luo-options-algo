@@ -39,6 +39,7 @@ try {
   await shot('err-bad-login')
   await page.getByRole('button', { name: 'Create account', exact: true }).first().click(); await page.waitForTimeout(200)
   log('the strip’s action switches to Create account and keeps the email', (await page.getByRole('tab', { name: 'Create account' }).getAttribute('aria-selected')) === 'true' && (await page.locator('#auth-email').inputValue()) === email)
+  log('after a strip action, focus lands on Password', (await page.evaluate(() => document.activeElement?.id)) === 'auth-password')
   await page.getByRole('tab', { name: 'Create account' }).focus(); await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(100)
   log('ArrowLeft on the tab strip switches mode and keeps focus on the strip', (await page.getByRole('tab', { name: 'Log in' }).getAttribute('aria-selected')) === 'true' && (await page.evaluate(() => document.activeElement?.getAttribute('role'))) === 'tab')
   await page.getByRole('tab', { name: 'Create account' }).click(); await page.waitForTimeout(100)
@@ -58,9 +59,11 @@ try {
   log('the wordmark holds still from /login to /app', markLogin.join(',') === markApp.join(','), `${markLogin.join(',')} → ${markApp.join(',')}`)
   userId = await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { return JSON.parse(localStorage.getItem(k))?.user?.id ?? null } catch { return null } } return null })
   log('create account lands in /app', /\/app$/.test(page.url()) && !!userId, userId ? 'user id captured' : 'no user id in storage')
+  log('the login title does not leak into the app', !/^Log in|^Create account/.test(await page.title()), await page.title())
 
   // ── Log out → log in
   await logout()
+  log('a voluntary logout shows no bounce line', !/to open the screener/.test(await page.textContent('section[aria-labelledby="auth-title"]')))
   await page.locator('#auth-email').fill(email); await page.locator('#auth-password').fill(password); await page.keyboard.press('Enter')
   await page.waitForURL(/\/app$/, { timeout: 30000 })
   log('log in lands in /app', /\/app$/.test(page.url()))
@@ -119,7 +122,7 @@ try {
 
   // ── Expired-link state (a bad hash, no session)
   await page.goto(BASE + '/login#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired', { waitUntil: 'networkidle' }); await page.waitForTimeout(300)
-  log('an expired link opens the reset form with its own strip', /reset link has expired/.test(await stripText()) && (await page.getByRole('button', { name: 'Send reset link' }).count()) === 1 && (await page.locator('#auth-password').count()) === 0, await stripText())
+  log('an expired link opens the reset form with its own strip, without marking the empty field wrong', /reset link has expired/.test(await stripText()) && (await page.getByRole('button', { name: 'Send reset link' }).count()) === 1 && (await page.locator('#auth-password').count()) === 0 && (await page.locator('#auth-email').getAttribute('aria-invalid')) === null, await stripText())
   await shot('err-expired-link')
 
   // ── Desktop capture

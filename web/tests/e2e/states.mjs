@@ -11,6 +11,7 @@ const page = await (await browser.newContext({ viewport: { width: 1440, height: 
 const errors = []; page.on('pageerror', e => errors.push(e.message))
 try {
   await signIn(page, acct)
+  await page.waitForSelector('#lc-min-credit', { timeout: 15000 })   // the controls mount a beat after the shell
 
   // Defaults: dual-gate ($100 friction floor + 1% return on collateral), grouped view
   const defaults = await page.evaluate(() => ({ credit: document.querySelector('#lc-min-credit')?.value, roc: document.querySelector('#lc-min-roc')?.value, p: document.querySelector('#lc-min-p')?.value }))
