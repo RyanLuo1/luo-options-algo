@@ -63,6 +63,8 @@ export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
         <text x={(X(kc) + X(ka)) / 2} y={Y(credit) < TOP + 30 ? Y(credit) + 20 : Y(credit) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">+{fmtMoney0(credit)} credit</text>
         <text x={(X(kb) + X(xMax)) / 2} y={Y(maxP) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">+{fmtMoney0(maxP)} max</text>
       </svg>
+      {/* Axis title, centered under the strike labels like a chart's x-axis caption — not an action. */}
+      <p className="text-center text-[0.8rem] text-lc-ink-2 mt-1">stock price at expiration, low to high</p>
       {needLegend && (
         <div className="flex gap-x-4 gap-y-1 flex-wrap text-[0.8rem] mt-2" aria-label="Zones, left to right">
           <span className="inline-flex items-center gap-1.5 text-lc-loss font-semibold"><i className="w-3 h-3 rounded-sm bg-lc-loss-tint border border-lc-loss/40" /> loss zone, below {kc}</span>
@@ -73,7 +75,7 @@ export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
       )}
       <div className="flex justify-between gap-3 text-[0.85rem] text-lc-ink-2 mt-2 flex-wrap">
         <span>Payoff at expiration, per contract</span>
-        <span>{hasSpot ? 'Stock price →' : markerLabel === 'spot' ? 'Spot price unavailable right now · stock price →' : 'Stock price →'}</span>
+        {!hasSpot && markerLabel === 'spot' && <span>Spot price unavailable right now</span>}
       </div>
     </div>
   )
