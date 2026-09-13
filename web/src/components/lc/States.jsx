@@ -34,7 +34,7 @@ export function ErrorStrip({ message, hadResults, onRetry, onDismiss, tradebook 
   return (
     <div role="alert" className="bg-lc-loss-tint rounded-lc px-5 py-4 flex items-start gap-4">
       <div className="flex-1 text-[0.95rem] text-lc-ink leading-[1.5]">
-        <strong className="text-lc-loss font-semibold">{text.problem}</strong> {text.recovery}
+        <strong className="text-lc-loss-ink font-semibold">{text.problem}</strong> {text.recovery}
       </div>
       {onRetry && <Button size="sm" variant="secondary" onClick={onRetry}>Try again</Button>}
       <button type="button" onClick={onDismiss} aria-label="Dismiss" className="text-lc-ink-3 hover:text-lc-ink mt-1"><XIcon /></button>

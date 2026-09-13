@@ -166,7 +166,7 @@ function Stat({ label, value, sub, hi = false, className = '' }) {
 function RealizedCard({ pnl, zone, hero = false }) {
   const tone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat'
   const bg = tone === 'profit' ? 'bg-lc-profit-tint' : tone === 'loss' ? 'bg-lc-loss-tint' : 'bg-lc-ground'
-  const ink = tone === 'profit' ? 'text-lc-profit' : tone === 'loss' ? 'text-lc-loss' : 'text-lc-ink'
+  const ink = tone === 'profit' ? 'text-lc-profit' : tone === 'loss' ? 'text-lc-loss-ink' : 'text-lc-ink'
   return (
     <div className={`${bg} rounded-lc p-4 flex flex-col gap-1 min-w-0 ${hero ? 'justify-center' : ''}`}>
       <span className={`text-[0.85rem] font-semibold ${tone === 'flat' ? 'text-lc-ink-2' : ink}`}>Realized P&amp;L</span>

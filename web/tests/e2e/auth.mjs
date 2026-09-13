@@ -34,9 +34,14 @@ try {
   await page.locator('#auth-email').fill(email); await page.locator('#auth-password').fill('wrong-password-1'); await page.locator('button[type="submit"]').click()
   await page.waitForFunction(() => document.querySelector('#auth-form [role="alert"]'), null, { timeout: 15000 })
   log('bad login: one message, both recoveries, no Supabase text', /don’t match/.test(await stripText()) && /create an account/.test(await stripText()) && !/Invalid login credentials/.test(await stripText()), await stripText())
+  await page.waitForTimeout(150)
+  log('after a server error, focus is on the offending field and it is marked', (await page.evaluate(() => document.activeElement?.id)) === 'auth-password' && (await page.locator('#auth-password').getAttribute('aria-invalid')) === 'true')
   await shot('err-bad-login')
   await page.getByRole('button', { name: 'Create account', exact: true }).first().click(); await page.waitForTimeout(200)
   log('the strip’s action switches to Create account and keeps the email', (await page.getByRole('tab', { name: 'Create account' }).getAttribute('aria-selected')) === 'true' && (await page.locator('#auth-email').inputValue()) === email)
+  await page.getByRole('tab', { name: 'Create account' }).focus(); await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(100)
+  log('ArrowLeft on the tab strip switches mode and keeps focus on the strip', (await page.getByRole('tab', { name: 'Log in' }).getAttribute('aria-selected')) === 'true' && (await page.evaluate(() => document.activeElement?.getAttribute('role'))) === 'tab')
+  await page.getByRole('tab', { name: 'Create account' }).click(); await page.waitForTimeout(100)
   log('sign-up states the password rule and the honesty line', /At least 6 characters/.test(await page.textContent('#auth-form')) && /Free account\. The screener and tradebook are yours — no card, no trial clock\./.test(await page.textContent('#auth-form')))
 
   // ── Create account: weak password, then success → /app
@@ -46,8 +51,11 @@ try {
   await page.locator('#auth-password').fill(password)
   await page.getByRole('button', { name: 'Show password' }).click()
   log('Show reveals the password', (await page.locator('#auth-password').getAttribute('type')) === 'text' && (await page.getByRole('button', { name: 'Hide password' }).count()) === 1)
+  const markLogin = await page.evaluate(() => { const r = document.querySelector('header a[aria-label="Luo Capital home"]').getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.height)] })
   await page.locator('button[type="submit"]').click()
-  await page.waitForURL(/\/app$/, { timeout: 30000 })
+  await page.waitForURL(/\/app$/, { timeout: 30000 }); await page.waitForSelector('header button[aria-label="Luo Capital, go to the screener"]', { timeout: 15000 })
+  const markApp = await page.evaluate(() => { const r = document.querySelector('header button[aria-label="Luo Capital, go to the screener"]').getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.height)] })
+  log('the wordmark holds still from /login to /app', markLogin.join(',') === markApp.join(','), `${markLogin.join(',')} → ${markApp.join(',')}`)
   userId = await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token$/.test(k)) { try { return JSON.parse(localStorage.getItem(k))?.user?.id ?? null } catch { return null } } return null })
   log('create account lands in /app', /\/app$/.test(page.url()) && !!userId, userId ? 'user id captured' : 'no user id in storage')
 
@@ -71,6 +79,7 @@ try {
   await page.goto(BASE + '/tradebook', { waitUntil: 'networkidle' })
   await page.waitForURL(/\/login$/, { timeout: 15000 })
   log('logged-out /tradebook bounces to /login', /\/login$/.test(page.url()))
+  log('the card says why you are here', /Log in to open your tradebook\./.test(await page.textContent('section[aria-labelledby="auth-title"]')))
   await page.locator('#auth-email').fill(email); await page.locator('#auth-password').fill(password); await page.keyboard.press('Enter')
   await page.waitForURL(/\/tradebook$/, { timeout: 30000 })
   log('login returns to the bounced route', /\/tradebook$/.test(page.url()))
@@ -83,6 +92,7 @@ try {
   await page.locator('#auth-email').fill(email); await page.keyboard.press('Enter')
   await page.waitForFunction(() => document.querySelector('#auth-form [role="status"]'), null, { timeout: 20000 })
   log('reset request shows the check-your-email notice with a Create account recovery', new RegExp(`Check ${email.replace('+', '\\+')} for a reset link`).test(await stripText()) && /create one instead/.test(await stripText()), await stripText())
+  log('after sending, the primary reads Link sent and is disabled; Back to log in is the next step', (await page.locator('button[type="submit"]').textContent()).trim() === 'Link sent' && (await page.locator('button[type="submit"]').isDisabled()) && (await page.getByRole('button', { name: 'Back to log in', exact: true }).count()) === 1)
   await shot('reset-sent')
 
   // ── A real recovery link (admin API) → Set a new password → /app → log in with it
@@ -109,7 +119,7 @@ try {
 
   // ── Expired-link state (a bad hash, no session)
   await page.goto(BASE + '/login#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired', { waitUntil: 'networkidle' }); await page.waitForTimeout(300)
-  log('an expired link gets its own strip with a recovery', /reset link has expired/.test(await stripText()) && (await page.getByRole('button', { name: 'Request a new one' }).count()) === 1, await stripText())
+  log('an expired link opens the reset form with its own strip', /reset link has expired/.test(await stripText()) && (await page.getByRole('button', { name: 'Send reset link' }).count()) === 1 && (await page.locator('#auth-password').count()) === 0, await stripText())
   await shot('err-expired-link')
 
   // ── Desktop capture

@@ -71,6 +71,7 @@ export default {
         'lc-profit':      '#1F7A4D',
         'lc-profit-tint': '#DDF3E6',
         'lc-loss':        '#C8325A',
+        'lc-loss-ink':    '#A8264B',   // text on the loss tint (≥4.5:1); lc-loss itself is 4.25:1 there
         'lc-loss-tint':   '#FBE3E9',
       },
       fontFamily: {
