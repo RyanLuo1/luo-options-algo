@@ -41,6 +41,7 @@ try {
   const originalId = beforeRows[0]?.id
 
   // 2. provenance pill + Rerun
+  await page.waitForFunction(() => /From your scan · .* · rank \d+ of \d+/.test(document.body.textContent), null, { timeout: 15000 }).catch(() => {})   // the provenance read can land a beat after the rows on a slow round trip
   const prov = await page.evaluate(() => (document.body.textContent.match(/From your scan · [A-Z][a-z]{2} \d+ \d\d:\d\d(?: · rank \d+ of \d+)?/) || [])[0])
   log('provenance pill names the scan and rank', !!prov && /rank \d+ of \d+/.test(prov), prov)
   await page.getByRole('button', { name: 'Rerun this scan' }).click()

@@ -35,6 +35,9 @@ docs/POD_SELECTION_CASE_STUDY.md
 
 # Impeccable (design skill) — ephemeral/runtime state and the vendored detector binary.
 # Tracked: .claude/skills/impeccable/*.md + reference/, .claude/agents/, PRODUCT.md, .impeccable/config.json, .impeccable/live/config.json
+# Design notes stay local (public repo): critique snapshots and surface briefs. design.json + config stay tracked.
+.impeccable/critique/
+.impeccable/surfaces/
 .claude/skills/impeccable/scripts/bin/
 .impeccable/config.local.json
 .impeccable/hook.cache.json
