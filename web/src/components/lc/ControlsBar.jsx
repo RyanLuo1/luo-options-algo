@@ -1,12 +1,14 @@
 import WeeksRangeSlider from '../WeeksRangeSlider'
-import { Button, Field, Input } from './ui'
+import { Button, Input } from './ui'
 import { INPUT_CLASS } from './format'
 
-// The inline controls bar. Every value/handler is owned by App (lifted state).
-// Enter in any field runs the scan; `/` focus and ⌘/Ctrl+Enter are wired in
-// App at the document level. Two credit gates (the dual-gate default):
-//   • Minimum credit · $ per contract — the friction floor (API: min_premium, per share)
-//   • Minimum return on collateral   — applied client-side to the scan's rows
+// The controls bar is a three-row grid: label row · input row (one baseline, 44px)
+// · helper row (fixed two-line slot). Each field is a subgrid spanning the three
+// rows, so every input sits on the same line whatever its label or helper needs.
+// Helpers are one line; longer explanations live in an ⓘ tooltip beside the label.
+// Two credit gates: "$ per contract" goes to the API per share (rescan);
+// "return on collateral" is applied client-side, live.
+// ≤1100: two bands of three fields; Run scan sits on the second band's input row.
 export default function ControlsBar({
   loading, isStale, onRun, canRun = true,
   tickersRef, tickerInput, setTickerInput, tickersError, onManageWatchlists, manageOpen,
@@ -18,60 +20,91 @@ export default function ControlsBar({
   const enterRuns = ok => e => { if (e.key === 'Enter' && !loading && ok) { e.preventDefault(); onRun() } }
 
   return (
-    <section aria-label="Scan controls" className="bg-lc-card rounded-lc shadow-lc px-6 py-5">
-      <div className="flex flex-wrap gap-x-5 gap-y-4 items-start">
-        <Field
-          className="basis-[18rem] grow-[2]"
-          label="Tickers or @watchlist"
-          htmlFor="lc-tickers"
-          error={tickersError}
-          help={!tickersError && (
-            <span>
-              NVDA, META, or @semis ·{' '}
-              <button type="button" onClick={onManageWatchlists} className="text-lc-violet font-semibold hover:underline">
-                {manageOpen ? 'Hide watchlists' : 'Manage watchlists'}
-              </button>
-            </span>
-          )}
-        >
-          <Input id="lc-tickers" ref={tickersRef} type="text" value={tickerInput ?? ''} onChange={e => setTickerInput(e.target.value)}
-            onKeyDown={enterRuns(true)} placeholder="Tickers, or @watchlist" disabled={loading} error={!!tickersError} autoComplete="off" spellCheck={false} />
+    <section aria-label="Scan controls" className="bg-lc-card rounded-lc shadow-lc px-6 pt-5 pb-3">
+      <div className="lc-controls grid gap-x-5 gap-y-1.5 items-start
+                      grid-cols-[minmax(15rem,1.8fr)_minmax(11rem,1.1fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(9rem,.9fr)_auto]
+                      grid-rows-[auto_2.75rem_2.4rem]
+                      max-lc:grid-cols-[minmax(12rem,2fr)_minmax(11rem,1.2fr)_minmax(10rem,1fr)] max-lc:grid-rows-[auto_2.75rem_2.4rem_auto_2.75rem_2.4rem]">
+
+        <Field label="Tickers or @watchlist" htmlFor="lc-tickers" error={tickersError}
+          help={<span>e.g. NVDA, META or @semis · <button type="button" onClick={onManageWatchlists} className="text-lc-violet font-semibold hover:underline">{manageOpen ? 'Hide watchlists' : 'Manage watchlists'}</button></span>}
+          tip="Separate tickers with commas or spaces. @name scans a saved watchlist; mix both freely.">
+          <Input id="lc-tickers" ref={tickersRef} type="text" value={tickerInput ?? ''} onChange={e => setTickerInput(e.target.value)} onKeyDown={enterRuns(true)}
+            placeholder="Tickers, or @watchlist" disabled={loading} error={!!tickersError} autoComplete="off" spellCheck={false} />
         </Field>
 
-        <Field className="basis-[13rem] grow" label="Weeks to expiration" help={`W${weeksMin} to W${weeksMax}`}>
+        <Field label="Weeks to expiration" help={`W${weeksMin} to W${weeksMax}`} tip="Weekly expirations to scan, counted from the next Friday. W1 is this week; W12 is about three months out.">
           <div className={`${INPUT_CLASS} flex items-center justify-between gap-3`}>
             <WeeksRangeSlider min={1} max={12} valueMin={weeksMin} valueMax={weeksMax} onChange={(a, b) => { setWeeksMin(a); setWeeksMax(b) }} disabled={loading} />
             <span className="text-[0.9rem] font-semibold whitespace-nowrap">{weeksMin}–{weeksMax}</span>
           </div>
         </Field>
 
-        {/* Min credit, $ per contract — the friction floor (the boundary divides by 100 for the API) */}
-        <Field className="basis-[11rem] grow max-w-[15rem] max-lc:grow-0" label="Minimum credit · $ per contract" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter a dollar amount, 0 or more.'} help="Covers commissions and bid/ask slippage. Rescan to apply.">
+        <Field label="Minimum credit · $ per contract" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter 0 or more.'} help="Rescan to apply."
+          tip="The friction floor: the credit must cover commissions and bid/ask slippage. Default $100 per contract ($1 per share).">
           <Stepper id="lc-min-credit" value={minCreditStr} onChange={onMinCreditChange} onBlur={onMinCreditBlur} onKeyDown={enterRuns(minCreditValid)}
             onMinus={() => bumpMinCredit(-50)} onPlus={() => bumpMinCredit(+50)} disabled={loading} error={!minCreditValid} inputMode="decimal" prefix="$" />
         </Field>
 
-        {/* Min return on collateral — applied client-side to the scan's rows, live */}
-        <Field className="basis-[11rem] grow max-w-[15rem] max-lc:grow-0" label="Minimum return on collateral" htmlFor="lc-min-roc" error={minRocValid ? null : 'Enter a percent, 0 or more.'} help="Credit ÷ the cash the put ties up — lets cheap and expensive stocks compete fairly. Applies instantly, no rescan.">
+        <Field label="Minimum return on collateral" htmlFor="lc-min-roc" error={minRocValid ? null : 'Enter 0 or more.'} help="Applies instantly."
+          tip="Credit ÷ the cash the put ties up. Lets cheap and expensive stocks compete fairly. Default 1%. Filters the results you already have; no rescan.">
           <Stepper id="lc-min-roc" value={minRocStr} onChange={onMinRocChange} onBlur={onMinRocBlur} onKeyDown={enterRuns(minRocValid)}
             onMinus={() => bumpMinRoc(-0.5)} onPlus={() => bumpMinRoc(+0.5)} disabled={loading} error={!minRocValid} inputMode="decimal" suffix="%" />
         </Field>
 
-        <Field className="basis-[10rem] grow max-w-[14rem] max-lc:grow-0" label="Minimum P(max profit)" htmlFor="lc-min-p" error={minPProfitValid ? null : 'Whole number from 1 to 99.'} help="Chance the trade ends at max profit.">
+        <Field label="Minimum P(max profit)" htmlFor="lc-min-p" error={minPProfitValid ? null : '1 to 99.'} help="Rescan to apply."
+          tip="Chance the trade ends at max profit, from the options’ own deltas: (1 − short call delta) × (1 − short put delta). Default 50%.">
           <Stepper id="lc-min-p" value={minPProfitStr} onChange={onMinPProfitChange} onBlur={onMinPProfitBlur} onKeyDown={enterRuns(minPProfitValid)}
             onMinus={() => bumpMinPProfit(-1)} onPlus={() => bumpMinPProfit(+1)} disabled={loading} error={!minPProfitValid} inputMode="numeric" suffix="%" />
         </Field>
 
-        {/* The page's one lime action */}
-        <div className="flex flex-col gap-1.5 items-end ml-auto self-end">
+        {/* The page's one lime action, on the input row (second band's input row ≤1100) */}
+        <div className="col-start-6 row-start-2 max-lc:row-start-5 max-lc:col-start-3 max-lc:justify-self-end self-center">
           <Button variant="primary" onClick={onRun} disabled={loading || !canRun} title={!canRun ? 'Fix the highlighted field first' : undefined}
             className={isStale ? 'ring-[3px] ring-lc-violet ring-offset-2 ring-offset-lc-card' : ''}>
             {loading ? 'Scanning…' : isStale ? 'Rescan needed' : 'Run scan'}
           </Button>
-          <span className="text-[0.75rem] text-lc-ink-2 whitespace-nowrap">⌘ Enter runs</span>
         </div>
+        <span className="col-start-6 row-start-3 max-lc:row-start-6 max-lc:col-start-3 max-lc:justify-self-end text-[0.75rem] text-lc-ink-2 whitespace-nowrap self-start">⌘ Enter runs</span>
       </div>
     </section>
+  )
+}
+
+// A field = three cells of the parent grid (subgrid): label+ⓘ · control · helper/error.
+function Field({ label, htmlFor, help, error, tip, children }) {
+  const tipId = htmlFor ? `${htmlFor}-tip` : undefined
+  return (
+    <div className="grid grid-rows-[subgrid] row-span-3 min-w-0">
+      <div className="flex items-start gap-1.5 min-w-0 self-end">
+        <label htmlFor={htmlFor} className="text-[0.8rem] font-semibold tracking-[0.01em] text-lc-ink-2 leading-[1.3]">{label}</label>
+        {tip && <InfoTip id={tipId} text={tip} />}
+      </div>
+      <div className="min-w-0">{children}</div>
+      <span className={`text-[0.8rem] leading-[1.45] ${error ? 'text-lc-loss font-semibold' : 'text-lc-ink-2'}`} role={error ? 'alert' : undefined}>
+        {error || help}
+      </span>
+    </div>
+  )
+}
+
+// ⓘ tooltip: shows on hover and keyboard focus; the button is named, the text is its description.
+function InfoTip({ id, text }) {
+  return (
+    <span className="relative group inline-flex shrink-0">
+      <button type="button" aria-label="More about this field" aria-describedby={id}
+        className="w-4 h-4 rounded-full text-lc-ink-3 hover:text-lc-violet focus-visible:text-lc-violet grid place-items-center">
+        <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M12 11v5.5M12 7.5h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
+      <span id={id} role="tooltip"
+        className="pointer-events-none absolute left-0 top-full mt-2 z-20 w-64 rounded-lc-half bg-lc-ink text-lc-card text-[0.8rem] leading-[1.45] px-3 py-2 shadow-lc-lift
+                   hidden group-hover:block group-focus-within:block">
+        {text}
+      </span>
+    </span>
   )
 }
 

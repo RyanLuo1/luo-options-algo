@@ -11,7 +11,7 @@ const COLUMNS = [
   { key: 'expiration', label: 'Expires',           align: 'left',  sort: r => r.expiration, firstDir: 'asc' },
   { key: 'strikes',    label: 'Put / Call / Call', align: 'left'  },
   { key: 'credit',     label: 'Credit /ct',        align: 'right', sort: r => r.net_premium, firstDir: 'desc' },
-  { key: 'max',        label: 'Max profit /ct',    align: 'right', sort: r => r.net_premium + r.spread_width, firstDir: 'desc' },
+  { key: 'max',        label: 'Max profit /ct',    short: 'Max /ct', align: 'right', sort: r => r.net_premium + r.spread_width, firstDir: 'desc' },
   { key: 'pmax',       label: 'P(max)',            align: 'right', sort: r => r.p_max_profit, firstDir: 'desc' },
   { key: 'collateral', label: 'Collateral',        align: 'right', sort: r => r.leg_c_strike, firstDir: 'desc', hideBelowXl: true },
 ]
@@ -139,7 +139,7 @@ export default function RankedTable({
                     aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     {col.sort ? (
                       <button type="button" onClick={() => clickHeader(col)} className={`inline-flex items-center gap-1 hover:text-lc-ink ${active ? 'text-lc-violet' : ''}`}>
-                        {col.label}<SortIcon dir={active ? sort.dir : undefined} />
+                        {col.short ? <><span className="max-lc:hidden">{col.label}</span><span className="lc:hidden">{col.short}</span></> : col.label}<SortIcon dir={active ? sort.dir : undefined} />
                       </button>
                     ) : col.label}
                   </th>
