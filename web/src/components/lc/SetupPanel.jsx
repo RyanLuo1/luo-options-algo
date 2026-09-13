@@ -4,9 +4,11 @@ import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocO
 
 // The detail panel: the setup dashboard, one component in two states.
 //   • open (default): live spot marker, P(max) gauge, the worst-case sentence.
-//   • graded: pass `settlement` (an outcome row) — the settlement price becomes
-//     the curve marker, a Realized P&L card replaces the gauge, and the
-//     worst-case slot becomes the settlement sentence.
+//   • graded: pass `settlement` (an outcome row) — a different shape: the
+//     Realized P&L card and the settlement sentence lead, and the setup as
+//     saved (legs, curve with the settled marker, figures) folds below.
+//   • expired but ungraded (`expired`): the open shape with a "Grade pending"
+//     tile in the gauge slot and an expired outcome line.
 // `actions` replaces the default Save / Open-in-editor row (the Tradebook passes
 // its own); `note` is an optional one-line caption under the actions; `spot`
 // overrides the row's own underlying price (the Tradebook fetches it live).
@@ -50,35 +52,62 @@ export default function SetupPanel({
 
       {provenance}
 
-      {/* Legs */}
-      <div className="grid grid-cols-3 max-lc:grid-cols-1 gap-3">
-        <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay />
-        <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" />
-        <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" />
-      </div>
+      {graded ? (
+        <>
+          {/* The answer first: realized P&L beside the settlement sentence. */}
+          <div className="grid grid-cols-[minmax(11rem,auto)_1fr] max-lc:grid-cols-1 gap-4 items-stretch">
+            <RealizedCard pnl={pnl} zone={zoneLabel(settlement.outcome_type)} hero />
+            <p className="text-[1.05rem] text-lc-ink leading-[1.55] self-center">
+              <strong className="font-semibold">Outcome:</strong> {settlementSentence(row, settlement)}
+            </p>
+          </div>
+          {/* The setup as saved, folded. */}
+          <details className="group rounded-lc-plus border-[1.5px] border-lc-line">
+            <summary className="list-none cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-3 rounded-lc-plus hover:bg-lc-ground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet [&::-webkit-details-marker]:hidden">
+              <span className="flex items-baseline gap-2 flex-wrap min-w-0">
+                <span className="text-[0.95rem] font-semibold text-lc-ink">The setup as saved</span>
+                <span className="text-[0.85rem] text-lc-ink-2 [font-variant-numeric:tabular-nums]">{row.leg_c_strike} / {row.leg_a_strike} / {row.leg_b_strike} · credit {fmtMoney0(f.credit)} · max {fmtMoney0(f.maxProfit)}</span>
+              </span>
+              <svg viewBox="0 0 16 16" className="w-4 h-4 shrink-0 text-lc-ink-2 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6l5 5 5-5" /></svg>
+            </summary>
+            <div className="px-4 pb-4 pt-1 flex flex-col gap-4">
+              <Legs row={row} />
+              <PayoffCurve row={row} spot={spot} markerLabel="settled" />
+              <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
+                <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} />
+                <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} had finished above ${row.leg_b_strike}`} />
+                <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub="cash that secured the put" />
+                <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this the trade lost money" />
+              </div>
+            </div>
+          </details>
+        </>
+      ) : (
+        <>
+          <Legs row={row} />
 
-      <PayoffCurve row={row} spot={spot} markerLabel={expired ? 'settled' : 'spot'} />
+          <PayoffCurve row={row} spot={spot} markerLabel={expired ? 'settled' : 'spot'} />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
-        <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} hi />
-        <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}`} />
-        {graded
-          ? <RealizedCard pnl={pnl} zone={zoneLabel(settlement.outcome_type)} />
-          : <Gauge p={row.p_max_profit} />}
-        <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub={expired ? 'cash that secured the put' : 'cash to secure the put while it’s open'} />
-        <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-lc:col-span-1" />
-      </div>
+          {/* Stats */}
+          <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
+            <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} hi />
+            <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}`} />
+            {expired
+              ? <Stat label="Grade pending" value="—" sub="posts after the next close" />
+              : <Gauge p={row.p_max_profit} />}
+            <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub={expired ? 'cash that secured the put' : 'cash to secure the put while it’s open'} />
+            <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-lc:col-span-1" />
+          </div>
 
-      <p className="text-[0.95rem] text-lc-ink-2 leading-[1.55]">
-        {graded ? (
-          <><strong className="text-lc-ink font-semibold">Outcome:</strong> {settlementSentence(row, settlement)}</>
-        ) : expired ? (
-          <><strong className="text-lc-ink font-semibold">Outcome:</strong> expired {exp.short}. The closing price on expiration decides the zone; the grade posts after the next close.</>
-        ) : (
-          <><strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}, which is {fmtMoney0(f.breakeven * worstShares)} of stock. That is the downside in plain dollars.</>
-        )}
-      </p>
+          <p className="text-[0.95rem] text-lc-ink-2 leading-[1.55]">
+            {expired ? (
+              <><strong className="text-lc-ink font-semibold">Outcome:</strong> expired {exp.short}. The closing price on expiration decides the zone; the grade posts after the next close.</>
+            ) : (
+              <><strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}, which is {fmtMoney0(f.breakeven * worstShares)} of stock. That is the downside in plain dollars.</>
+            )}
+          </p>
+        </>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-3 flex-wrap pt-1">
@@ -98,6 +127,16 @@ export default function SetupPanel({
       </div>
       {note && <p className="text-[0.82rem] text-lc-ink-2 -mt-2">{note}</p>}
     </section>
+  )
+}
+
+function Legs({ row }) {
+  return (
+    <div className="grid grid-cols-3 max-lc:grid-cols-1 gap-3">
+      <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay />
+      <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" />
+      <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" />
+    </div>
   )
 }
 
@@ -122,14 +161,14 @@ function Stat({ label, value, sub, hi = false, className = '' }) {
 }
 
 // Realized P&L for a graded trade: the profit/loss pair, always with a sign, plus the zone in words.
-function RealizedCard({ pnl, zone }) {
+function RealizedCard({ pnl, zone, hero = false }) {
   const tone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat'
   const bg = tone === 'profit' ? 'bg-lc-profit-tint' : tone === 'loss' ? 'bg-lc-loss-tint' : 'bg-lc-ground'
   const ink = tone === 'profit' ? 'text-lc-profit' : tone === 'loss' ? 'text-lc-loss' : 'text-lc-ink'
   return (
-    <div className={`${bg} rounded-lc p-4 flex flex-col gap-1 min-w-0`}>
+    <div className={`${bg} rounded-lc p-4 flex flex-col gap-1 min-w-0 ${hero ? 'justify-center' : ''}`}>
       <span className={`text-[0.85rem] font-semibold ${tone === 'flat' ? 'text-lc-ink-2' : ink}`}>Realized P&amp;L</span>
-      <span className={`font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] ${ink}`}>{fmtSigned0(pnl)}</span>
+      <span className={`font-display font-extrabold ${hero ? 'text-[2.2rem]' : 'text-[1.7rem]'} leading-[1.1] tracking-[-0.02em] ${ink}`}>{fmtSigned0(pnl)}</span>
       <span className={`text-[0.85rem] ${tone === 'flat' ? 'text-lc-ink-2' : ink}`}>per contract · {zone}</span>
     </div>
   )

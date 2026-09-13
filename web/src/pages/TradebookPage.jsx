@@ -88,7 +88,7 @@ export default function TradebookPage() {
       </>
     ) : (
       <>
-        <Button variant="secondary" onClick={() => openEditor(selected)}>{selected.status === 'graded' ? 'View in editor' : 'Open in editor'}</Button>
+        <Button variant="secondary" onClick={() => openEditor(selected)}>{selected.status === 'open' ? 'Open in editor' : 'View in editor'}</Button>
         <Button variant="ghost" onClick={() => setConfirmingDelete(true)} className="text-lc-loss hover:bg-lc-loss-tint">Delete</Button>
       </>
     )
@@ -133,7 +133,7 @@ export default function TradebookPage() {
                   statusPill={<StatusPill trade={selected} size="md" />}
                   provenance={provenance}
                   actions={actions}
-                  note={selected.status === 'pending' ? 'Grading pending · grades after the next close (the nightly backfill runs on trading days).' : selected.status === 'open' ? 'Editing saves a corrected trade and replaces this one unless you untick “Replace the original”.' : null}
+                  note={selected.status === 'pending' ? 'Grading pending · grades after the next close (trading days only).' : selected.status === 'open' ? 'Editing saves a corrected trade and replaces this one unless you untick “Replace the original”.' : null}
                   dimmed={loading}
                 />
               </div>
