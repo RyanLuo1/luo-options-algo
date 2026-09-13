@@ -44,6 +44,22 @@ export const TABS = [
 /** Stable identity for a ranked row (ticker + expiration + the three strikes). */
 export const rowKey = r => `${r.ticker}-${r.expiration}-${r.leg_a_strike}-${r.leg_b_strike}-${r.leg_c_strike}`
 
+/** Return on collateral: credit as a share of the cash the put ties up (per-share basis cancels). */
+export const rocOf = row => (row.leg_c_strike > 0 ? row.net_premium / row.leg_c_strike : 0)
+
+/** Why a scanned ticker produced no setups, in words (API reason codes + the client-side ROC floor). */
+export function zeroReasonText(code, { minCredit, minRocPct, minPPct }) {
+  switch (code) {
+    case 'roc':              return `no setup cleared the ${minRocPct}% return floor`
+    case 'min_credit':       return `no setup cleared the $${Number(minCredit).toLocaleString('en-US')} minimum`
+    case 'min_p':            return `no setup cleared the ${minPPct}% P(max) floor`
+    case 'min_credit_or_p':  return `no setup cleared the $${Number(minCredit).toLocaleString('en-US')} minimum or the ${minPPct}% P(max) floor`
+    case 'liquidity':        return 'liquidity guards (no leg with a live two-sided quote)'
+    case 'no_chain':         return 'no options chain returned'
+    default:                 return null
+  }
+}
+
 /** The incumbent Screener metric: credit as a share of max profit. */
 export const creditShareOfMax = row => {
   const max = row.net_premium + row.spread_width

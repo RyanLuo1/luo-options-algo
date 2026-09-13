@@ -155,7 +155,7 @@ def _live_chain_provider(ticker, exp, side, strike_low, strike_high):
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
 def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
-                chain_provider=None, as_of=None):
+                chain_provider=None, as_of=None, stats=None):
     """
     Builds all valid triplets for one ticker across the provided expirations.
 
@@ -175,6 +175,10 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                          the expired-contract cut. Defaults to today (live).
                          The replay passes the historical scan date; without
                          it, replaying past dates would silently mis-anchor T.
+        stats          : dict or None — if a dict is passed it is filled with
+                         rejection counters (no_chain, no_legs, below_min_premium,
+                         below_min_p) so a caller can explain a zero-result
+                         ticker. Pure bookkeeping: no filter or score changes.
 
     Returns:
         (triplets: list[dict], total_evaluated: int)
@@ -188,6 +192,9 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
 
     triplets        = []
     total_evaluated = 0
+    if stats is None:
+        stats = {}
+    stats.update(no_chain=0, no_legs=0, below_min_premium=0, below_min_p=0)
 
     strike_low  = round(price * 0.70, 2)
     strike_high = round(price * 1.30, 2)
@@ -201,6 +208,7 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
         calls = chain_provider(ticker, exp, "call", strike_low, strike_high)
         puts  = chain_provider(ticker, exp, "put", strike_low, strike_high)
         if calls is None or puts is None:
+            stats["no_chain"] += 1
             continue
 
         # Segment by role. Premium is the transactable side of the quote:
@@ -217,6 +225,7 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                        and c["strike"] < price]
 
         if not leg_a_cands or not leg_b_pool or not leg_c_cands:
+            stats["no_legs"] += 1
             continue
 
         for leg_a in leg_a_cands:
@@ -247,6 +256,7 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
 
                     net_premium = leg_b["premium"] + leg_c["premium"] - leg_a["premium"]
                     if net_premium < min_premium:
+                        stats["below_min_premium"] += 1
                         continue
 
                     spread_width = leg_b["strike"] - leg_a["strike"]
@@ -256,6 +266,7 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                     score = net_premium / spread_width
                     p_max = (1 - leg_b["delta"]) * (1 - leg_c["delta"])
                     if p_max < min_p_profit:
+                        stats["below_min_p"] += 1
                         continue
 
                     triplets.append({

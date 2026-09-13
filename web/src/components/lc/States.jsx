@@ -68,7 +68,8 @@ export function MarketClosedBanner() {
  * Cause-specific empty result. Causes, in order of what the user can do about them:
  * every ticker skipped → thresholds too strict → market closed placeholders.
  */
-export function NoResults({ tickersUsed, tickersSkipped, marketOpen, minCredit, minPP, onLowerCredit, onLowerP, onFocusTickers }) {
+export function NoResults({ tickersUsed, tickersSkipped, marketOpen, reasons = {}, minCredit, minPP, minRocPct = 0, onLowerCredit, onLowerP, onLowerRoc, onFocusTickers }) {
+  const rocBlocked = Object.values(reasons).some(r => /return floor/.test(r || ''))
   const allSkipped = tickersUsed.length > 0 && tickersSkipped.length >= tickersUsed.length
   return (
     <Card className="max-w-[52rem]" padding="p-8">
@@ -83,13 +84,18 @@ export function NoResults({ tickersUsed, tickersSkipped, marketOpen, minCredit, 
       ) : (
         <>
           <h2 className="font-display font-bold text-[1.4rem] leading-[1.1] tracking-[-0.02em] mb-2">No setup cleared your thresholds</h2>
-          <p className="text-lc-ink-2 leading-[1.6] max-w-[60ch] mb-4">
-            Every candidate for {tickersUsed.join(', ')} paid less than <Pill tone="quiet" size="sm">${Number(minCredit).toLocaleString('en-US')} per contract</Pill> or had under{' '}
+          <p className="text-lc-ink-2 leading-[1.6] max-w-[60ch] mb-3">
+            Floors in force: <Pill tone="quiet" size="sm">${Number(minCredit).toLocaleString('en-US')} per contract</Pill>{' '}
+            <Pill tone="quiet" size="sm">{minRocPct}% return on collateral</Pill>{' '}
             <Pill tone="quiet" size="sm">{Math.round(minPP * 100)}% chance of max profit</Pill>.
             {marketOpen === false && ' The market is closed, so quotes are the last ones printed; some names only clear during the session.'}
           </p>
+          <ul className="text-[0.9rem] text-lc-ink-2 mb-4 flex flex-col gap-1">
+            {tickersUsed.map(t => <li key={t}><strong className="text-lc-ink font-semibold">{t}</strong> — {reasons[t] ?? 'no setups in this scan'}</li>)}
+          </ul>
           <div className="flex gap-2 flex-wrap">
-            {minCredit > 300 && <Button size="sm" onClick={onLowerCredit}>Lower minimum credit to $300</Button>}
+            {rocBlocked && minRocPct > 0 && <Button size="sm" onClick={onLowerRoc}>Remove the return floor</Button>}
+            {minCredit > 50 && !rocBlocked && <Button size="sm" onClick={onLowerCredit}>Lower minimum credit to $50</Button>}
             {minPP > 0.40 && <Button size="sm" onClick={onLowerP}>Lower P(max) to 40%</Button>}
             {tickersSkipped.length > 0 && <span className="text-[0.85rem] text-lc-ink-2 self-center">Skipped: {tickersSkipped.join(', ')}</span>}
           </div>

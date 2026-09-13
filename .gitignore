@@ -46,3 +46,6 @@ docs/POD_SELECTION_CASE_STUDY.md
 .impeccable/live/previews/
 .impeccable/live/cache/
 .impeccable/live/inject-journal.json
+
+# Screener e2e screenshots (web/tests/e2e/*.mjs write here)
+web/tests/e2e/out/

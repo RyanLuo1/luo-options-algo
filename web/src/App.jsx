@@ -16,7 +16,7 @@ import SetupPanel       from './components/lc/SetupPanel'
 import WatchlistManager from './components/WatchlistManager'
 import { Card, Button, Pill, XIcon } from './components/lc/ui'
 import { ProgressStrip, ErrorStrip, MarketClosedBanner, NoResults, FilteredEmpty } from './components/lc/States'
-import { expiryInfo, rowKey, creditShareOfMax } from './components/lc/format'
+import { expiryInfo, rowKey, creditShareOfMax, rocOf, zeroReasonText } from './components/lc/format'
 
 // ── Screener (/app) — rebuilt on the v1 design system (DESIGN.md). ──────────
 // Shell (b), controls (c), chips (d), ranked table (e), detail panel (f) and
@@ -36,8 +36,12 @@ export default function App() {
   const [weeksMin,      setWeeksMin]      = useState(persisted.weeksMin ?? 1)
   const [weeksMax,      setWeeksMax]      = useState(persisted.weeksMax ?? 12)
   // minPremium stays PER SHARE (the API's unit). The UI shows $ per contract.
-  const [minPremium,    setMinPremium]    = useState(persisted.minPremium ?? 5.00)
-  const [minCreditStr,  setMinCreditStr]  = useState(persisted.minCreditStr ?? String(Math.round((persisted.minPremium ?? 5.00) * 100)))
+  const [minPremium,    setMinPremium]    = useState(persisted.minPremium ?? 1.00)   // $100 per contract: the friction floor
+  const [minCreditStr,  setMinCreditStr]  = useState(persisted.minCreditStr ?? String(Math.round((persisted.minPremium ?? 1.00) * 100)))
+  // Minimum return on collateral (credit ÷ the cash the put ties up), applied client-side. Default 1%.
+  const [minRoc,        setMinRoc]        = useState(persisted.minRoc ?? 0.01)
+  const [minRocStr,     setMinRocStr]     = useState(persisted.minRocStr ?? '1')
+  const [grouped,       setGrouped]       = useState(persisted.grouped ?? true)
   const [minPProfit,    setMinPProfit]    = useState(persisted.minPProfit ?? 0.50)
   const [minPProfitStr, setMinPProfitStr] = useState(persisted.minPProfitStr ?? '50')
   const [tickerFilter,  setTickerFilter]  = useState(persisted.tickerFilter ?? null)
@@ -98,7 +102,7 @@ export default function App() {
 
   // ── Scan data (unchanged hook) ─────────────────────────────────────────────
   const {
-    marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped,
+    marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped, tickerReasons,
     weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed,
     totalEvaluated, hasResult, scanId, loading, error, runScan,
   } = useOptionsData()
@@ -106,7 +110,7 @@ export default function App() {
   // A new scan result re-seeds the chips, resets the selection, and resets the
   // sort override when the scan context (tickers + thresholds) changed. State
   // is adjusted during render (React's pattern); hydration is a no-op.
-  const scanCtx = hasResult ? JSON.stringify([tickersUsed, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed]) : null
+  const scanCtx = hasResult ? JSON.stringify([tickersUsed, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minRoc]) : null
   const [seenRanked, setSeenRanked] = useState(ranked)
   if (ranked !== seenRanked) {
     setSeenRanked(ranked)
@@ -117,19 +121,33 @@ export default function App() {
   }
 
   useEffect(() => {
-    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys] })
-  }, [tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys])
+    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minRoc, minRocStr, grouped, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys] })
+  }, [tickerInput, activeTickers, weeksMin, weeksMax, minPremium, minCreditStr, minRoc, minRocStr, grouped, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys])
 
   // ── Derived rows ───────────────────────────────────────────────────────────
-  // `rank` is the scanner's rank (position in `ranked`); filters never re-rank.
-  const rankedWithRank = useMemo(() => ranked.map((r, i) => ({ ...r, rank: i + 1 })), [ranked])
-  const baseRanked = rankedWithRank.filter(r => activeTickers.includes(r.ticker))
+  // The return-on-collateral floor is applied here (the API keeps its own
+  // filters and scoring untouched). `rank` = position in the scanner's order
+  // after the ROC floor; chip filters never re-rank.
+  const rocRanked = useMemo(() => ranked.filter(r => rocOf(r) >= minRoc - 1e-9).map((r, i) => ({ ...r, rank: i + 1 })), [ranked, minRoc])
+  const baseRanked = rocRanked.filter(r => activeTickers.includes(r.ticker))
   const tableRows  = tickerFilter ? baseRanked.filter(r => r.ticker === tickerFilter) : baseRanked
   const counts = useMemo(() => {
     const m = {}
-    for (const r of ranked) m[r.ticker] = (m[r.ticker] ?? 0) + 1
+    for (const r of rocRanked) m[r.ticker] = (m[r.ticker] ?? 0) + 1
     return m
-  }, [ranked])
+  }, [rocRanked])
+  // Why a ticker shows zero: the scanner's reason, or the client-side return floor.
+  const reasons = useMemo(() => {
+    const apiCounts = {}
+    for (const r of ranked) apiCounts[r.ticker] = (apiCounts[r.ticker] ?? 0) + 1
+    const ctx = { minCredit: Math.round((minPremiumUsed ?? minPremium) * 100), minRocPct: +(minRoc * 100).toFixed(2), minPPct: Math.round((minPProfitUsed ?? minPProfit) * 100) }
+    const out = {}
+    for (const t of tickersUsed) {
+      if ((counts[t] ?? 0) > 0) continue
+      out[t] = (apiCounts[t] ?? 0) > 0 ? zeroReasonText('roc', ctx) : zeroReasonText(tickerReasons?.[t], ctx)
+    }
+    return out
+  }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minPProfit])
   const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
 
@@ -155,7 +173,8 @@ export default function App() {
   // ── Field validity (gates every run path, including ⌘Enter) ───────────────
   const minCreditValid  = (() => { const s = minCreditStr.trim();  const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
   const minPProfitValid = (() => { const s = minPProfitStr.trim(); const n = Number(s); return s !== '' && Number.isInteger(n) && n >= 1 && n <= 99 })()
-  const canRun = minCreditValid && minPProfitValid
+  const minRocValid = (() => { const s = minRocStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
+  const canRun = minCreditValid && minPProfitValid && minRocValid
 
   // ── Run scan ───────────────────────────────────────────────────────────────
   const [lastRunTickers, setLastRunTickers] = useState([])
@@ -174,7 +193,7 @@ export default function App() {
   const handleRun = useCallback(() => runWith(), [runWith])
 
   // No-results actions: apply the lower threshold to the controls AND rerun with it.
-  function lowerCreditAndRerun() { setMinPremium(3.00); setMinCreditStr('300'); runWith({ minPremium: 3.00 }) }
+  function lowerCreditAndRerun() { setMinPremium(0.50); setMinCreditStr('50'); runWith({ minPremium: 0.50 }) }
   function lowerPAndRerun()      { setMinPProfit(0.40); setMinPProfitStr('40'); runWith({ minPProfit: 0.40 }) }
   const showError = !!error && error !== dismissedError
 
@@ -214,6 +233,23 @@ export default function App() {
     const next = Math.max(0, Math.round(minPremium * 100) + delta)
     setMinPremium(parseFloat((next / 100).toFixed(4)))
     setMinCreditStr(String(next))
+  }
+
+  // ── Min return on collateral (client-side; live) ──────────────────────────
+  function onMinRocChange(e) {
+    const raw = e.target.value.replace('%', '')
+    setMinRocStr(raw)
+    const n = Number(raw)
+    if (raw.trim() !== '' && Number.isFinite(n) && n >= 0) setMinRoc(parseFloat((n / 100).toFixed(6)))
+  }
+  function onMinRocBlur() {
+    const n = Number(minRocStr)
+    if (!Number.isFinite(n) || n < 0 || minRocStr.trim() === '') setMinRocStr(String(+(minRoc * 100).toFixed(2)))
+    else setMinRocStr(String(+n.toFixed(2)))
+  }
+  function bumpMinRoc(delta) {
+    const next = Math.max(0, +((minRoc * 100) + delta).toFixed(2))
+    setMinRoc(parseFloat((next / 100).toFixed(6))); setMinRocStr(String(next))
   }
 
   // ── Min P(max profit) ──────────────────────────────────────────────────────
@@ -293,6 +329,7 @@ export default function App() {
             onManageWatchlists={() => setManageOpen(o => !o)} manageOpen={manageOpen}
             weeksMin={weeksMin} weeksMax={weeksMax} setWeeksMin={setWeeksMin} setWeeksMax={setWeeksMax}
             minCreditStr={minCreditStr} minCreditValid={minCreditValid} onMinCreditChange={onMinCreditChange} onMinCreditBlur={onMinCreditBlur} bumpMinCredit={bumpMinCredit}
+            minRocStr={minRocStr} minRocValid={minRocValid} onMinRocChange={onMinRocChange} onMinRocBlur={onMinRocBlur} bumpMinRoc={bumpMinRoc}
             minPProfitStr={minPProfitStr} minPProfitValid={minPProfitValid} onMinPProfitChange={onMinPProfitChange} onMinPProfitBlur={onMinPProfitBlur} bumpMinPProfit={bumpMinPProfit}
           />
 
@@ -303,7 +340,7 @@ export default function App() {
           )}
 
           {tickersUsed.length > 0 && (
-            <ScanChips tickers={activeTickers} counts={counts} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
+            <ScanChips tickers={activeTickers} counts={counts} reasons={reasons} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
           )}
 
           {loading && <ProgressStrip tickerCount={lastRunTickers.length} />}
@@ -312,27 +349,30 @@ export default function App() {
 
           {!hasResult ? (
             !loading && <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
-          ) : tableRows.length === 0 && ranked.length > 0 ? (
+          ) : tableRows.length === 0 && rocRanked.length > 0 ? (
             <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the tickers you removed' : activeTickers.join(', '))} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
           ) : tableRows.length > 0 ? (
             <div className="grid grid-cols-[minmax(0,60fr)_minmax(0,40fr)] gap-4 items-start">
               <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">
                 <RankedTable
+                  key={scanCtx}
                   rows={tableRows}
                   sort={sort} onSort={setSort} onResetSort={() => setSort(null)}
+                  grouped={grouped} onToggleGrouped={() => setGrouped(g => !g)}
                   selectedKey={displayedKey} onSelect={r => setSelectedKey(rowKey(r))} onOpen={handleEdit}
-                  minPP={minPProfitUsed} metric={creditShareOfMax} metricLabel="Credit as a share of max profit"
+                  metric={creditShareOfMax} metricLabel="Credit as a share of max profit"
                   totalEvaluated={totalEvaluated} dimmed={loading}
                 />
               </div>
               <div className="min-w-0">
-                <SetupPanel row={displayed} flags={displayed ? flagsFor(displayed) : []} minPP={minPProfitUsed} onSave={saveToTradebook} saving={saving} saved={displayed ? savedKeys.has(saveKeyOf(displayed)) : false} onViewTradebook={() => navigate('/tradebook')} saveError={saveError} onEdit={handleEdit} dimmed={loading} />
+                <SetupPanel row={displayed} flags={displayed ? flagsFor(displayed) : []} onSave={saveToTradebook} saving={saving} saved={displayed ? savedKeys.has(saveKeyOf(displayed)) : false} onViewTradebook={() => navigate('/tradebook')} saveError={saveError} onEdit={handleEdit} dimmed={loading} />
               </div>
             </div>
           ) : (
             <NoResults
-              tickersUsed={tickersUsed} tickersSkipped={tickersSkipped} marketOpen={marketOpen}
-              minCredit={Math.round((minPremiumUsed ?? minPremium) * 100)} minPP={minPProfitUsed ?? minPProfit}
+              tickersUsed={tickersUsed} tickersSkipped={tickersSkipped} marketOpen={marketOpen} reasons={reasons}
+              minCredit={Math.round((minPremiumUsed ?? minPremium) * 100)} minPP={minPProfitUsed ?? minPProfit} minRocPct={+(minRoc * 100).toFixed(2)}
+              onLowerRoc={() => { setMinRoc(0); setMinRocStr('0') }}
               onLowerCredit={lowerCreditAndRerun} onLowerP={lowerPAndRerun} onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
             />
           )}

@@ -46,6 +46,19 @@ except Exception:
     pass  # supabase package not installed — verify_token will return None
 
 
+def _zero_reason(stats, evaluated):
+    """Why a scanned ticker produced no setups, from scan_ticker's rejection counters.
+    Values: no_chain | liquidity | min_credit | min_p | min_credit_or_p."""
+    if evaluated == 0:
+        return "no_chain" if stats.get("no_chain", 0) and not stats.get("no_legs", 0) else "liquidity"
+    prem, pp = stats.get("below_min_premium", 0), stats.get("below_min_p", 0)
+    if prem and not pp:
+        return "min_credit"
+    if pp and not prem:
+        return "min_p"
+    return "min_credit_or_p"
+
+
 def verify_token(req):
     """Verify Supabase JWT from Authorization header. Returns user object or None."""
     if _supabase is None:
@@ -338,6 +351,7 @@ def run():
         total_evaluated = 0
         tickers_scanned = []
         price_by_ticker = {}   # live yfinance price used for each ticker's scan
+        ticker_reasons  = {}   # ticker -> why it produced zero setups (for the UI chips)
 
         for ticker in tickers:
             try:
@@ -351,13 +365,17 @@ def run():
             price_by_ticker[ticker] = price
 
             tickers_scanned.append(ticker)
+            stats = {}
             triplets, evaluated = scan_ticker(
                 ticker, price, week_exps,
                 float(requested_min_prem),
                 min_p_profit=float(requested_min_pp),
+                stats=stats,
             )
             total_evaluated += evaluated
             all_triplets.extend(triplets)
+            if not triplets:
+                ticker_reasons[ticker] = _zero_reason(stats, evaluated)
 
         ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
         tickers_used    = sorted(tickers_scanned)
@@ -421,6 +439,7 @@ def run():
             "total_evaluated":      total_evaluated,
             "tickers_used":         tickers_used,
             "tickers_skipped":      tickers_skipped,
+            "ticker_reasons":       ticker_reasons,
             "tickers_with_results": len(by_ticker),
             "market_open":          is_open,
             "time_et":              et_time,

@@ -3,13 +3,12 @@ import { Button, Pill } from './ui'
 import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, rowFigures } from './format'
 
 // The detail panel: the landing's setup dashboard driven by the selected row.
-export default function SetupPanel({ row, flags = [], minPP = null, onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook, dimmed = false }) {
+export default function SetupPanel({ row, flags = [], onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook, dimmed = false }) {
   if (!row) return null
   const f = rowFigures(row)
   const exp = expiryInfo(row.expiration)
   const spot = row.underlying_price
   const worstShares = 100
-  const borderline = minPP != null && row.p_max_profit >= minPP && row.p_max_profit <= minPP + 0.10
 
   return (
     <section
@@ -29,7 +28,6 @@ export default function SetupPanel({ row, flags = [], minPP = null, onSave, savi
           <Pill>Expires {exp.short}</Pill>
           <Pill tone="quiet">W{row.week}{exp.dte != null ? ` · ${exp.dte}d` : ''}</Pill>
           {flags.map(fl => <Pill key={fl} tone="quiet">{fl}</Pill>)}
-          {borderline && <Pill tone="quiet" title={`P(max) within 10 points of your ${Math.round(minPP * 100)}% minimum`}>borderline P(max)</Pill>}
         </div>
       </div>
 

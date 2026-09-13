@@ -92,6 +92,7 @@ export default function useOptionsData() {
     tickersWithResults: result?.tickers_with_results ?? 0,
     tickersUsed:     result?.tickers_used     ?? EMPTY,
     tickersSkipped:  result?.tickers_skipped  ?? EMPTY,
+    tickerReasons:   result?.ticker_reasons   ?? null,
     weeksMinUsed:    result?.weeks_min_used   ?? null,
     weeksMaxUsed:    result?.weeks_max_used   ?? null,
     minPremiumUsed:  result?.min_premium_used ?? null,

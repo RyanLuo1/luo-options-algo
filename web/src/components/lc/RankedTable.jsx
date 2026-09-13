@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import MetricBar from './MetricBar'
-import { Pill, SortIcon } from './ui'
+import { SortIcon } from './ui'
 import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey } from './format'
 
 // Columns. `sort` names the accessor for user overrides; money columns sort
@@ -16,33 +16,52 @@ const COLUMNS = [
   { key: 'collateral', label: 'Collateral',        align: 'right', sort: r => r.leg_c_strike, firstDir: 'desc', hideBelowXl: true },
 ]
 const SORTABLE = Object.fromEntries(COLUMNS.filter(c => c.sort).map(c => [c.key, c]))
-
+const NCOLS = COLUMNS.length
 const PAGE = 50
 
 /**
  * RankedTable — the scan's rows in the scanner's order by default. A user sort
  * is an override App owns (`sort` = {key, dir} | null) so it can persist across
- * rescans and reset on a fresh scan context. Selection and keyboard nav: click
- * or ↑/↓ select, Enter opens the editor.
+ * rescans and reset on a fresh scan context. Two modes: grouped (each ticker's
+ * best setup as one row, "+N more" expands its variants; algorithm order kept
+ * across and within tickers) and flat. Click or ↑/↓ select, Enter opens,
+ * → / ← expand or collapse a ticker. Key the component on the scan context so
+ * paging and expansion reset with a fresh scan.
  */
 export default function RankedTable({
   rows, sort, onSort, onResetSort,
+  grouped, onToggleGrouped,
   selectedKey, onSelect, onOpen,
-  minPP, metric, metricLabel,
+  metric, metricLabel,
   totalEvaluated, dimmed = false,
 }) {
   const [shown, setShown] = useState(PAGE)
+  const [expanded, setExpanded] = useState(() => new Set())
   const bodyRef = useRef(null)
 
-  // Apply the override (stable sort on top of the scanner's order).
-  const sorted = sort && SORTABLE[sort.key]
-    ? [...rows].sort((a, b) => {
-        const va = SORTABLE[sort.key].sort(a), vb = SORTABLE[sort.key].sort(b)
-        const c = va < vb ? -1 : va > vb ? 1 : 0
-        return sort.dir === 'asc' ? c : -c
-      })
-    : rows
-  const visible = sorted.slice(0, shown)
+  const sorted = useMemo(() => {
+    if (!(sort && SORTABLE[sort.key])) return rows
+    const acc = SORTABLE[sort.key].sort
+    return [...rows].sort((a, b) => { const va = acc(a), vb = acc(b); const c = va < vb ? -1 : va > vb ? 1 : 0; return sort.dir === 'asc' ? c : -c })
+  }, [rows, sort])
+
+  // Grouped: each ticker's first row in the current order is its best; the rest are variants.
+  const groups = useMemo(() => {
+    const m = new Map()
+    for (const r of sorted) { if (!m.has(r.ticker)) m.set(r.ticker, { best: r, variants: [] }); else m.get(r.ticker).variants.push(r) }
+    return [...m.values()]
+  }, [sorted])
+
+  const visible = useMemo(() => {
+    if (!grouped) return sorted.map(r => ({ row: r, kind: 'flat' }))
+    const out = []
+    for (const g of groups) {
+      out.push({ row: g.best, kind: 'best', more: g.variants.length })
+      if (expanded.has(g.best.ticker)) g.variants.forEach(v => out.push({ row: v, kind: 'variant' }))
+    }
+    return out
+  }, [grouped, sorted, groups, expanded])
+  const page = visible.slice(0, shown)
 
   function clickHeader(col) {
     if (!col.sort) return
@@ -50,41 +69,38 @@ export default function RankedTable({
     else if (sort.dir === col.firstDir) onSort({ key: col.key, dir: col.firstDir === 'desc' ? 'asc' : 'desc' })
     else onResetSort()
   }
+  function toggleExpand(t) { setExpanded(prev => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n }) }
 
-  // Keyboard: ↑/↓ move the selection within the visible order; Enter opens.
   function onKeyDown(e) {
-    if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return
-    const idx = sorted.findIndex(r => rowKey(r) === selectedKey)
-    if (e.key === 'Enter') { const r = sorted[idx]; if (r) { e.preventDefault(); onOpen?.(r) } return }
+    if (dimmed) return
+    const idx = visible.findIndex(v => rowKey(v.row) === selectedKey)
+    const cur = visible[idx]
+    if (e.key === 'Enter') { if (cur) { e.preventDefault(); onOpen?.(cur.row) } return }
+    if (grouped && cur?.kind === 'best' && cur.more > 0 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault(); const t = cur.row.ticker
+      setExpanded(prev => { const n = new Set(prev); if (e.key === 'ArrowRight') n.add(t); else n.delete(t); return n }); return
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
-    const next = e.key === 'ArrowDown' ? Math.min(sorted.length - 1, idx + 1) : Math.max(0, idx - 1)
-    const r = sorted[next]
-    if (r) { onSelect?.(r); if (next >= shown) setShown(s => s + PAGE) }
+    const next = e.key === 'ArrowDown' ? Math.min(visible.length - 1, idx + 1) : Math.max(0, idx - 1)
+    const v = visible[next]
+    if (v) { onSelect?.(v.row); if (next >= shown) setShown(s => s + PAGE) }
   }
 
-  // Keep the selected row in view when selection changes via keyboard.
-  useEffect(() => {
-    const el = bodyRef.current?.querySelector('[data-selected="true"]')
-    el?.scrollIntoView?.({ block: 'nearest' })
-  }, [selectedKey])
+  useEffect(() => { bodyRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView?.({ block: 'nearest' }) }, [selectedKey])
 
   const sortedCol = sort ? COLUMNS.find(c => c.key === sort.key) : null
 
   return (
-    <section
-      aria-label="Ranked setups"
-      className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60' : ''}`}
-      aria-busy={dimmed || undefined}
-    >
-      {/* Bar */}
+    <section aria-label="Ranked setups" className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60' : ''}`} aria-busy={dimmed || undefined}>
       <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3 flex-wrap">
         <div className="flex items-baseline gap-3">
           <h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">Ranked setups</h2>
           <span className="text-[0.85rem] text-lc-ink-2 [font-variant-numeric:tabular-nums]">
-            {rows.length.toLocaleString()} of {Number(totalEvaluated || 0).toLocaleString()} evaluated
+            {rows.length.toLocaleString()} of {Number(totalEvaluated || 0).toLocaleString()} evaluated{grouped ? ` · ${groups.length} ${groups.length === 1 ? 'ticker' : 'tickers'}` : ''}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-[0.85rem]">
+        <div className="flex items-center gap-3 text-[0.85rem] flex-wrap">
           {sortedCol ? (
             <>
               <span className="text-lc-ink-2">Sorted by {sortedCol.label} {sort.dir === 'desc' ? '↓' : '↑'}</span>
@@ -93,30 +109,26 @@ export default function RankedTable({
           ) : (
             <span className="text-lc-ink-2">Ranked by the scanner</span>
           )}
+          <span className="inline-flex rounded-lc bg-lc-ground p-0.5" role="group" aria-label="Table view">
+            <button type="button" onClick={() => !grouped && onToggleGrouped()} aria-pressed={grouped} className={`h-7 px-3 rounded-lc text-[0.8rem] font-semibold ${grouped ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}>Best per ticker</button>
+            <button type="button" onClick={() => grouped && onToggleGrouped()} aria-pressed={!grouped} className={`h-7 px-3 rounded-lc text-[0.8rem] font-semibold ${!grouped ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}>Flat list</button>
+          </span>
         </div>
       </div>
       <p className="px-6 pb-2 -mt-1 text-[0.8rem] text-lc-ink-2">All dollars per contract · the bar under Max profit is the credit as a share of max profit (the ranking).</p>
 
-      {/* Table */}
-      <div
-        ref={bodyRef}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        aria-label="Ranked setups table. Use the arrow keys to move the selection and Enter to open the editor."
-        className="overflow-auto flex-1 min-h-0 px-3 max-lc:px-1.5 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset"
-      >
+      <div ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}
+        aria-label={`Ranked setups table. Arrow keys move the selection${grouped ? ', right and left expand or collapse a ticker' : ''}, Enter opens the editor.`}
+        className="overflow-auto flex-1 min-h-0 px-3 max-lc:px-1.5 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset">
         <table className="w-full border-collapse text-[0.95rem] [font-variant-numeric:tabular-nums]">
           <thead>
             <tr>
               {COLUMNS.map(col => {
                 const active = sort?.key === col.key
                 return (
-                  <th
-                    key={col.key}
-                    scope="col"
+                  <th key={col.key} scope="col"
                     className={`sticky top-0 z-10 bg-lc-card text-[0.78rem] font-semibold tracking-[0.03em] text-lc-ink-2 border-b border-lc-line px-2 py-2.5 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.hideBelowXl ? 'max-lc:hidden' : ''}`}
-                    aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-                  >
+                    aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     {col.sort ? (
                       <button type="button" onClick={() => clickHeader(col)} className={`inline-flex items-center gap-1 hover:text-lc-ink ${active ? 'text-lc-violet' : ''}`}>
                         {col.label}<SortIcon dir={active ? sort.dir : undefined} />
@@ -128,25 +140,18 @@ export default function RankedTable({
             </tr>
           </thead>
           <tbody>
-            {visible.map(r => {
-              const k = rowKey(r)
-              const selected = k === selectedKey
-              const f = rowFigures(r)
-              const exp = expiryInfo(r.expiration)
-              const borderline = minPP != null && r.p_max_profit >= minPP && r.p_max_profit <= minPP + 0.10
-              return (
-                <tr
-                  key={k}
-                  data-selected={selected ? 'true' : undefined}
-                  onClick={() => !dimmed && onSelect?.(r)}
-                  onDoubleClick={() => !dimmed && onOpen?.(r)}
-                  aria-current={selected ? 'true' : undefined}
-                  className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}
-                >
+            {page.map(v => {
+              const r = v.row, k = rowKey(r), selected = k === selectedKey
+              const f = rowFigures(r), exp = expiryInfo(r.expiration)
+              const isVariant = v.kind === 'variant'
+              return [
+                <tr key={k} data-selected={selected ? 'true' : undefined} data-kind={v.kind}
+                  onClick={() => !dimmed && onSelect?.(r)} onDoubleClick={() => !dimmed && onOpen?.(r)} aria-current={selected ? 'true' : undefined}
+                  className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}>
                   <td className="px-2 max-lc:px-1.5 py-2.5">
                     <span className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>
                   </td>
-                  <td className="px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink">{r.ticker}</td>
+                  <td className={`px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] ${isVariant ? 'text-lc-ink-2 pl-6' : 'text-lc-ink'}`}>{isVariant ? '↳' : r.ticker}</td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap">
                     <span className="text-lc-ink">{exp.short}</span><span className="text-lc-ink-2 max-lc:hidden"> · W{r.week}</span><span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
                   </td>
@@ -157,23 +162,30 @@ export default function RankedTable({
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
                       <span className="text-lc-ink">{fmtMoney0(f.maxProfit)}</span>
-                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem] max-lc:w-[3.5rem]" />
+                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem] max-lc:w-[3rem]" />
                     </div>
                   </td>
-                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
-                    <span className="text-lc-ink">{fmtPct0(r.p_max_profit)}</span>
-                    {borderline && <Pill tone="quiet" size="sm" className="ml-1.5 max-lc:hidden" title={`Within 10 points of your ${Math.round(minPP * 100)}% minimum`}>borderline</Pill>}
-                  </td>
+                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap text-lc-ink">{fmtPct0(r.p_max_profit)}</td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right text-lc-ink whitespace-nowrap max-lc:hidden">{fmtMoney0(f.collateral)}</td>
-                </tr>
-              )
+                </tr>,
+                v.kind === 'best' && v.more > 0 && (
+                  <tr key={`${k}-more`} className="border-b border-lc-line/70">
+                    <td colSpan={NCOLS} className="px-2 py-1.5">
+                      <button type="button" onClick={() => toggleExpand(r.ticker)} aria-expanded={expanded.has(r.ticker)}
+                        className="text-[0.82rem] font-semibold text-lc-violet hover:underline pl-[34px]">
+                        {expanded.has(r.ticker) ? `Show fewer ${r.ticker} setups` : `+${v.more} more ${r.ticker} ${v.more === 1 ? 'setup' : 'setups'}`}
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              ]
             })}
           </tbody>
         </table>
-        {sorted.length > shown && (
+        {visible.length > shown && (
           <div className="flex justify-center py-3">
             <button type="button" onClick={() => setShown(s => s + PAGE)} className="text-[0.9rem] font-semibold text-lc-violet hover:underline">
-              Show {Math.min(PAGE, sorted.length - shown)} more of {sorted.length.toLocaleString()}
+              Show {Math.min(PAGE, visible.length - shown)} more of {visible.length.toLocaleString()}
             </button>
           </div>
         )}
