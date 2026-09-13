@@ -11,6 +11,7 @@ npm run test:e2e -- https://luo-capital.com # live
 
 Each script prints `PASS` / `FAIL` lines and exits non-zero on any failure. Screenshots land in `tests/e2e/out/` (gitignored).
 
+- `auth.mjs` — the login card at 390: focus, Enter submits, bad email shape, bad login (one message, both recoveries), weak password, Show/Hide, create account → /app, log out, log in, existing email on sign-up, bounce from /tradebook → login lands on /tradebook, forgot-password request notice, a real recovery link (admin `generate_link`) → set a new password → /app, expired-link strip; 1440 captures. Needs `<base>/login` in Supabase's Redirect URLs for the recovery step.
 - `states.mjs` — defaults (the dual-gate credit floors), grouped view + expanders + flat toggle, the live return floor, loading (results dimmed, progress strip), a failed rescan (kept results, dismissable strip), cause-specific no-results, keyboard, sort override, idempotent Save, filter-empty.
 - `flow.mjs` — fresh account → watchlist → scan → grouped results → sort → select → save → toast → Tradebook → DB provenance.
 - `tradebook.mjs` — empty state → save from the Screener → appears first as open → provenance pill + Rerun → edit with replace (count unchanged, original gone) → edit without replace → delete with confirm → seeded graded + grading-pending rows render (service key; cleaned up) → summary matches → read-only editor for graded → sort + keyboard.

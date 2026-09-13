@@ -1,545 +1,264 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import '../index.css'
 import { supabase } from '../lib/supabase'
 import useAuth from '../hooks/useAuth'
-import ThemeToggle from '../components/ThemeToggle'
+import { Mark } from '../components/lc/AppShell'
+import { Button } from '../components/lc/ui'
+import { INPUT_CLASS } from '../components/lc/format'
 
-const FEATURES = [
-  {
-    Icon: RankedIcon,
-    title: 'Ranked Risk-Reversal Setups',
-    desc: 'Every ticker and expiration scanned, scored, and ranked on live bid-ask pricing.',
-    chipClass: 'bg-accent/10 text-accent',
-  },
-  {
-    Icon: LedgerIcon,
-    title: 'Tradebook & Realized Outcomes',
-    desc: 'Log fills, follow open structures, and measure results against the scan that found them.',
-    chipClass: 'bg-link/10 text-link',
-  },
-  {
-    Icon: CandlesIcon,
-    title: 'TradingView Charts, In Context',
-    desc: "Full charting on the underlying, right beside each setup's strikes and detail.",
-    chipClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  },
-]
+// ── /login — the seam between the landing page and the app ──────────────────
+// One card, four states of it: Log in · Create account (a shared form with a
+// mode control) · Reset your password (email only) · Set a new password (the
+// recovery link lands here). Auth calls are the existing signInWithPassword /
+// signUp plus resetPasswordForEmail and updateUser for the reset flow. Every
+// error is rewritten in the product's register (problem + recovery); no
+// Supabase message is shown verbatim.
+
+// The recovery link's tokens arrive in the URL hash. supabase-js consumes and
+// strips them asynchronously after the client initialises, so read the hash at
+// module evaluation (synchronous, before any of that) to know we're in recovery.
+const INITIAL_HASH = typeof window !== 'undefined' ? window.location.hash : ''
+const hashParams = new URLSearchParams(INITIAL_HASH.replace(/^#/, ''))
+const ARRIVED_IN_RECOVERY = hashParams.get('type') === 'recovery'
+const LINK_ERROR = hashParams.get('error_code') || hashParams.get('error') ? (hashParams.get('error_description') || 'expired') : null
+
+const PASSWORD_MIN = 6                                // Supabase's configured rule (length only)
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const RETURNABLE = /^\/(app|trade|tradebook)(\/|\?|$)/  // only routes the guard protects
+const FIELD = INPUT_CLASS.replace('h-11', 'h-12') + ' text-[1rem]'   // 48px + 16px type: no iOS zoom
 
 export default function LoginPage() {
-  const navigate         = useNavigate()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
   const { user, loading } = useAuth()
-  const [searchParams]   = useSearchParams()
+  const from = location.state?.from
+  const returnTo = typeof from === 'string' && RETURNABLE.test(from) ? from : '/app'
+  // The hash belongs to the initial page load only (router key 'default'); an in-app
+  // navigation back here (e.g. after logging out) must not reopen the recovery state.
+  const firstLoad = location.key === 'default'
+  const arrivedInRecovery = ARRIVED_IN_RECOVERY && firstLoad
+  const linkError = LINK_ERROR && firstLoad
 
-  const [mode,        setMode]        = useState(searchParams.get('mode') === 'signup' ? 'signup' : 'signin')  // 'signin' | 'signup'
-  const [email,       setEmail]       = useState('')
-  const [password,    setPassword]    = useState('')
-  const [confirmPw,   setConfirmPw]   = useState('')
-  const [error,       setError]       = useState(null)       // inline loss-red error
-  const [notice,      setNotice]      = useState(null)       // on-brand confirmation message
-  const [busy,        setBusy]        = useState(false)
-  const [showPw,      setShowPw]       = useState(false)      // UI-only password reveal
+  // 'signin' | 'signup' | 'reset' | 'recovery'
+  const [mode, setMode] = useState(() => (arrivedInRecovery ? 'recovery' : searchParams.get('mode') === 'signup' ? 'signup' : 'signin'))
+  // Holds the logged-in redirect: while a new password is being set, or so an expired-link message is read.
+  const [recovery, setRecovery] = useState(arrivedInRecovery || !!linkError)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [strip, setStrip] = useState(() => (linkError ? expiredLink() : null))   // { tone, text, action?, focus? }
+  const emailRef = useRef(null), passwordRef = useRef(null)
 
-  const isSignup = mode === 'signup'
-
-  // Redirect if already logged in
+  // A second signal for recovery, in case the hash was consumed before this module evaluated.
   useEffect(() => {
-    if (!loading && user) navigate('/app', { replace: true })
-  }, [user, loading, navigate])
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(event => {
+      if (event === 'PASSWORD_RECOVERY') { setRecovery(true); setMode('recovery') }
+      if (event === 'SIGNED_OUT') setRecovery(false)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
-  function switchMode(target) {
-    setMode(target)
-    setError(null)
-    setNotice(null)
-    setConfirmPw('')
+  // Already signed in (and not mid-recovery): straight back to where they were going.
+  useEffect(() => {
+    if (!loading && user && !recovery) navigate(returnTo, { replace: true })
+  }, [user, loading, recovery, navigate, returnTo])
+
+  // Focus lands on the first field of whichever state is showing.
+  useEffect(() => {
+    if (loading) return
+    const el = mode === 'recovery' ? passwordRef.current : emailRef.current
+    el?.focus({ preventScroll: true })
+  }, [mode, loading])
+
+  function switchMode(next) {
+    setMode(next); setStrip(null); setShowPw(false)
+    if (next !== 'recovery') setPassword('')
+  }
+  function fail(next) {
+    setStrip(next)
+    const target = next.focus === 'password' ? passwordRef.current : emailRef.current
+    target?.focus({ preventScroll: true })
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setError(null)
-    setNotice(null)
+  async function submit(e) {
+    e?.preventDefault?.()
+    if (busy) return
+    setStrip(null)
+    const em = email.trim()
 
-    // Client-side validation: passwords must match before submitting a sign-up
-    if (isSignup && password !== confirmPw) {
-      setError('Passwords do not match.')
-      return
-    }
+    // Client-side, shared across modes. Same strip as server errors.
+    if (mode !== 'recovery' && !EMAIL_SHAPE.test(em)) return fail({ tone: 'error', text: 'That doesn’t look like an email address.', focus: 'email' })
+    if (mode !== 'reset' && !password) return fail({ tone: 'error', text: mode === 'signin' ? 'Enter your password.' : 'Choose a password.', focus: 'password' })
+    if ((mode === 'signup' || mode === 'recovery') && password.length < PASSWORD_MIN) return fail({ tone: 'error', text: `Passwords need at least ${PASSWORD_MIN} characters.`, focus: 'password' })
 
     setBusy(true)
-
     try {
       if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) {
-          // Unconfirmed email → guide the user to verify, not a generic error
-          if (error.code === 'email_not_confirmed' || /email not confirmed/i.test(error.message)) {
-            setNotice('Your email isn’t confirmed yet — check your inbox for the confirmation link, then sign in.')
-            return
-          }
-          throw error
-        }
+        const { error } = await supabase.auth.signInWithPassword({ email: em, password })
+        if (error) return fail(describe(error, { mode, email: em, switchMode, retry: submit }))
+        setRecovery(false)
+        navigate(returnTo, { replace: true })
+      } else if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({ email: em, password })
+        if (error) return fail(describe(error, { mode, email: em, switchMode, retry: submit }))
+        // With confirmations on, Supabase answers an existing email with a user that has no identities (no error, to prevent enumeration).
+        if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return fail(exists(em, switchMode))
+        if (data?.session) { navigate(returnTo, { replace: true }); return }
+        // No session → email confirmation is on: don't log in, say what to do.
+        setMode('signin'); setPassword('')
+        setStrip({ tone: 'notice', text: `Confirm your email first — the link is in ${em}’s inbox — then log in.` })
+      } else if (mode === 'reset') {
+        const { error } = await supabase.auth.resetPasswordForEmail(em, { redirectTo: `${window.location.origin}/login` })
+        if (error) return fail(describe(error, { mode, email: em, switchMode, retry: submit }))
+        setStrip({ tone: 'notice', text: `Check ${em} for a reset link. If nothing arrives, there may be no account under that address — create one instead.`, action: { label: 'Create account', onClick: () => switchMode('signup') } })
+      } else if (mode === 'recovery') {
+        const { error } = await supabase.auth.updateUser({ password })
+        if (error) return fail(describe(error, { mode, email: em, switchMode, retry: submit }))
+        setRecovery(false)
         navigate('/app', { replace: true })
-      } else {
-        // Existing signUp path — surfaced, not rewritten.
-        const { data, error } = await supabase.auth.signUp({ email, password })
-        if (error) {
-          if (/already registered|already exists/i.test(error.message)) {
-            setError('An account with this email already exists — sign in instead.')
-            return
-          }
-          throw error  // surfaces weak-password and other Supabase errors inline
-        }
-        // With email confirmation on, Supabase returns an obfuscated user with no
-        // identities when the email is already registered (no error, to prevent
-        // enumeration). Treat that as "account exists".
-        if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          setError('An account with this email already exists — sign in instead.')
-          return
-        }
-        // If a session came back, email confirmation is OFF — the user is already
-        // logged in, so route straight into the screener like a normal sign-in.
-        if (data?.session) {
-          navigate('/app', { replace: true })
-          return
-        }
-        // No session → email confirmation is ON. Do NOT log in; tell the user to
-        // confirm via email, then switch back to sign-in.
-        setMode('signin')
-        setPassword('')
-        setConfirmPw('')
-        setNotice('Check your email to confirm your account, then sign in.')
       }
     } catch (err) {
-      setError(err.message)
+      fail(describe(err, { mode, email: em, switchMode, retry: submit }))
     } finally {
       setBusy(false)
     }
   }
 
-  if (loading) return null
+  if (loading) return <div className="lc min-h-screen" />
+
+  const isForm = mode === 'signin' || mode === 'signup'
+  const title = mode === 'reset' ? 'Reset your password' : mode === 'recovery' ? 'Set a new password' : null
+  const primaryLabel = { signin: 'Log in', signup: 'Create account', reset: 'Send reset link', recovery: 'Set password' }[mode]
+  const busyLabel = { signin: 'Logging in…', signup: 'Creating account…', reset: 'Sending…', recovery: 'Saving…' }[mode]
 
   return (
-    <div className="min-h-screen bg-base text-primary flex flex-col lg:flex-row">
-      <ThemeToggle />
-
-      {/* ── Mobile hero (hidden ≥ lg) ──────────────────────────────────────── */}
-      <div className="lg:hidden relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-accent/10 dark:from-accent/15 via-base to-base pointer-events-none" />
-        <div className="absolute top-0 left-0 w-64 h-64 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 px-6 pt-10 pb-6">
-          <div className="flex items-center gap-2.5 mb-5">
-            <BrandMark />
-            <span className="font-black text-xl tracking-tight text-primary">
-              Luo <span className="text-accent">Capital</span>
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black leading-tight mb-3">
-            Stop Guessing.
-            <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-link">
-              Start Screening.
-            </span>
-          </h1>
-          <p className="text-sm text-secondary mb-4 leading-relaxed max-w-md">
-            Scan, score, and rank Call Spread Risk Reversals on live quotes.
-          </p>
-          <div className="flex gap-4 text-[11px] text-tertiary">
-            {[
-              { Icon: RankedIcon,  label: 'Ranked Setups' },
-              { Icon: LedgerIcon,  label: 'Tradebook' },
-              { Icon: CandlesIcon, label: 'Live Charts' },
-            ].map(({ Icon, label }) => (
-              <span key={label} className="flex items-center gap-1.5">
-                <Icon className="w-3.5 h-3.5 text-accent" /> {label}
-              </span>
-            ))}
-          </div>
+    <div className="lc min-h-screen flex flex-col">
+      {/* Wordmark: the same position and size the app shell gives it, so it holds still across / → /login → /app. */}
+      <header className="shrink-0 px-6 pt-5 max-[480px]:px-4">
+        <div className="mx-auto max-w-[1400px]">
+          <a href="/" className="inline-flex items-center gap-2.5 text-lc-ink font-display font-bold text-[1.15rem] tracking-[-0.01em] whitespace-nowrap" aria-label="Luo Capital home">
+            <Mark />
+            Luo Capital
+          </a>
         </div>
-      </div>
+      </header>
 
-      {/* ── Left — brand panel (hidden < lg) ───────────────────────────────── */}
-      <div className="hidden lg:flex flex-col justify-center flex-1 py-12 px-[6vw] relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-accent/10 dark:from-accent/15 via-base to-base pointer-events-none" />
-        <div className="absolute inset-0 opacity-10 pointer-events-none">
-          <CandleMotif />
-        </div>
-        <div className="absolute top-20 left-10 w-72 h-72 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-20 right-0 w-56 h-56 bg-link/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-xl w-full">
-          <div className="flex items-center gap-2.5 mb-8">
-            <BrandMark />
-            <span className="font-bold text-lg tracking-tight text-primary">
-              Luo <span className="text-accent">Capital</span>
-            </span>
-          </div>
-
-          <h1 className="text-4xl lg:text-5xl font-black leading-[1.1] mb-5 tracking-tight">
-            Stop Guessing.
-            <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-link">
-              Start Screening.
-            </span>
-          </h1>
-          <p className="text-secondary text-base lg:text-lg leading-relaxed mb-10 max-w-lg">
-            Scan the options chain for Call Spread Risk Reversals, score every structure
-            on live bid-ask quotes, and track what you actually trade.
-          </p>
-
-          <div className="space-y-4 max-w-lg">
-            {FEATURES.map(f => (
-              <FeatureCard key={f.title} {...f} />
-            ))}
-          </div>
-
-          <p className="text-tertiary text-xs mt-8">
-            Personal research platform · Not investment advice
-          </p>
-        </div>
-      </div>
-
-      {/* ── Right — auth card ──────────────────────────────────────────────── */}
-      <div className="flex flex-1 items-center justify-center px-4 sm:px-[6vw] pt-6 pb-10 lg:py-12 relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[28rem] h-[28rem] bg-accent/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="w-full max-w-md rounded-2xl bg-white/60 dark:bg-white/[0.04] border border-slate-200/60 dark:border-white/[0.08] backdrop-blur-xl shadow-2xl shadow-black/5 dark:shadow-black/30 p-6 sm:p-8">
-
-          {/* Segmented mode toggle */}
-          <div className="flex bg-surface rounded-xl p-1 border border-subtle mb-8">
-            {[
-              { value: 'signin', label: 'Sign In' },
-              { value: 'signup', label: 'Create Account' },
-            ].map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => switchMode(value)}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  mode === value
-                    ? 'bg-accent text-white shadow-lg shadow-accent/40'
-                    : 'text-secondary hover:text-primary'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Heading */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-primary tracking-tight">
-              {isSignup ? 'Create your account.' : 'Welcome back.'}
-            </h2>
-            <p className="text-secondary text-sm mt-1">
-              {isSignup ? 'Sign up to access the screener.' : 'Sign in to the screener.'}
-            </p>
-          </div>
-
-          {/* On-brand confirmation / info notice */}
-          {notice && (
-            <div className="mb-4 p-4 rounded-xl bg-accent/10 border border-accent/30 text-sm text-secondary flex items-start gap-3 anim-fade-in-up">
-              <span className="p-1 rounded-full bg-accent/20 text-accent mt-0.5 shrink-0">
-                <span className="flex items-center justify-center w-4 h-4 text-[10px] font-bold">i</span>
-              </span>
-              <span>{notice}</span>
+      <main className="flex-1 flex items-center justify-center px-4 pt-6 pb-12">
+        <section className="lc-card-in w-full max-w-[26rem] bg-lc-card rounded-lc shadow-lc p-8 max-[480px]:p-6 flex flex-col gap-5" aria-labelledby="auth-title">
+          {isForm ? (
+            <div role="tablist" aria-label="Log in or create an account" className="flex p-1.5 bg-lc-ground-deep/60 rounded-lc-plus"
+              onKeyDown={e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; e.preventDefault(); switchMode(mode === 'signin' ? 'signup' : 'signin') }}>
+              {[['signin', 'Log in'], ['signup', 'Create account']].map(([id, label]) => {
+                const active = mode === id
+                return (
+                  <button key={id} type="button" role="tab" id={active ? 'auth-title' : undefined} aria-selected={active} aria-controls="auth-form" tabIndex={active ? 0 : -1}
+                    disabled={busy} onClick={() => switchMode(id)}
+                    className={`flex-1 h-10 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors ${active ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <button type="button" onClick={() => switchMode('signin')} className="self-start text-[0.9rem] font-semibold text-lc-violet hover:underline">← Back to log in</button>
+              <h1 id="auth-title" className="font-display font-bold text-[1.3rem] leading-[1.05] tracking-[-0.01em] text-lc-ink">{title}</h1>
+              {mode === 'reset' && <p className="text-[0.95rem] text-lc-ink-2 leading-[1.5]">We’ll email you a link that brings you back here to choose a new password.</p>}
             </div>
           )}
 
-          {/* Inline error — loss-red */}
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-loss/10 border border-loss/20 text-loss text-sm flex items-start gap-2 anim-shake">
-              <AlertIcon className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Form — same handlers as before */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">
-                Email
-              </label>
-              <div className="relative">
-                <MailIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  disabled={busy}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  className="w-full bg-surface-raised text-primary border border-subtle rounded-xl pl-10 pr-4 py-3
-                             text-sm placeholder-tertiary/50 transition-all
-                             focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
-                />
-              </div>
-            </div>
-
-            {/* Password — with show/hide toggle */}
-            <div>
-              <label htmlFor="password" className="block text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <LockIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
-                <input
-                  id="password"
-                  type={showPw ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  disabled={busy}
-                  placeholder="••••••••"
-                  autoComplete={isSignup ? 'new-password' : 'current-password'}
-                  className="w-full bg-surface-raised text-primary border border-subtle rounded-xl pl-10 pr-11 py-3
-                             text-sm placeholder-tertiary/50 transition-all
-                             focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw(s => !s)}
-                  tabIndex={-1}
-                  aria-label={showPw ? 'Hide password' : 'Show password'}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-tertiary hover:text-secondary transition-colors"
-                >
-                  {showPw ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Confirm password — sign-up only; mirrors showPw, no eye button */}
-            {isSignup && (
-              <div>
-                <label htmlFor="confirm-password" className="block text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">
-                  Confirm password
-                </label>
-                <div className="relative">
-                  <LockIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
-                  <input
-                    id="confirm-password"
-                    type={showPw ? 'text' : 'password'}
-                    value={confirmPw}
-                    onChange={e => setConfirmPw(e.target.value)}
-                    required
-                    disabled={busy}
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                    className="w-full bg-surface-raised text-primary border border-subtle rounded-xl pl-10 pr-4 py-3
-                               text-sm placeholder-tertiary/50 transition-all
-                               focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
-                  />
+          <form id="auth-form" onSubmit={submit} noValidate className="flex flex-col gap-4">
+            <fieldset disabled={busy} className="contents min-w-0">
+              {mode !== 'recovery' && (
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="auth-email" className="text-[0.8rem] font-semibold tracking-[0.01em] text-lc-ink-2 leading-[1.6]">Email</label>
+                  <input ref={emailRef} id="auth-email" type="email" name="email" autoComplete="email" inputMode="email" spellCheck={false} autoCapitalize="none"
+                    value={email} onChange={e => setEmail(e.target.value)} className={FIELD} placeholder="you@example.com" />
                 </div>
-              </div>
+              )}
+              {mode !== 'reset' && (
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="auth-password" className="text-[0.8rem] font-semibold tracking-[0.01em] text-lc-ink-2 leading-[1.6]">{mode === 'recovery' ? 'New password' : 'Password'}</label>
+                  <div className="relative">
+                    <input ref={passwordRef} id="auth-password" type={showPw ? 'text' : 'password'} name="password"
+                      autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                      value={password} onChange={e => setPassword(e.target.value)} className={`${FIELD} pr-20`} />
+                    <button type="button" onClick={() => setShowPw(v => !v)} aria-pressed={showPw} aria-label={showPw ? 'Hide password' : 'Show password'}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-11 min-w-[44px] px-3 rounded-lc-half text-[0.85rem] font-semibold text-lc-violet hover:bg-lc-violet-soft">
+                      {showPw ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  {(mode === 'signup' || mode === 'recovery') && <span className="text-[0.8rem] text-lc-ink-2 leading-[1.45]">At least {PASSWORD_MIN} characters.</span>}
+                </div>
+              )}
+            </fieldset>
+
+            {strip && <Strip {...strip} />}
+
+            <Button type="submit" variant="primary" size="md" aria-busy={busy || undefined} aria-disabled={busy || undefined}
+              className={`w-full h-12 text-[1rem] mt-1 ${busy ? 'pointer-events-none' : ''}`}>
+              {busy ? busyLabel : primaryLabel}
+            </Button>
+
+            {mode === 'signin' && (
+              <button type="button" onClick={() => switchMode('reset')} className="self-center text-[0.9rem] font-semibold text-lc-violet hover:underline">Forgot password?</button>
             )}
-
-            {/* Primary action — accent purple */}
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed
-                         text-white font-bold text-sm transition-all flex items-center justify-center gap-2
-                         shadow-lg shadow-accent/30"
-            >
-              {busy && <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-              {busy
-                ? (isSignup ? 'Creating account…' : 'Signing in…')
-                : (isSignup ? 'Create account' : 'Sign in')}
-            </button>
+            {mode === 'signup' && (
+              <p className="text-center text-[0.9rem] text-lc-ink-2 leading-[1.5]">Free account. The screener and tradebook are yours — no card, no trial clock.</p>
+            )}
           </form>
-
-          {/* Footer */}
-          <p className="text-tertiary text-[11px] text-center mt-6">
-            © 2026 · Luo Capital
-          </p>
-        </div>
-      </div>
-
+        </section>
+      </main>
     </div>
   )
 }
 
-/* Small accent-purple brand mark — a candlestick glyph in the accent color. */
-function BrandMark() {
+// The shared strip: problem + recovery, an inline action when the recovery is a mode switch.
+function Strip({ tone, text, action }) {
+  const error = tone === 'error'
   return (
-    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true" className="shrink-0">
-      <rect x="2" y="2" width="18" height="18" rx="5" fill="var(--accent)" fillOpacity="0.16" />
-      <line x1="11" y1="4" x2="11" y2="18" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-      <rect x="8" y="7" width="6" height="8" rx="1.5" fill="var(--accent)" />
-    </svg>
-  )
-}
-
-/* Feature row on the brand panel — icon chip + title + one-line description. */
-function FeatureCard({ Icon, title, desc, chipClass }) {
-  return (
-    <div className="flex items-start gap-4 p-4 rounded-xl bg-surface/30 border border-subtle/30 backdrop-blur-sm transition-all hover:bg-surface/50">
-      <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 border border-slate-200/50 dark:border-white/5 ${chipClass}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <div className="text-sm font-bold text-primary tracking-wide">{title}</div>
-        <div className="text-xs text-secondary mt-1 leading-relaxed">{desc}</div>
-      </div>
+    <div role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'}
+      className={`rounded-lc-plus px-4 py-3 text-[0.9rem] leading-[1.5] ${error ? 'bg-lc-loss-tint text-lc-loss' : 'bg-lc-violet-soft text-lc-ink'}`}>
+      <span className={error ? 'font-semibold' : ''}>{text}</span>
+      {action && (
+        <>
+          {' '}
+          <button type="button" onClick={action.onClick} className={`font-bold underline underline-offset-2 ${error ? 'text-lc-loss' : 'text-lc-violet'}`}>{action.label}</button>
+        </>
+      )}
     </div>
   )
 }
 
-/* ── Inline stroke icons (no icon dependency) ────────────────────────────── */
-
-function IconBase({ className, children }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  )
+function exists(email, switchMode) {
+  return { tone: 'error', text: `An account already exists for ${email}.`, action: { label: 'Log in instead', onClick: () => switchMode('signin') }, focus: 'email' }
+}
+function expiredLink() {
+  return { tone: 'error', text: 'That reset link has expired.', action: { label: 'Request a new one', onClick: () => window.location.assign('/login?mode=reset') } }
 }
 
-function MailIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="m22 7-10 5L2 7" />
-    </IconBase>
-  )
-}
-
-function LockIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <rect x="3" y="11" width="18" height="11" rx="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </IconBase>
-  )
-}
-
-function EyeIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-    </IconBase>
-  )
-}
-
-function EyeOffIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <path d="M17.94 17.94A10.6 10.6 0 0 1 12 19c-6.5 0-10-7-10-7a17.9 17.9 0 0 1 4.06-4.94" />
-      <path d="M9.9 5.24A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17.9 17.9 0 0 1-2.16 3.19" />
-      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
-      <line x1="2" y1="2" x2="22" y2="22" />
-    </IconBase>
-  )
-}
-
-function AlertIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
-    </IconBase>
-  )
-}
-
-/* Ranked list — numbered rows */
-function RankedIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <line x1="10" y1="6" x2="21" y2="6" />
-      <line x1="10" y1="12" x2="21" y2="12" />
-      <line x1="10" y1="18" x2="21" y2="18" />
-      <path d="M4 6h1v4" />
-      <path d="M4 10h2" />
-      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
-    </IconBase>
-  )
-}
-
-/* Ledger — open book */
-function LedgerIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
-    </IconBase>
-  )
-}
-
-/* Candlesticks */
-function CandlesIcon({ className }) {
-  return (
-    <IconBase className={className}>
-      <line x1="7" y1="3" x2="7" y2="8" />
-      <rect x="5" y="8" width="4" height="7" rx="1" />
-      <line x1="7" y1="15" x2="7" y2="21" />
-      <line x1="17" y1="4" x2="17" y2="9" />
-      <rect x="15" y="9" width="4" height="7" rx="1" />
-      <line x1="17" y1="16" x2="17" y2="20" />
-    </IconBase>
-  )
-}
-
-/*
- * CandleMotif — a low-opacity candlestick scene for the brand panel.
- * SVG + CSS only (no WebGL / video / images). A few candle groups drift
- * slowly via the .candle-a/b/c keyframes in index.css (~6–8s loops).
- * Slate wicks, profit-green / loss-red bodies, a faint grid underneath.
- */
-function CandleMotif() {
-  // [x, wickTop, wickBottom, bodyTop, bodyH, up]
-  const candles = [
-    [ 60,  120, 470, 200, 150, false],
-    [120,   80, 430, 150, 120, true ],
-    [180,  160, 510, 240, 130, true ],
-    [240,  100, 420, 170, 110, false],
-    [300,  150, 520, 230, 180, true ],
-    [350,  130, 470, 210, 120, false],
-  ]
-  const groupOf = i => (i % 3 === 0 ? 'candle-a' : i % 3 === 1 ? 'candle-b' : 'candle-c')
-
-  return (
-    <svg
-      className="absolute inset-0 w-full h-full"
-      viewBox="0 0 400 600"
-      preserveAspectRatio="xMidYMid slice"
-      aria-hidden="true"
-    >
-      {/* Faint grid */}
-      <g stroke="var(--border-subtle)" strokeWidth="1" opacity="0.18">
-        {[0, 100, 200, 300, 400, 500, 600].map(y => (
-          <line key={`h${y}`} x1="0" y1={y} x2="400" y2={y} />
-        ))}
-        {[0, 100, 200, 300, 400].map(x => (
-          <line key={`v${x}`} x1={x} y1="0" x2={x} y2="600" />
-        ))}
-      </g>
-
-      {/* Candles */}
-      <g opacity="0.22">
-        {candles.map((c, i) => {
-          const [x, wTop, wBot, bTop, bH, up] = c
-          const color = up ? 'var(--profit)' : 'var(--loss)'
-          return (
-            <g key={i} className={groupOf(i)} style={{ transformBox: 'fill-box' }}>
-              <line x1={x} y1={wTop} x2={x} y2={wBot} stroke="var(--border-strong)" strokeWidth="2" strokeLinecap="round" />
-              <rect x={x - 9} y={bTop} width="18" height={bH} rx="2" fill={color} />
-            </g>
-          )
-        })}
-      </g>
-    </svg>
-  )
+// Supabase errors → the product's register. Never the message verbatim.
+function describe(err, { mode, email, switchMode, retry }) {
+  const code = err?.code || err?.error_code || ''
+  const msg = String(err?.message || '')
+  const network = err instanceof TypeError || /failed to fetch|network|load failed/i.test(msg)
+  if (network) return { tone: 'error', text: 'Couldn’t reach the sign-in service. Check your connection and try again.', action: { label: 'Try again', onClick: () => retry() } }
+  if (code === 'invalid_credentials' || /invalid login credentials/i.test(msg)) {
+    return { tone: 'error', text: 'That email and password don’t match. Check the password, or create an account if you don’t have one yet.', action: { label: 'Create account', onClick: () => switchMode('signup') }, focus: 'password' }
+  }
+  if (code === 'email_not_confirmed' || /email not confirmed/i.test(msg)) {
+    return { tone: 'notice', text: `Confirm your email first — the link is in ${email}’s inbox — then log in.` }
+  }
+  if (code === 'user_already_exists' || code === 'email_exists' || /already registered|already exists/i.test(msg)) return exists(email, switchMode)
+  if (code === 'weak_password' || /at least \d+ characters|password should/i.test(msg)) {
+    return { tone: 'error', text: `Passwords need at least ${PASSWORD_MIN} characters.`, focus: 'password' }
+  }
+  if (code === 'same_password') return { tone: 'error', text: 'That’s already your password. Choose a different one.', focus: 'password' }
+  if (/rate.?limit|too many requests/i.test(code + ' ' + msg)) return { tone: 'error', text: 'Too many attempts. Wait a minute and try again.' }
+  if (code === 'otp_expired' || /expired|invalid.*link/i.test(msg)) return expiredLink()
+  if (mode === 'recovery' && /session|auth session missing/i.test(msg)) return expiredLink()
+  return { tone: 'error', text: 'Something went wrong on our side. Try again in a moment.', action: { label: 'Try again', onClick: () => retry() } }
 }

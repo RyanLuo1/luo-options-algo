@@ -258,6 +258,10 @@ body:has(> #root > .lc), body:has(.lc) { background: #F1EEF3; }
   --accent-rgb: 101 71 230; --loss-rgb: 200 50 90; --link-rgb: 101 71 230;
 }
 
+/* The auth card's entrance: rises 8px and fades in, exponential ease-out. */
+@keyframes lc-card-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.lc .lc-card-in { animation: lc-card-in .22s cubic-bezier(.16, 1, .3, 1) both; }
+
 /* Indeterminate progress (scan in flight): one bar sliding across its track. */
 @keyframes lc-indeterminate { from { left: -35%; } to { left: 100%; } }
 .lc .lc-indeterminate { animation: lc-indeterminate 1.4s cubic-bezier(.4, 0, .6, 1) infinite; }

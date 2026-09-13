@@ -11,8 +11,10 @@ import { readStoredTheme } from './hooks/useTheme.js'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
+  const location = useLocation()
   if (loading) return null
-  if (!user) return <Navigate to="/login" replace />
+  // Bounce to /login and say where from, so a successful login lands back here.
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   return children
 }
 

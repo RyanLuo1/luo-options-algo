@@ -74,7 +74,7 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
   )
 }
 
-function Mark() {
+export function Mark() {
   return (
     <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
       <rect x="3" y="16" width="22" height="6" rx="3" fill="#15121A" />

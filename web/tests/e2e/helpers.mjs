@@ -65,10 +65,9 @@ export async function signIn(page, acct) {
 
 /** Create an account through the real Create Account form and land on /app. */
 export async function signUpViaUI(page, acct) {
-  await page.goto(BASE + '/login', { waitUntil: 'networkidle' })
-  await page.getByRole('button', { name: 'Create Account' }).click()
+  await page.goto(BASE + '/login?mode=signup', { waitUntil: 'networkidle' })
   await page.locator('input[autocomplete="email"]').fill(acct.email)
-  const pw = page.locator('input[autocomplete="new-password"]'); await pw.nth(0).fill(acct.password); await pw.nth(1).fill(acct.password)
+  await page.locator('input[autocomplete="new-password"]').fill(acct.password)
   await page.locator('button[type="submit"]').click()
   await page.waitForURL(/\/app$/, { timeout: 20000 })
   await page.evaluate(() => document.fonts.ready)
