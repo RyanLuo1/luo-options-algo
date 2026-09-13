@@ -5,7 +5,7 @@ import { fmtMoney0 } from './format'
 // Geometry: x is the stock price over [K_C - pad, K_B + pad]; y is P&L.
 const W = 600, H = 250, PADX = 24, TOP = 26, BOTTOM = 44
 
-export default function PayoffCurve({ row, spot }) {
+export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
   const kc = row.leg_c_strike, ka = row.leg_a_strike, kb = row.leg_b_strike
   const credit = row.net_premium * 100
   const maxP = (row.net_premium + row.spread_width) * 100
@@ -42,7 +42,7 @@ export default function PayoffCurve({ row, spot }) {
         {hasSpot && (
           <>
             <line x1={spotX} y1={TOP - 4} x2={spotX} y2={H - BOTTOM + 4} stroke="#6547E6" strokeWidth="1.5" strokeDasharray="2 4" />
-            <text x={spotX} y={TOP - 8} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="700">spot {spot.toFixed(2)}</text>
+            <text x={spotX} y={Math.abs(spotX - (X(kb) + X(xMax)) / 2) < 80 ? y0 + 16 : TOP - 8} textAnchor={spotX > W - PADX - 56 ? 'end' : spotX < PADX + 56 ? 'start' : 'middle'} fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="700">{markerLabel} {spot.toFixed(2)}</text>
           </>
         )}
         {/* curve */}
@@ -73,7 +73,7 @@ export default function PayoffCurve({ row, spot }) {
       )}
       <div className="flex justify-between gap-3 text-[0.85rem] text-lc-ink-2 mt-2 flex-wrap">
         <span>Payoff at expiration, per contract</span>
-        <span>{hasSpot ? 'Stock price →' : 'Spot price unavailable right now · stock price →'}</span>
+        <span>{hasSpot ? 'Stock price →' : markerLabel === 'spot' ? 'Spot price unavailable right now · stock price →' : 'Stock price →'}</span>
       </div>
     </div>
   )

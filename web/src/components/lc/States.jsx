@@ -27,8 +27,10 @@ export function ProgressStrip({ tickerCount }) {
 }
 
 /** Dismissable error strip above the results. Names the problem and the recovery; never a port number. */
-export function ErrorStrip({ message, hadResults, onRetry, onDismiss }) {
-  const text = humanizeError(message, hadResults)
+export function ErrorStrip({ message, hadResults, onRetry, onDismiss, tradebook = false }) {
+  const text = tradebook
+    ? { problem: 'Couldn’t load your trades.', recovery: `${hadResults ? 'Your last list is still shown below.' : ''} Try again.`.trim() }
+    : humanizeError(message, hadResults)
   return (
     <div role="alert" className="bg-lc-loss-tint rounded-lc px-5 py-4 flex items-start gap-4">
       <div className="flex-1 text-[0.95rem] text-lc-ink leading-[1.5]">

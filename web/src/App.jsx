@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import './index.css'
 import { supabase } from './lib/supabase'
 import useAuth from './hooks/useAuth'
@@ -24,6 +24,7 @@ import { expiryInfo, rowKey, creditShareOfMax, rocOf, zeroReasonText } from './c
 // persistence are unchanged.
 export default function App() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, plan } = useAuth()
 
   const persisted = useMemo(() => loadScreenerState() ?? {}, [])
@@ -198,6 +199,23 @@ export default function App() {
   function lowerPAndRerun()      { setMinPProfit(0.40); setMinPProfitStr('40'); runWith({ minPProfit: 0.40 }) }
   const showError = !!error && error !== dismissedError
 
+  // A "Rerun this scan" from the Tradebook arrives as router state: prefill the
+  // controls from that scan's inputs and run once, then clear the state.
+  const rerun = location.state?.rerun
+  useEffect(() => {
+    if (!rerun || !Array.isArray(rerun.tickers) || rerun.tickers.length === 0) return
+    const tickers = rerun.tickers.map(t => String(t).toUpperCase())
+    setTickerInputRaw(tickers.join(', '))
+    if (Number.isFinite(rerun.weeksMin)) setWeeksMin(rerun.weeksMin)
+    if (Number.isFinite(rerun.weeksMax)) setWeeksMax(rerun.weeksMax)
+    if (Number.isFinite(rerun.minPremium)) { setMinPremium(rerun.minPremium); setMinCreditStr(String(Math.round(rerun.minPremium * 100))) }
+    if (Number.isFinite(rerun.minPProfit)) { setMinPProfit(rerun.minPProfit); setMinPProfitStr(String(Math.round(rerun.minPProfit * 100))) }
+    setActiveTab('screener'); setLastRunTickers(tickers); setDismissedError(null)
+    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: rerun.minPProfit ?? minPProfit })
+    navigate(location.pathname, { replace: true, state: null })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rerun])
+
   // Keyboard: ⌘/Ctrl+Enter runs from anywhere; `/` focuses the tickers input.
   useEffect(() => {
     function onKey(e) {
@@ -308,7 +326,7 @@ export default function App() {
       setSaving(false)
     }
   }
-  function handleEdit(row) { navigate('/trade', { state: { triplet: row, scan_id: scanId } }) }
+  function handleEdit(row) { navigate('/trade', { state: { triplet: row, scan_id: scanId, from: 'screener' } }) }
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   async function handleLogout() {

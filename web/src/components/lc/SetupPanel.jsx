@@ -1,14 +1,28 @@
 import PayoffCurve from './PayoffCurve'
 import { Button, Pill } from './ui'
-import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, rowFigures, rocOf } from './format'
+import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence } from './format'
 
-// The detail panel: the landing's setup dashboard driven by the selected row.
-export default function SetupPanel({ row, flags = [], onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook, dimmed = false }) {
+// The detail panel: the setup dashboard, one component in two states.
+//   • open (default): live spot marker, P(max) gauge, the worst-case sentence.
+//   • graded: pass `settlement` (an outcome row) — the settlement price becomes
+//     the curve marker, a Realized P&L card replaces the gauge, and the
+//     worst-case slot becomes the settlement sentence.
+// `actions` replaces the default Save / Open-in-editor row (the Tradebook passes
+// its own); `note` is an optional one-line caption under the actions; `spot`
+// overrides the row's own underlying price (the Tradebook fetches it live).
+export default function SetupPanel({
+  row, flags = [], spot: spotProp, settlement = null, expired: expiredProp, statusPill = null, provenance = null,
+  onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook,
+  actions, note, dimmed = false,
+}) {
   if (!row) return null
   const f = rowFigures(row)
   const exp = expiryInfo(row.expiration)
-  const spot = row.underlying_price
+  const graded = !!settlement
+  const expired = expiredProp ?? graded
+  const spot = graded ? Number(settlement.stock_price_at_expiration) : expired ? null : (spotProp ?? row.underlying_price)
   const worstShares = 100
+  const pnl = graded ? Number(settlement.pnl_per_contract) : null
 
   return (
     <section
@@ -21,17 +35,20 @@ export default function SetupPanel({ row, flags = [], onSave, saving = false, sa
         <div className="font-display font-bold text-[2rem] leading-none tracking-[-0.02em] flex items-baseline gap-2.5">
           {row.ticker}
           <small className="font-figtree font-medium text-[1rem] text-lc-ink-2 tracking-normal">
-            {Number.isFinite(spot) ? `stock at ${fmtMoney2(spot)}` : 'spot unavailable'}
+            {graded ? `settled at ${fmtMoney2(spot)}` : expired ? `expired ${exp.short} · grade pending` : Number.isFinite(spot) ? `stock at ${fmtMoney2(spot)}` : 'spot unavailable'}
           </small>
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          <Pill>Expires {exp.short}</Pill>
-          <Pill tone="quiet">W{row.week}{exp.dte != null ? ` · ${exp.dte}d` : ''}</Pill>
+          {statusPill}
+          <Pill>{expired ? `Expired ${exp.short}` : `Expires ${exp.short}`}</Pill>
+          {!expired && <Pill tone="quiet">{row.week ? `W${row.week}` : ''}{row.week && exp.dte != null ? ' · ' : ''}{exp.dte != null ? `${exp.dte}d` : ''}</Pill>}
           {flags.length > 3
             ? <Pill tone="quiet" title={flags.join(' · ')}>{flags.length} macro events before expiry</Pill>
             : flags.map(fl => <Pill key={fl} tone="quiet">{fl}</Pill>)}
         </div>
       </div>
+
+      {provenance}
 
       {/* Legs */}
       <div className="grid grid-cols-3 max-lc:grid-cols-1 gap-3">
@@ -40,33 +57,46 @@ export default function SetupPanel({ row, flags = [], onSave, saving = false, sa
         <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" />
       </div>
 
-      <PayoffCurve row={row} spot={spot} />
+      <PayoffCurve row={row} spot={spot} markerLabel={expired ? 'settled' : 'spot'} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
         <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} hi />
-        <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} is above ${row.leg_b_strike}`} />
-        <Gauge p={row.p_max_profit} />
-        <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub="cash to secure the put while it’s open" />
+        <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}`} />
+        {graded
+          ? <RealizedCard pnl={pnl} zone={zoneLabel(settlement.outcome_type)} />
+          : <Gauge p={row.p_max_profit} />}
+        <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub={expired ? 'cash that secured the put' : 'cash to secure the put while it’s open'} />
         <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-lc:col-span-1" />
       </div>
 
       <p className="text-[0.95rem] text-lc-ink-2 leading-[1.55]">
-        <strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}, which is {fmtMoney0(f.breakeven * worstShares)} of stock. That is the downside in plain dollars.
+        {graded ? (
+          <><strong className="text-lc-ink font-semibold">Outcome:</strong> {settlementSentence(row, settlement)}</>
+        ) : expired ? (
+          <><strong className="text-lc-ink font-semibold">Outcome:</strong> expired {exp.short}. The closing price on expiration decides the zone; the grade posts after the next close.</>
+        ) : (
+          <><strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}, which is {fmtMoney0(f.breakeven * worstShares)} of stock. That is the downside in plain dollars.</>
+        )}
       </p>
 
       {/* Actions */}
       <div className="flex items-center gap-3 flex-wrap pt-1">
-        {saved ? (
-          <Button variant="secondary" onClick={onViewTradebook}>Saved · View Tradebook</Button>
-        ) : (
-          <Button variant="confirm" onClick={() => !dimmed && onSave?.(row)} disabled={saving || dimmed} aria-busy={saving}>
-            {saving ? 'Saving…' : 'Save to Tradebook'}
-          </Button>
+        {actions ?? (
+          <>
+            {saved ? (
+              <Button variant="secondary" onClick={onViewTradebook}>Saved · View Tradebook</Button>
+            ) : (
+              <Button variant="confirm" onClick={() => !dimmed && onSave?.(row)} disabled={saving || dimmed} aria-busy={saving}>
+                {saving ? 'Saving…' : 'Save to Tradebook'}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => onEdit?.(row)}>Open in editor</Button>
+            {saveError && <span role="alert" className="text-[0.85rem] font-semibold text-lc-loss">{saveError}</span>}
+          </>
         )}
-        <Button variant="secondary" onClick={() => onEdit?.(row)}>Open in editor</Button>
-        {saveError && <span role="alert" className="text-[0.85rem] font-semibold text-lc-loss">{saveError}</span>}
       </div>
+      {note && <p className="text-[0.82rem] text-lc-ink-2 -mt-2">{note}</p>}
     </section>
   )
 }
@@ -91,13 +121,27 @@ function Stat({ label, value, sub, hi = false, className = '' }) {
   )
 }
 
+// Realized P&L for a graded trade: the profit/loss pair, always with a sign, plus the zone in words.
+function RealizedCard({ pnl, zone }) {
+  const tone = pnl > 0 ? 'profit' : pnl < 0 ? 'loss' : 'flat'
+  const bg = tone === 'profit' ? 'bg-lc-profit-tint' : tone === 'loss' ? 'bg-lc-loss-tint' : 'bg-lc-ground'
+  const ink = tone === 'profit' ? 'text-lc-profit' : tone === 'loss' ? 'text-lc-loss' : 'text-lc-ink'
+  return (
+    <div className={`${bg} rounded-lc p-4 flex flex-col gap-1 min-w-0`}>
+      <span className={`text-[0.85rem] font-semibold ${tone === 'flat' ? 'text-lc-ink-2' : ink}`}>Realized P&amp;L</span>
+      <span className={`font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] ${ink}`}>{fmtSigned0(pnl)}</span>
+      <span className={`text-[0.85rem] ${tone === 'flat' ? 'text-lc-ink-2' : ink}`}>per contract · {zone}</span>
+    </div>
+  )
+}
+
 // Chance of max profit as a soft arc; the number carries the value.
 function Gauge({ p }) {
   const v = Math.max(0, Math.min(1, p ?? 0))
   const len = 264
   return (
-    <div className="bg-lc-ground rounded-lc p-4 flex items-center gap-4 min-w-0">
-      <svg viewBox="0 0 120 70" className="w-[76px] h-auto shrink-0" fill="none" aria-hidden="true">
+    <div className="bg-lc-ground rounded-lc p-4 flex items-center gap-3 min-w-0">
+      <svg viewBox="0 0 120 70" className="w-[64px] h-auto shrink-0" fill="none" aria-hidden="true">
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#EEE9FF" strokeWidth="12" strokeLinecap="round" />
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" strokeWidth="12" strokeLinecap="round" pathLength={len} strokeDasharray={len} strokeDashoffset={len * (1 - v)} />
       </svg>

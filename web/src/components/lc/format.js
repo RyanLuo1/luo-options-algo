@@ -69,3 +69,86 @@ export const creditShareOfMax = row => {
   const max = row.net_premium + row.spread_width
   return max > 0 ? row.net_premium / max : 0
 }
+
+/** Today's calendar date in New York, as YYYY-MM-DD (expirations are ET trading days). */
+export function todayET() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+/** Signed per-contract dollars: "+$540" / "−$960" / "$0". */
+export const fmtSigned0 = n => {
+  if (n == null || Number.isNaN(n)) return '—'
+  const v = Math.round(n)
+  return v > 0 ? `+$${v.toLocaleString('en-US')}` : v < 0 ? `−$${Math.abs(v).toLocaleString('en-US')}` : '$0'
+}
+
+/** Payoff-zone label for a graded outcome, in plain language. */
+export const ZONE_LABEL = {
+  expired_capped:      'Capped · max profit',
+  expired_sweet_spot:  'Sweet spot',
+  expired_credit_only: 'Kept the credit',
+  expired_breakeven:   'Breakeven',
+  expired_loss:        'Loss zone · put assigned',
+  expired_partial:     'Partial',
+  pending:             'Pending',
+}
+export const zoneLabel = t => ZONE_LABEL[t] ?? t ?? '—'
+/** The same zones, short enough for a table cell. */
+export const ZONE_SHORT = { expired_capped: 'Capped', expired_sweet_spot: 'Sweet spot', expired_credit_only: 'Kept credit', expired_breakeven: 'Breakeven', expired_loss: 'Loss', expired_partial: 'Partial', pending: 'Pending' }
+export const zoneShort = t => ZONE_SHORT[t] ?? t ?? '—'
+/** "2026-09-12T21:34:00Z" → "Sep 12". */
+export function fmtDay(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getDate()}`
+}
+
+/** The settlement sentence for a graded trade (worst-case slot in the dashboard). */
+export function settlementSentence(row, outcome) {
+  if (!outcome) return null
+  const S = Number(outcome.stock_price_at_expiration)
+  const pnl = Number(outcome.pnl_per_contract)
+  const credit = row.net_premium * 100
+  const maxP = (row.net_premium + row.spread_width) * 100
+  const at = `Settled at ${fmtMoney2(S)}`
+  switch (outcome.outcome_type) {
+    case 'expired_capped':      return `${at} — you captured the full spread (${fmtMoney0(maxP)}, max profit).`
+    case 'expired_sweet_spot':  return `${at} — the long call finished in the money; you made ${fmtSigned0(pnl)} of the ${fmtMoney0(maxP)} max.`
+    case 'expired_credit_only': return `${at} — every leg expired worthless; you kept the full credit (${fmtMoney0(credit)}).`
+    case 'expired_breakeven':   return `${at} — the put assignment cost about what the credit paid; you broke even.`
+    case 'expired_loss':        return `${at} — you lost ${fmtMoney0(Math.abs(pnl))} (put assigned at ${row.leg_c_strike}).`
+    default:                    return `${at} — realized ${fmtSigned0(pnl)} per contract.`
+  }
+}
+
+/** A saved trade as the setup shape the dashboard and editor consume (leg_x_premium → leg_x_prem). */
+export function tradeAsSetup(t) {
+  return {
+    ticker: t.ticker, expiration: t.expiration, week: t.week ?? null,
+    leg_a_strike: t.leg_a_strike, leg_a_prem: t.leg_a_premium, leg_a_delta: t.leg_a_delta,
+    leg_b_strike: t.leg_b_strike, leg_b_prem: t.leg_b_premium, leg_b_delta: t.leg_b_delta,
+    leg_c_strike: t.leg_c_strike, leg_c_prem: t.leg_c_premium, leg_c_delta: t.leg_c_delta,
+    net_premium: t.net_premium, spread_width: t.spread_width, score: t.score, p_max_profit: t.p_max_profit,
+    result_id: t.result_id ?? null, scan_id: t.scan_id ?? null,
+  }
+}
+
+/** "2026-09-12T21:34:00Z" → "Sep 12 21:34" (local time). */
+export function fmtWhen(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${MONTHS[d.getMonth()]} ${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** Row key for a saved trade. */
+export const tradeKey = t => String(t.id)
+
+/** The Tradebook's default order: open first (nearest expiration on top, grading-pending among them), then graded, newest expiration first. */
+export function defaultTradeOrder(trades) {
+  return [...trades].sort((a, b) => {
+    const ga = a.status === 'graded' ? 1 : 0, gb = b.status === 'graded' ? 1 : 0
+    if (ga !== gb) return ga - gb
+    return ga === 0 ? a.expiration.localeCompare(b.expiration) : b.expiration.localeCompare(a.expiration)
+  })
+}
