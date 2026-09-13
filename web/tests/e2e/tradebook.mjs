@@ -55,6 +55,7 @@ try {
   log('editor opened from the Tradebook with replace checked by default', (await page.getByLabel('Replace the original').isChecked()) && (await page.getByRole('button', { name: 'Save as new trade' }).count()) === 1)
   const anchor = await page.evaluate(() => [...document.querySelectorAll('section[aria-label="Sell put"], section[aria-label="Buy call"], section[aria-label="Sell call"]')].map(s => { const box = s.querySelector('.overflow-auto'); const row = box?.querySelector('tr[aria-current="true"]'); if (!box || !row) return 'missing'; const top = row.offsetTop - box.scrollTop; return top >= 0 && top + row.clientHeight <= box.clientHeight ? 'visible' : `off by ${Math.round(top)}` }))
   log('each chain opens with the saved strike in view', anchor.every(a => a === 'visible'), anchor.join(', '))
+  log('the editor opens at the top of the page', (await page.evaluate(() => window.scrollY)) === 0)
   // pick a different put strike (the first row of the Sell put chain that is not the current one)
   const putRows = page.locator('section[aria-label="Sell put"] tbody tr'); const n = await putRows.count()
   if (n > 1) { const cur = await page.locator('section[aria-label="Sell put"] tr[aria-current="true"]').count(); await putRows.nth(cur ? 0 : 1).click() }
@@ -111,6 +112,11 @@ try {
   await page.locator('tbody tr[data-status="pending"]').click(); await page.waitForTimeout(300)
   await page.screenshot({ path: `${OUT_DIR}/tradebook-pending-1440.png`, fullPage: true })
   await page.locator('tbody tr[data-status="graded"]').click(); await page.waitForTimeout(300)
+  const openActions = await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'View in editor'); return b ? Math.round(b.getBoundingClientRect().bottom) : 9999 })
+  await page.locator('tbody tr[data-status="open"]').click(); await page.waitForTimeout(300)
+  const openActions2 = await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Open in editor'); return b ? Math.round(b.getBoundingClientRect().bottom) : 9999 })
+  log('panel actions are visible without scrolling (graded and open) at 1440×900', openActions <= 900 && openActions2 <= 900, `bottoms ${openActions} / ${openActions2}`)
+  await page.locator('tbody tr[data-status="graded"]').click(); await page.waitForTimeout(300)
   const gradedRow = await page.evaluate(() => { const r = document.querySelector('tbody tr[data-status="graded"]'); return { pnl: r.children[6].textContent.trim(), zone: r.children[7].textContent.trim() } })
   const panel = await page.textContent('section[aria-label^="Setup detail"]')
   log('graded row: signed P&L and zone label', gradedRow.pnl === '+$1,585' && gradedRow.zone === 'Capped', JSON.stringify(gradedRow))
@@ -130,6 +136,8 @@ try {
   const ro = await page.textContent('body')
   log('graded trade opens the editor read-only', /read-only/.test(ro) && (await page.getByRole('button', { name: /Save/ }).count()) === 0)
   await page.screenshot({ path: `${OUT_DIR}/editor-readonly-1440.png` })
+  await page.getByRole('button', { name: /Back to Tradebook/ }).click(); await page.waitForURL(/\/tradebook$/); await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 3, null, { timeout: 20000 }); await page.waitForTimeout(300)
+  log('Back returns to the trade you came from', (await page.locator('tbody tr[data-selected="true"]').getAttribute('data-status')) === 'graded')
 
   // 7. sort override + keyboard
   await page.goto(BASE + '/tradebook', { waitUntil: 'networkidle' }); await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 3, null, { timeout: 20000 })
@@ -137,7 +145,7 @@ try {
   log('column sort shows "Back to default"', (await page.locator('text=Back to default').count()) === 1)
   await page.getByRole('button', { name: 'Back to default' }).click()
   await page.locator('section[aria-label="Saved trades"] [tabindex="0"]').focus(); await page.keyboard.press('ArrowDown'); await page.waitForTimeout(150)
-  log('↓ moves the selection', (await page.locator('tbody tr[data-selected="true"]').getAttribute('data-status')) === 'open')
+  log('↓ moves the selection', (await page.locator('tbody tr[data-selected="true"]').getAttribute('data-status')) === 'open', `selected ${await page.locator('tbody tr[data-selected="true"]').getAttribute('data-status')} · order ${await page.evaluate(() => [...document.querySelectorAll('tbody tr')].map(r => r.dataset.status).join(','))}`)
 } catch (e) { log('exception', false, e.message); await page.screenshot({ path: `${OUT_DIR}/tradebook-failure.png` }).catch(() => {}) }
 if (errors.length) console.log('page errors:', errors.join(' | '))
 await browser.close()

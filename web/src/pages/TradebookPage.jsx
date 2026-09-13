@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import '../index.css'
 import { supabase } from '../lib/supabase'
 import useAuth from '../hooks/useAuth'
@@ -18,12 +18,15 @@ import { fmtSigned0, tradeAsSetup, fmtWhen, expiryInfo, tradeKey as rowKeyOf, de
 // row-level policies; delete is the existing per-row delete with a confirm step.
 export default function TradebookPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, plan } = useAuth()
   const { trades, loading, error, reload, remove, summary } = useTradebook(user)
 
   const [activeTab, setActiveTab] = useState('tradebook')
   const [sort, setSort] = useState(null)
-  const [selectedKey, setSelectedKey] = useState(null)
+  const [selectedKey, setSelectedKey] = useState(() => (location.state?.selected != null ? String(location.state.selected) : null))   // the editor hands back the trade it came from
+  // …and that hand-back is one-shot: clear it so a reload or a fresh visit starts from the default row.
+  useEffect(() => { if (location.state?.selected != null) navigate(location.pathname, { replace: true, state: null }) }, [location.state, location.pathname, navigate])
   const [dismissedError, setDismissedError] = useState(null)
   const [confirmFor, setConfirmFor] = useState(null)   // row key whose Delete is awaiting confirmation
   const [deleting, setDeleting] = useState(false)
@@ -37,6 +40,18 @@ export default function TradebookPage() {
   const selectedKeyEff = selected ? rowKeyOf(selected) : null
   const confirmingDelete = confirmFor != null && confirmFor === selectedKeyEff
   const setConfirmingDelete = on => setConfirmFor(on ? selectedKeyEff : null)
+
+  // The panel column sticks and scrolls on its own; its height is whatever the viewport
+  // leaves below its current top (the summary strip pushes it down at scroll 0).
+  const panelRef = useRef(null)
+  useEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+    const fit = () => { const top = Math.max(16, el.getBoundingClientRect().top); el.style.maxHeight = `${window.innerHeight - top - 16}px` }
+    fit()
+    window.addEventListener('scroll', fit, { passive: true }); window.addEventListener('resize', fit)
+    return () => { window.removeEventListener('scroll', fit); window.removeEventListener('resize', fit) }
+  }, [trades.length])
 
   // Live spot for the selected OPEN trade (best-effort, cached per ticker).
   const [spots, setSpots] = useState({})
@@ -124,7 +139,7 @@ export default function TradebookPage() {
                 <TradebookTable trades={trades} sort={sort} onSort={setSort} onResetSort={() => setSort(null)}
                   selectedKey={selectedKeyEff} onSelect={t => setSelectedKey(rowKeyOf(t))} onOpen={openEditor} dimmed={loading} />
               </div>
-              <div className="min-w-0">
+              <div ref={panelRef} className="min-w-0 sticky top-4 overflow-y-auto rounded-lc">
                 <SetupPanel
                   row={setup}
                   spot={selected.status === 'open' ? spots[selected.ticker] ?? null : null}
@@ -135,6 +150,7 @@ export default function TradebookPage() {
                   actions={actions}
                   note={selected.status === 'pending' ? 'Grading pending · grades after the next close (trading days only).' : selected.status === 'open' ? 'Editing saves a corrected trade and replaces this one unless you untick “Replace the original”.' : null}
                   dimmed={loading}
+                  stickyActions
                 />
               </div>
             </div>

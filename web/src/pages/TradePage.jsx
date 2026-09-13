@@ -51,6 +51,7 @@ export default function TradePage() {
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
   useEffect(() => () => clearTimeout(toastTimer.current), [])
+  useEffect(() => { window.scrollTo(0, 0) }, [])   // the Tradebook may hand over mid-scroll
 
   useEffect(() => {
     if (!triplet || readOnly) return
@@ -100,13 +101,13 @@ export default function TradePage() {
       clearTimeout(toastTimer.current)
       setToast(source ? (replaced ? `Replaced the original with ${label}.` : `Saved ${label} as a new trade; the original is still in your Tradebook.`) : `Saved ${label} to your Tradebook.`)
       toastTimer.current = setTimeout(() => setToast(null), 6000)
-      if (source) setTimeout(() => navigate('/tradebook'), 900)
+      if (source) setTimeout(() => navigate('/tradebook', { state: { selected: replaced ? null : source.id } }), 900)
     } catch (e) {
       setSaveError(`Couldn’t reach the server to save (${e.message}). Nothing was written; try again.`)
     } finally { setSaving(false) }
   }
   async function handleLogout() { clearScreenerSession(); await supabase.auth.signOut(); navigate('/login') }
-  const back = () => navigate(from === 'tradebook' ? '/tradebook' : '/app')
+  const back = () => navigate(from === 'tradebook' ? '/tradebook' : '/app', from === 'tradebook' && source?.id ? { state: { selected: source.id } } : undefined)
 
   const shellProps = { activeTab, onTabChange: id => (id === 'screener' ? navigate('/app') : setActiveTab(id)), plan, marketOpen: null, lastRun: null, onLogout: handleLogout }
 

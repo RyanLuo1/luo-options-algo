@@ -15,7 +15,7 @@ import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocO
 export default function SetupPanel({
   row, flags = [], spot: spotProp, settlement = null, expired: expiredProp, statusPill = null, provenance = null,
   onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook,
-  actions, note, dimmed = false,
+  actions, note, dimmed = false, stickyActions = false,
 }) {
   if (!row) return null
   const f = rowFigures(row)
@@ -109,7 +109,8 @@ export default function SetupPanel({
         </>
       )}
 
-      {/* Actions */}
+      {/* Actions — with `stickyActions` the row pins to the bottom edge of the panel's scroll container */}
+      <div className={stickyActions ? 'sticky bottom-0 -mx-6 -mb-6 px-6 pb-5 pt-3 bg-lc-card rounded-b-lc border-t border-lc-line/70' : ''}>
       <div className="flex items-center gap-3 flex-wrap pt-1">
         {actions ?? (
           <>
@@ -125,7 +126,8 @@ export default function SetupPanel({
           </>
         )}
       </div>
-      {note && <p className="text-[0.82rem] text-lc-ink-2 -mt-2">{note}</p>}
+      {note && <p className="text-[0.82rem] text-lc-ink-2 mt-2">{note}</p>}
+      </div>
     </section>
   )
 }
