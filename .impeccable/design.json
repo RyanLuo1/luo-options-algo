@@ -229,6 +229,13 @@
         "canonical": "oklch(93.8% 0.04 8)",
         "hex": "#FBE3E9",
         "usage": "Pill and strip background behind loss ink (e.g. the dismissable error strip)."
+      },
+      "loss-ink": {
+        "role": "semantic",
+        "displayName": "Loss Ink",
+        "canonical": "oklch(46% 0.17 8)",
+        "hex": "#A8264B",
+        "usage": "Text on the loss tint (error strips, the loss card's caption): 5.67:1 there, 6.9:1 on white. `loss` stays the ink for P&L figures on white and field error borders."
       }
     },
     "typographyMeta": {

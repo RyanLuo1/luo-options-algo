@@ -18,6 +18,7 @@ colors:
   profit-tint: "#DDF3E6"
   loss: "#C8325A"
   loss-tint: "#FBE3E9"
+  loss-ink: "#A8264B"
 typography:
   display:
     fontFamily: "Bricolage Grotesque, Helvetica Neue, Arial, sans-serif"
@@ -346,7 +347,7 @@ A restrained two-accent palette on tinted neutrals: violet does structure, chart
 
 **The Tinted Gray Rule.** No neutral gray anywhere. Every gray in the system is warmed toward the ground's lilac hue (`ink-2`, `ink-3`, `line`, `ground-deep`).
 
-**The Profit / Loss Rule** (decided 2026-09-12 in the Screener shape). Profit is `profit` ink `#1F7A4D` on `profit-tint` `#DDF3E6`; loss is `loss` ink `#C8325A` on `loss-tint` `#FBE3E9`. Both clear 4.5:1 on white and read apart from violet (structure) and lime (action). They color only realized or projected P&L: Tradebook outcomes, Performance, the loss zone of a payoff curve, and the error state of a field (loss ink only). Never chrome, never a border on a card, never color alone: every P&L value carries a sign or a word, every zone a label. Borderline probability is a quiet pill, not a tint.
+**The Profit / Loss Rule** (decided 2026-09-12 in the Screener shape). Profit is `profit` ink `#1F7A4D` on `profit-tint` `#DDF3E6`; loss is `loss` ink `#C8325A` on `loss-tint` `#FBE3E9`. Both clear 4.5:1 on white and read apart from violet (structure) and lime (action). They color only realized or projected P&L: Tradebook outcomes, Performance, the loss zone of a payoff curve, and the error state of a field (loss ink only). Never chrome, never a border on a card, never color alone: every P&L value carries a sign or a word, every zone a label. Borderline probability is a quiet pill, not a tint. **On the loss tint, text uses `loss-ink` `#A8264B`** (added 2026-09-13 in the login pass): `loss` on `loss-tint` measures 4.25:1, under the floor for small text, while `loss-ink` clears 5.67:1 there and 6.9:1 on white. `loss` stays the ink for P&L figures on white and for the error border of a field.
 
 ## Typography
 
@@ -454,7 +455,7 @@ Tactile and calm: everything is a white card or a tile within one, buttons lift 
 - **Inset tiles:** a card's interior tiles are `ground`-colored, shadowless, and 24px-rounded (KPI tiles at 16px padding, leg rows at 10px 14px). A tile that is the point of the card switches to `violet-soft` with violet labels.
 
 ### Inputs / Fields
-No input exists in the built artifact; the landing page has no form. **Provisional recipe** (derived from the button and tile rules, to be confirmed on first app build): white fill, 1.5px `line` border, 24px radius, 14px 20px padding, Figtree 400 at 1rem, ink text, `ink-3` placeholder is not permitted (fails contrast); use `ink-2` for placeholders. Focus: border to violet plus the global 3px ring. Error and disabled states are undefined (see open tokens).
+**Decided in the app builds (2026-09-12/13).** White fill, 1.5px `line` border, **12px radius** (`rounded-lc-half`, `INPUT_CLASS` in `web/src/components/lc/format.js`), 44px tall in the app's controls and **48px at 16px type on the auth card** (no iOS zoom), Figtree at 0.95–1rem, ink text, `ink-2` placeholders (`ink-3` fails contrast). **Focus:** the global 3px violet ring, but inputs keep their own 12px radius (`.lc input:focus-visible`) rather than the 24px card radius. **Error:** 1.5px `loss` border plus `aria-invalid` and a message the field is `aria-describedby`; the message itself is `loss-ink` on `loss-tint` or `loss` on white. **Disabled:** `ground-deep` fill with `ink-2` text. Autofill is repainted white with ink text. A password field carries a Show / Hide text button inside its right edge (44px hit area, `aria-pressed`).
 
 ### Navigation
 - **Landing header:** 24px block padding; brand lockup left (28px three-bar mark + "Luo Capital" in display 700 at 1.15rem); center links in Figtree 500 `ink-2`, hover violet, no underline, 32px gaps; a ghost "Run a free scan" button right. Links hide under 760px.
