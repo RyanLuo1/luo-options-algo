@@ -6,7 +6,7 @@ import path from 'path'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const base = process.argv[2] || process.env.E2E_BASE || 'http://127.0.0.1:5002'
 let failed = 0
-for (const s of ['states.mjs', 'flow.mjs', 'shots.mjs']) {
+for (const s of ['states.mjs', 'flow.mjs', 'tradebook.mjs', 'shots.mjs']) {
   console.log(`\n── ${s} @ ${base} ──`)
   const r = spawnSync(process.execPath, [path.join(here, s), base], { stdio: 'inherit' })
   if (r.status !== 0) failed += 1

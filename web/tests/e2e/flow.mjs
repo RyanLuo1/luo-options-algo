@@ -50,7 +50,7 @@ try {
   const toast = (await page.locator('[role="status"]').textContent()).trim()
   log('toast names the saved trade and links to the Tradebook', /Saved .* to your Tradebook/.test(toast) && /View Tradebook/.test(toast), toast.slice(0, 100))
   await page.getByRole('button', { name: 'View Tradebook', exact: true }).click(); await page.waitForURL(/\/tradebook$/)
-  await page.waitForFunction(() => /Date Saved/i.test(document.body.textContent) && document.querySelectorAll('tbody tr').length > 0, null, { timeout: 20000 })
+  await page.waitForFunction(() => /Your trades/.test(document.body.textContent) && document.querySelectorAll('tbody tr').length > 0, null, { timeout: 20000 })
   const strikes = sel.strikes.replace(/\s+/g, '').split('/'); const tb = await page.textContent('body')
   log('Tradebook shows the saved trade', strikes.every(s => tb.includes(s)), strikes.join('/'))
   await page.screenshot({ path: `${OUT_DIR}/flow-tradebook.png` })

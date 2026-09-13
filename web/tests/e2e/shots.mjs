@@ -18,6 +18,9 @@ for (const w of [1440, 1100]) {
       return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, leaks: leaks.slice(0, 5), fonts: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family).filter((x, k, a) => a.indexOf(x) === k), h: document.documentElement.scrollHeight }
     })
     await page.screenshot({ path: `${OUT_DIR}/screener-${w}.png`, fullPage: true })
+    await page.getByRole('button', { name: 'Save to Tradebook' }).click().catch(() => {}); await page.waitForTimeout(800)
+    await page.goto(BASE + '/tradebook', { waitUntil: 'networkidle' }); await page.waitForFunction(() => document.querySelectorAll('tbody tr').length > 0 || /No trades yet/.test(document.body.textContent), null, { timeout: 20000 }); await page.waitForTimeout(500)
+    await page.screenshot({ path: `${OUT_DIR}/tradebook-${w}.png`, fullPage: true })
     log(`@${w}: no horizontal overflow, fonts loaded`, !m.overflow && m.fonts.includes('Bricolage Grotesque') && m.fonts.includes('Figtree'), `height ${m.h}${m.leaks.length ? ' leaks ' + m.leaks.join(', ') : ''}`)
   } catch (e) { log(`@${w} exception`, false, e.message) }
   await page.context().close()
