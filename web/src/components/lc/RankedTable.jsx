@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MetricBar from './MetricBar'
-import { SortIcon } from './ui'
+import { SortIcon, InfoTip } from './ui'
 import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, rocOf } from './format'
 
 // Columns. `sort` names the accessor for user overrides; money columns sort
@@ -103,7 +103,7 @@ export default function RankedTable({
     <section aria-label="Ranked setups" className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60' : ''}`} aria-busy={dimmed || undefined}>
       <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3 flex-wrap">
         <div className="flex items-baseline gap-3">
-          <h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">Ranked setups</h2>
+          <span className="inline-flex items-center gap-1.5"><h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">Ranked setups</h2><InfoTip id="lc-table-tip" text="All dollars are per contract. Rank is the scanner’s order after your return floor. The bar under Max profit is the credit as a share of max profit, which is what the ranking follows. In the grouped view a ticker’s head row is its scanner-best setup." /></span>
           <span className="text-[0.85rem] text-lc-ink-2 [font-variant-numeric:tabular-nums]">
             {grouped ? `${groups.length} ${groups.length === 1 ? 'ticker' : 'tickers'} · ${rows.length.toLocaleString()} setups` : `${rows.length.toLocaleString()} setups`} of {Number(totalEvaluated || 0).toLocaleString()} evaluated
           </span>
@@ -123,7 +123,6 @@ export default function RankedTable({
           </span>
         </div>
       </div>
-      <p className="px-6 pb-2 -mt-1 text-[0.8rem] text-lc-ink-2">All dollars per contract · rank = the scanner’s order after your return floor · the bar under Max profit is the credit as a share of max profit (the ranking){grouped ? " · a ticker’s head row is its scanner-best" : ''}.</p>
 
       <div ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}
         aria-label={`Ranked setups table. Arrow keys move the selection${grouped ? ', right and left expand or collapse a ticker' : ''}, Enter opens the editor.`}

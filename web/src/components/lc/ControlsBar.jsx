@@ -1,5 +1,5 @@
 import WeeksRangeSlider from '../WeeksRangeSlider'
-import { Button, Input } from './ui'
+import { Button, Input, InfoTip } from './ui'
 import { INPUT_CLASS } from './format'
 
 // The controls bar is a three-row grid: label row · input row (one baseline, 44px)
@@ -89,24 +89,6 @@ function Field({ label, htmlFor, help, error, tip, children }) {
 }
 
 // ⓘ tooltip: shows on hover and keyboard focus; the button is named, the text is its description.
-function InfoTip({ id, text }) {
-  return (
-    <span className="relative group inline-flex shrink-0">
-      <button type="button" aria-label="More about this field" aria-describedby={id}
-        className="w-4 h-4 rounded-full text-lc-ink-3 hover:text-lc-violet focus-visible:text-lc-violet grid place-items-center">
-        <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M12 11v5.5M12 7.5h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </button>
-      <span id={id} role="tooltip"
-        className="pointer-events-none absolute left-0 top-full mt-2 z-20 w-64 rounded-lc-half bg-lc-ink text-lc-card text-[0.8rem] leading-[1.45] px-3 py-2 shadow-lc-lift
-                   hidden group-hover:block group-focus-within:block">
-        {text}
-      </span>
-    </span>
-  )
-}
 
 function Stepper({ id, value, onChange, onBlur, onKeyDown, onMinus, onPlus, disabled, error, inputMode, prefix, suffix }) {
   return (
