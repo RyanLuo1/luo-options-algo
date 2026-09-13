@@ -110,7 +110,7 @@ export default function App() {
   // A new scan result re-seeds the chips, resets the selection, and resets the
   // sort override when the scan context (tickers + thresholds) changed. State
   // is adjusted during render (React's pattern); hydration is a no-op.
-  const scanCtx = hasResult ? JSON.stringify([tickersUsed, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minRoc]) : null
+  const scanCtx = hasResult ? JSON.stringify([tickersUsed, weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed]) : null
   const [seenRanked, setSeenRanked] = useState(ranked)
   if (ranked !== seenRanked) {
     setSeenRanked(ranked)
@@ -137,16 +137,18 @@ export default function App() {
     return m
   }, [rocRanked])
   // Why a ticker shows zero: the scanner's reason, or the client-side return floor.
-  const reasons = useMemo(() => {
+  const { reasons, reasonCodes } = useMemo(() => {
     const apiCounts = {}
     for (const r of ranked) apiCounts[r.ticker] = (apiCounts[r.ticker] ?? 0) + 1
     const ctx = { minCredit: Math.round((minPremiumUsed ?? minPremium) * 100), minRocPct: +(minRoc * 100).toFixed(2), minPPct: Math.round((minPProfitUsed ?? minPProfit) * 100) }
-    const out = {}
+    const reasons = {}, reasonCodes = {}
     for (const t of tickersUsed) {
       if ((counts[t] ?? 0) > 0) continue
-      out[t] = (apiCounts[t] ?? 0) > 0 ? zeroReasonText('roc', ctx) : zeroReasonText(tickerReasons?.[t], ctx)
+      const fromRoc = (apiCounts[t] ?? 0) > 0
+      reasonCodes[t] = fromRoc ? 'roc' : (tickerReasons?.[t]?.code ?? tickerReasons?.[t] ?? null)
+      reasons[t] = fromRoc ? zeroReasonText('roc', ctx) : zeroReasonText(tickerReasons?.[t], ctx)
     }
-    return out
+    return { reasons, reasonCodes }
   }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minPProfit])
   const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
@@ -193,7 +195,6 @@ export default function App() {
   const handleRun = useCallback(() => runWith(), [runWith])
 
   // No-results actions: apply the lower threshold to the controls AND rerun with it.
-  function lowerCreditAndRerun() { setMinPremium(0.50); setMinCreditStr('50'); runWith({ minPremium: 0.50 }) }
   function lowerPAndRerun()      { setMinPProfit(0.40); setMinPProfitStr('40'); runWith({ minPProfit: 0.40 }) }
   const showError = !!error && error !== dismissedError
 
@@ -370,10 +371,10 @@ export default function App() {
             </div>
           ) : (
             <NoResults
-              tickersUsed={tickersUsed} tickersSkipped={tickersSkipped} marketOpen={marketOpen} reasons={reasons}
+              tickersUsed={tickersUsed} tickersSkipped={tickersSkipped} marketOpen={marketOpen} reasons={reasons} reasonCodes={reasonCodes}
               minCredit={Math.round((minPremiumUsed ?? minPremium) * 100)} minPP={minPProfitUsed ?? minPProfit} minRocPct={+(minRoc * 100).toFixed(2)}
               onLowerRoc={() => { setMinRoc(0); setMinRocStr('0') }}
-              onLowerCredit={lowerCreditAndRerun} onLowerP={lowerPAndRerun} onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
+              onLowerP={lowerPAndRerun} onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
             />
           )}
         </div>

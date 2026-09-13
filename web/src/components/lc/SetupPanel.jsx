@@ -1,6 +1,6 @@
 import PayoffCurve from './PayoffCurve'
 import { Button, Pill } from './ui'
-import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, rowFigures } from './format'
+import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, rowFigures, rocOf } from './format'
 
 // The detail panel: the landing's setup dashboard driven by the selected row.
 export default function SetupPanel({ row, flags = [], onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook, dimmed = false }) {
@@ -27,7 +27,9 @@ export default function SetupPanel({ row, flags = [], onSave, saving = false, sa
         <div className="flex gap-1.5 flex-wrap">
           <Pill>Expires {exp.short}</Pill>
           <Pill tone="quiet">W{row.week}{exp.dte != null ? ` · ${exp.dte}d` : ''}</Pill>
-          {flags.map(fl => <Pill key={fl} tone="quiet">{fl}</Pill>)}
+          {flags.length > 3
+            ? <Pill tone="quiet" title={flags.join(' · ')}>{flags.length} macro events before expiry</Pill>
+            : flags.map(fl => <Pill key={fl} tone="quiet">{fl}</Pill>)}
         </div>
       </div>
 
@@ -42,7 +44,7 @@ export default function SetupPanel({ row, flags = [], onSave, saving = false, sa
 
       {/* Stats */}
       <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
-        <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub="per contract, up front" hi />
+        <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} hi />
         <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} is above ${row.leg_b_strike}`} />
         <Gauge p={row.p_max_profit} />
         <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub="cash to secure the put while it’s open" />
@@ -95,7 +97,7 @@ function Gauge({ p }) {
   const len = 264
   return (
     <div className="bg-lc-ground rounded-lc p-4 flex items-center gap-4 min-w-0">
-      <svg viewBox="0 0 120 70" className="w-[96px] h-auto shrink-0" fill="none" aria-hidden="true">
+      <svg viewBox="0 0 120 70" className="w-[76px] h-auto shrink-0" fill="none" aria-hidden="true">
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#EEE9FF" strokeWidth="12" strokeLinecap="round" />
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" strokeWidth="12" strokeLinecap="round" pathLength={len} strokeDasharray={len} strokeDashoffset={len * (1 - v)} />
       </svg>

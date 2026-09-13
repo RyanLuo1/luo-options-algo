@@ -27,7 +27,7 @@ try {
     return { best, chips, reasons, groupedOn, more, variants: document.querySelectorAll('tbody tr[data-kind="variant"]').length }
   })
   log('grouped by default: one best row per ticker with results, variants collapsed', g.groupedOn && g.best.length === new Set(g.best).size && g.variants === 0, `best rows ${g.best.join('/')} · expanders ${g.more.join(' | ')}`)
-  log('every scanned ticker is a chip; zero-count chips carry a cause', g.chips.length === 3 && g.reasons.every(r => /no setup cleared|liquidity|no options chain/.test(r)), g.reasons.join(' | ') || 'no zero tickers')
+  log('every scanned ticker is a chip; zero-count chips carry a cause', g.chips.length === 3 && g.reasons.every(r => /no setup cleared|missed the|delta and liquidity|no options chain/.test(r)), g.reasons.join(' | ') || 'no zero tickers')
   await page.screenshot({ path: `${OUT_DIR}/grouped-1440.png`, fullPage: true })
 
   // 2. expand a group: variants appear in algorithm order (ranks ascending), collapse hides them
@@ -70,10 +70,10 @@ try {
   // 7. no results (credit floor absurd): cause-specific card with per-ticker reasons
   await page.locator('#lc-min-credit').fill('99999')
   await page.getByRole('button', { name: /Run scan|Rescan needed/ }).click(); await waitForScan(page)
-  const none = await page.evaluate(() => ({ title: document.body.textContent.match(/No setup cleared your thresholds|every ticker was skipped/)?.[0], perTicker: (document.body.textContent.match(/no setup cleared the \$99,999 minimum/g) || []).length }))
+  const none = await page.evaluate(() => ({ title: document.body.textContent.match(/No setup cleared your thresholds|every ticker was skipped/)?.[0], perTicker: (document.body.textContent.match(/missed the \$99,999 minimum/g) || []).length }))
   log('no-results names the cause per ticker', !!none.title && none.perTicker >= 1, JSON.stringify(none))
   await page.screenshot({ path: `${OUT_DIR}/noresults-1440.png` })
-  await page.getByRole('button', { name: /Lower minimum credit/ }).click(); await waitForScan(page)
+  await page.locator('#lc-min-credit').fill('100'); await page.getByRole('button', { name: /Run scan|Rescan needed/ }).click(); await waitForScan(page)
 
   // 8. keyboard: ↓ moves selection, → expands the group, `/` focuses tickers
   await page.locator('section[aria-label="Ranked setups"] [tabindex="0"]').focus()
@@ -88,6 +88,8 @@ try {
   // 9. sort override + Back to ranked (grouped: groups reorder by their best under the sort)
   await page.getByRole('button', { name: /Credit \/ct/ }).click()
   log('Credit sort override shows "Back to ranked"', (await page.locator('text=Back to ranked').count()) === 1)
+  const heads = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"]')].map(tr => ({ t: tr.children[1].textContent.trim(), rank: Number(tr.children[0].textContent.trim()) })))
+  log('under a sort each ticker’s head row is still its scanner-best (rank 1 stays a head)', heads.some(h => h.rank === 1), heads.map(h => `${h.t}#${h.rank}`).join(' '))
   await page.getByRole('button', { name: 'Back to ranked' }).click()
   log('Back to ranked restores rank 1 first', (await page.locator('tbody tr').first().locator('td').first().textContent())?.trim() === '1')
 

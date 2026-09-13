@@ -63,7 +63,7 @@ export function Field({ label, htmlFor, help, error, className = '', children })
       )}
       {children}
       {(error || help) && (
-        <span className={`text-[0.8rem] leading-[1.5] ${error ? 'text-lc-loss font-semibold' : 'text-lc-ink-2'}`} role={error ? 'alert' : undefined}>
+        <span className={`text-[0.8rem] leading-[1.45] min-h-[2.4rem] ${error ? 'text-lc-loss font-semibold' : 'text-lc-ink-2'}`} role={error ? 'alert' : undefined}>
           {error || help}
         </span>
       )}

@@ -48,15 +48,19 @@ export const rowKey = r => `${r.ticker}-${r.expiration}-${r.leg_a_strike}-${r.le
 export const rocOf = row => (row.leg_c_strike > 0 ? row.net_premium / row.leg_c_strike : 0)
 
 /** Why a scanned ticker produced no setups, in words (API reason codes + the client-side ROC floor). */
-export function zeroReasonText(code, { minCredit, minRocPct, minPPct }) {
+export function zeroReasonText(reason, { minCredit, minRocPct, minPPct }) {
+  const code = typeof reason === 'string' ? reason : reason?.code
+  const n = k => Number(reason?.[k] ?? 0).toLocaleString('en-US')
+  const credit = `$${Number(minCredit).toLocaleString('en-US')}`
   switch (code) {
-    case 'roc':              return `no setup cleared the ${minRocPct}% return floor`
-    case 'min_credit':       return `no setup cleared the $${Number(minCredit).toLocaleString('en-US')} minimum`
-    case 'min_p':            return `no setup cleared the ${minPPct}% P(max) floor`
-    case 'min_credit_or_p':  return `no setup cleared the $${Number(minCredit).toLocaleString('en-US')} minimum or the ${minPPct}% P(max) floor`
-    case 'liquidity':        return 'liquidity guards (no leg with a live two-sided quote)'
-    case 'no_chain':         return 'no options chain returned'
-    default:                 return null
+    case 'roc':             return `no setup cleared the ${minRocPct}% return floor`
+    case 'min_credit':      return `${n('below_min_premium')} candidates all missed the ${credit} minimum`
+    case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but all missed the ${minPPct}% P(max) floor`
+    case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but missed the ${minPPct}% P(max) floor`
+    case 'no_legs':         return 'no contract met the delta and liquidity rules'
+    case 'liquidity':       return 'no contract met the delta and liquidity rules'
+    case 'no_chain':        return 'no options chain returned'
+    default:                return null
   }
 }
 

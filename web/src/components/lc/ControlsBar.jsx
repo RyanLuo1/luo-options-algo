@@ -19,7 +19,7 @@ export default function ControlsBar({
 
   return (
     <section aria-label="Scan controls" className="bg-lc-card rounded-lc shadow-lc px-6 py-5">
-      <div className="flex flex-wrap gap-x-5 gap-y-4 items-end">
+      <div className="flex flex-wrap gap-x-5 gap-y-4 items-start">
         <Field
           className="basis-[18rem] grow-[2]"
           label="Tickers or @watchlist"
@@ -46,24 +46,24 @@ export default function ControlsBar({
         </Field>
 
         {/* Min credit, $ per contract — the friction floor (the boundary divides by 100 for the API) */}
-        <Field className="basis-[11rem] grow max-lc:grow-0" label="Minimum credit · $ per contract" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter a dollar amount, 0 or more.'} help="Covers commissions and bid/ask slippage.">
+        <Field className="basis-[11rem] grow max-w-[15rem] max-lc:grow-0" label="Minimum credit · $ per contract" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter a dollar amount, 0 or more.'} help="Covers commissions and bid/ask slippage. Rescan to apply.">
           <Stepper id="lc-min-credit" value={minCreditStr} onChange={onMinCreditChange} onBlur={onMinCreditBlur} onKeyDown={enterRuns(minCreditValid)}
             onMinus={() => bumpMinCredit(-50)} onPlus={() => bumpMinCredit(+50)} disabled={loading} error={!minCreditValid} inputMode="decimal" prefix="$" />
         </Field>
 
         {/* Min return on collateral — applied client-side to the scan's rows, live */}
-        <Field className="basis-[11rem] grow max-lc:grow-0" label="Minimum return on collateral" htmlFor="lc-min-roc" error={minRocValid ? null : 'Enter a percent, 0 or more.'} help="Credit as a share of the cash the put ties up — lets cheap and expensive stocks compete fairly.">
+        <Field className="basis-[11rem] grow max-w-[15rem] max-lc:grow-0" label="Minimum return on collateral" htmlFor="lc-min-roc" error={minRocValid ? null : 'Enter a percent, 0 or more.'} help="Credit ÷ the cash the put ties up — lets cheap and expensive stocks compete fairly. Applies instantly, no rescan.">
           <Stepper id="lc-min-roc" value={minRocStr} onChange={onMinRocChange} onBlur={onMinRocBlur} onKeyDown={enterRuns(minRocValid)}
             onMinus={() => bumpMinRoc(-0.5)} onPlus={() => bumpMinRoc(+0.5)} disabled={loading} error={!minRocValid} inputMode="decimal" suffix="%" />
         </Field>
 
-        <Field className="basis-[10rem] grow max-lc:grow-0" label="Minimum P(max profit)" htmlFor="lc-min-p" error={minPProfitValid ? null : 'Whole number from 1 to 99.'} help="Chance the trade ends at max profit.">
+        <Field className="basis-[10rem] grow max-w-[14rem] max-lc:grow-0" label="Minimum P(max profit)" htmlFor="lc-min-p" error={minPProfitValid ? null : 'Whole number from 1 to 99.'} help="Chance the trade ends at max profit.">
           <Stepper id="lc-min-p" value={minPProfitStr} onChange={onMinPProfitChange} onBlur={onMinPProfitBlur} onKeyDown={enterRuns(minPProfitValid)}
             onMinus={() => bumpMinPProfit(-1)} onPlus={() => bumpMinPProfit(+1)} disabled={loading} error={!minPProfitValid} inputMode="numeric" suffix="%" />
         </Field>
 
         {/* The page's one lime action */}
-        <div className="flex flex-col gap-1.5 items-end ml-auto">
+        <div className="flex flex-col gap-1.5 items-end ml-auto self-end">
           <Button variant="primary" onClick={onRun} disabled={loading || !canRun} title={!canRun ? 'Fix the highlighted field first' : undefined}
             className={isStale ? 'ring-[3px] ring-lc-violet ring-offset-2 ring-offset-lc-card' : ''}>
             {loading ? 'Scanning…' : isStale ? 'Rescan needed' : 'Run scan'}

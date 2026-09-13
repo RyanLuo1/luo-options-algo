@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MetricBar from './MetricBar'
 import { SortIcon } from './ui'
-import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey } from './format'
+import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, rocOf } from './format'
 
 // Columns. `sort` names the accessor for user overrides; money columns sort
 // descending first. Rank is the scanner's order and is not a user sort.
@@ -45,12 +45,20 @@ export default function RankedTable({
     return [...rows].sort((a, b) => { const va = acc(a), vb = acc(b); const c = va < vb ? -1 : va > vb ? 1 : 0; return sort.dir === 'asc' ? c : -c })
   }, [rows, sort])
 
-  // Grouped: each ticker's first row in the current order is its best; the rest are variants.
+  // Grouped: each ticker's head is ALWAYS its algorithm-best row (first in `rows`, the
+  // scanner's order). A user sort reorders the groups by the head's value and the
+  // variants within a group; it never changes which row is the head.
   const groups = useMemo(() => {
     const m = new Map()
-    for (const r of sorted) { if (!m.has(r.ticker)) m.set(r.ticker, { best: r, variants: [] }); else m.get(r.ticker).variants.push(r) }
-    return [...m.values()]
-  }, [sorted])
+    for (const r of rows) { if (!m.has(r.ticker)) m.set(r.ticker, { best: r, variants: [] }); else m.get(r.ticker).variants.push(r) }
+    let list = [...m.values()]
+    if (sort && SORTABLE[sort.key]) {
+      const acc = SORTABLE[sort.key].sort
+      const cmp = (a, b) => { const va = acc(a), vb = acc(b); const c = va < vb ? -1 : va > vb ? 1 : 0; return sort.dir === 'asc' ? c : -c }
+      list = list.map(g => ({ ...g, variants: [...g.variants].sort(cmp) })).sort((a, b) => cmp(a.best, b.best))
+    }
+    return list
+  }, [rows, sort])
 
   const visible = useMemo(() => {
     if (!grouped) return sorted.map(r => ({ row: r, kind: 'flat' }))
@@ -97,7 +105,7 @@ export default function RankedTable({
         <div className="flex items-baseline gap-3">
           <h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">Ranked setups</h2>
           <span className="text-[0.85rem] text-lc-ink-2 [font-variant-numeric:tabular-nums]">
-            {rows.length.toLocaleString()} of {Number(totalEvaluated || 0).toLocaleString()} evaluated{grouped ? ` · ${groups.length} ${groups.length === 1 ? 'ticker' : 'tickers'}` : ''}
+            {grouped ? `${groups.length} ${groups.length === 1 ? 'ticker' : 'tickers'} · ${rows.length.toLocaleString()} setups` : `${rows.length.toLocaleString()} setups`} of {Number(totalEvaluated || 0).toLocaleString()} evaluated
           </span>
         </div>
         <div className="flex items-center gap-3 text-[0.85rem] flex-wrap">
@@ -115,7 +123,7 @@ export default function RankedTable({
           </span>
         </div>
       </div>
-      <p className="px-6 pb-2 -mt-1 text-[0.8rem] text-lc-ink-2">All dollars per contract · the bar under Max profit is the credit as a share of max profit (the ranking).</p>
+      <p className="px-6 pb-2 -mt-1 text-[0.8rem] text-lc-ink-2">All dollars per contract · rank = the scanner’s order after your return floor · the bar under Max profit is the credit as a share of max profit (the ranking){grouped ? " · a ticker’s head row is its scanner-best" : ''}.</p>
 
       <div ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}
         aria-label={`Ranked setups table. Arrow keys move the selection${grouped ? ', right and left expand or collapse a ticker' : ''}, Enter opens the editor.`}
@@ -149,16 +157,18 @@ export default function RankedTable({
                   onClick={() => !dimmed && onSelect?.(r)} onDoubleClick={() => !dimmed && onOpen?.(r)} aria-current={selected ? 'true' : undefined}
                   className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}>
                   <td className="px-2 max-lc:px-1.5 py-2.5">
-                    <span className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>
+                    <span title={`${r.rank} of ${rows.length} in the scanner’s order`} className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>
                   </td>
-                  <td className={`px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] ${isVariant ? 'text-lc-ink-2 pl-6' : 'text-lc-ink'}`}>{isVariant ? '↳' : r.ticker}</td>
+                  <td aria-label={r.ticker} className={`px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] ${isVariant ? 'text-lc-ink-2 pl-6' : 'text-lc-ink'}`}>{isVariant ? '↳' : r.ticker}</td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap">
                     <span className="text-lc-ink">{exp.short}</span><span className="text-lc-ink-2 max-lc:hidden"> · W{r.week}</span><span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap text-lc-ink-2 max-lc:text-[0.9rem] [font-variant-numeric:tabular-nums]">
                     {r.leg_c_strike} / <span className="text-lc-ink font-semibold">{r.leg_a_strike}</span> / {r.leg_b_strike}
                   </td>
-                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right font-bold text-lc-ink whitespace-nowrap">{fmtMoney0(f.credit)}</td>
+                  <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
+                    <div className="flex flex-col items-end"><span className="font-bold text-lc-ink">{fmtMoney0(f.credit)}</span><span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span></div>
+                  </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
                       <span className="text-lc-ink">{fmtMoney0(f.maxProfit)}</span>

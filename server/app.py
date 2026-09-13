@@ -48,15 +48,18 @@ except Exception:
 
 def _zero_reason(stats, evaluated):
     """Why a scanned ticker produced no setups, from scan_ticker's rejection counters.
-    Values: no_chain | liquidity | min_credit | min_p | min_credit_or_p."""
-    if evaluated == 0:
-        return "no_chain" if stats.get("no_chain", 0) and not stats.get("no_legs", 0) else "liquidity"
+    code: no_chain | no_legs | min_credit | min_p | min_credit_or_p, with the counters."""
     prem, pp = stats.get("below_min_premium", 0), stats.get("below_min_p", 0)
-    if prem and not pp:
-        return "min_credit"
-    if pp and not prem:
-        return "min_p"
-    return "min_credit_or_p"
+    if evaluated == 0:
+        code = "no_chain" if stats.get("no_chain", 0) and not stats.get("no_legs", 0) else "no_legs"
+    elif prem and not pp:
+        code = "min_credit"
+    elif pp and not prem:
+        code = "min_p"
+    else:
+        code = "min_credit_or_p"
+    return {"code": code, "evaluated": evaluated, "below_min_premium": prem, "below_min_p": pp,
+            "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
 
 
 def verify_token(req):
