@@ -452,7 +452,7 @@
               <li><span><span class="sell">Sell</span> 200 call</span><span>$6.20 bid</span></li>
               <li><span><span class="sell">Sell</span> 165 put</span><span>$10.60 bid</span></li>
             </ul>
-            <div class="stat-row"><span>Max profit <b class="num">$2,040</b></span><span>P(profit) <b class="num">53%</b></span><span>Collateral <b class="num">$16,500</b></span></div>
+            <div class="stat-row"><span>Max profit <b class="num">$2,040</b></span><span>Shorts worthless <b class="num">53%</b></span><span>Collateral <b class="num">$16,500</b></span></div>
           </article>
         </div>
       </div>
@@ -591,7 +591,7 @@
             <path d="M12 62 A48 48 0 0 1 108 62" stroke="#EEE9FF" stroke-width="12" stroke-linecap="round"/>
             <path class="gauge-fill" d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" stroke-width="12" stroke-linecap="round" pathLength="264"/>
           </svg>
-          <div><span class="label">Chance of max profit</span><span class="val num">53%</span><span class="sub">Based on the options’ own probabilities.</span></div>
+          <div><span class="label">Chance the short legs expire worthless</span><span class="val num">53%</span><span class="sub">The stock finishes between the put and the short call — you keep at least the credit. Chance of max profit ≈ 30%.</span></div>
         </div>
         <div class="card dash-stat hi"><span class="label">Credit collected</span><span class="val num">$540</span><span class="sub">per contract</span></div>
         <div class="card dash-stat"><span class="label">Max profit</span><span class="val num">$2,040</span><span class="sub">if NVDA is above $200</span></div>
@@ -617,7 +617,7 @@
         <div class="setup-credit">
           <div class="kpi hi"><div class="k">Credit collected</div><div class="v num">$540</div></div>
           <div class="kpi"><div class="k">Max profit</div><div class="v num">$2,040</div></div>
-          <div class="kpi"><div class="k">P(max profit)</div><div class="v num">53%</div></div>
+          <div class="kpi"><div class="k">Shorts expire worthless</div><div class="v num">53%</div></div>
           <div class="kpi"><div class="k">Collateral</div><div class="v num">$16,500</div></div>
         </div>
         <ul class="legs setup-legs num">
@@ -642,7 +642,7 @@
                 <th scope="col">Expires</th>
                 <th scope="col">Put / Call / Call</th>
                 <th scope="col" class="r">Credit</th>
-                <th scope="col" class="r">P(profit)</th>
+                <th scope="col" class="r">Shorts worthless</th>
                 <th scope="col" class="r">Collateral</th>
               </tr>
             </thead>

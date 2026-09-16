@@ -1,6 +1,6 @@
 import PayoffCurve from './PayoffCurve'
 import { Button, Pill } from './ui'
-import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence } from './format'
+import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence, shortsWorthless, pMaxApprox, upsidePerCollateral, NOT_BACKTESTED } from './format'
 
 // The detail panel: the setup dashboard, one component in two states.
 //   • open (default): live spot marker, P(max) gauge, the worst-case sentence.
@@ -15,7 +15,7 @@ import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocO
 export default function SetupPanel({
   row, flags = [], spot: spotProp, settlement = null, expired: expiredProp, statusPill = null, provenance = null,
   onSave, saving = false, saved = false, saveError = null, onEdit, onViewTradebook,
-  actions, note, dimmed = false, stickyActions = false,
+  actions, note, dimmed = false, stickyActions = false, mode = 'income',
 }) {
   if (!row) return null
   const f = rowFigures(row)
@@ -42,6 +42,7 @@ export default function SetupPanel({
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {statusPill}
+          {mode === 'upside' && <><Pill tone="quiet">Upside</Pill><Pill tone="quiet" title="The Income ranking is the backtested product; Upside is the same three legs built for a wide call spread.">{NOT_BACKTESTED}</Pill></>}
           <Pill>{expired ? `Expired ${exp.short}` : `Expires ${exp.short}`}</Pill>
           {!expired && <Pill tone="quiet">{row.week ? `W${row.week}` : ''}{row.week && exp.dte != null ? ' · ' : ''}{exp.dte != null ? `${exp.dte}d` : ''}</Pill>}
           {flags.length > 3
@@ -90,11 +91,11 @@ export default function SetupPanel({
 
           {/* Stats */}
           <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
-            <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} hi />
-            <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}`} />
+            <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={f.credit > 0.5 ? `per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral` : 'none — this setup costs nothing to open'} hi={mode !== 'upside'} />
+            <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={mode === 'upside' ? `${(upsidePerCollateral(row) * 100).toFixed(1)}% of collateral · if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}` : `if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}`} hi={mode === 'upside'} />
             {expired
               ? <Stat label="Grade pending" value="—" sub="posts after the next close" />
-              : <Gauge p={row.p_max_profit} />}
+              : <Gauge row={row} />}
             <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub={expired ? 'cash that secured the put' : 'cash to secure the put while it’s open'} />
             <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-lc:col-span-1" />
           </div>
@@ -176,8 +177,10 @@ function RealizedCard({ pnl, zone, hero = false }) {
   )
 }
 
-// Chance of max profit as a soft arc; the number carries the value.
-function Gauge({ p }) {
+// Chance the short legs expire worthless (1 − δ_B − δ_C) as a soft arc, with the
+// chance of max profit (≈ δ_B, the stock at or above the short call) beside it.
+function Gauge({ row }) {
+  const p = shortsWorthless(row)
   const v = Math.max(0, Math.min(1, p ?? 0))
   const len = 264
   return (
@@ -187,9 +190,10 @@ function Gauge({ p }) {
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" strokeWidth="12" strokeLinecap="round" pathLength={len} strokeDasharray={len} strokeDashoffset={len * (1 - v)} />
       </svg>
       <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance of max profit</span>
+        <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the short legs expire worthless</span>
         <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink">{fmtPct0(p)}</span>
-        <span className="text-[0.85rem] text-lc-ink-2">from the options’ own deltas</span>
+        <span className="text-[0.85rem] text-lc-ink-2">the stock finishes between the put and the short call — you keep at least the credit</span>
+        <span className="text-[0.85rem] text-lc-ink-2 mt-0.5">Chance of max profit <strong className="text-lc-ink font-semibold">≈ {fmtPct0(pMaxApprox(row))}</strong> <span className="text-lc-ink-3">(≈ δ of the short call)</span></span>
       </div>
     </div>
   )

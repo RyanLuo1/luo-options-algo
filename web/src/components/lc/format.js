@@ -48,21 +48,42 @@ export const rowKey = r => `${r.ticker}-${r.expiration}-${r.leg_a_strike}-${r.le
 export const rocOf = row => (row.leg_c_strike > 0 ? row.net_premium / row.leg_c_strike : 0)
 
 /** Why a scanned ticker produced no setups, in words (API reason codes + the client-side ROC floor). */
-export function zeroReasonText(reason, { minCredit, minRocPct, minPPct }) {
+export function zeroReasonText(reason, { minCredit, minRocPct, minPPct, minUpsidePct }) {
   const code = typeof reason === 'string' ? reason : reason?.code
   const n = k => Number(reason?.[k] ?? 0).toLocaleString('en-US')
   const credit = `$${Number(minCredit).toLocaleString('en-US')}`
   switch (code) {
     case 'roc':             return `no setup cleared the ${minRocPct}% return floor`
     case 'min_credit':      return `${n('below_min_premium')} candidates all missed the ${credit} minimum`
-    case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but all missed the ${minPPct}% P(max) floor`
-    case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but missed the ${minPPct}% P(max) floor`
+    case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but all missed the ${minPPct}% floor on the shorts expiring worthless`
+    case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but missed the ${minPPct}% floor on the shorts expiring worthless`
+    case 'min_upside':      return `${n('below_min_upside')} candidates cleared the credit floor but all missed ${minUpsidePct}% upside per $ of collateral`
     case 'no_legs':         return 'no contract met the delta and liquidity rules'
     case 'liquidity':       return 'no contract met the delta and liquidity rules'
     case 'no_chain':        return 'no options chain returned'
     default:                return null
   }
 }
+
+/** One collateral definition everywhere: the put strike × 100, "the cash to secure the put" (per-share basis: the put strike). */
+export const collateralOf = row => row.leg_c_strike * 100
+
+const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0))
+/** Chance both short legs expire worthless — the stock finishes between the put and the short call: 1 − δ_B − δ_C (each delta read as P(in the money)). */
+export const shortsWorthless = row => clamp01(1 - row.leg_b_delta - row.leg_c_delta)
+/** Chance of max profit — the stock at or above the short call: ≈ δ_B. */
+export const pMaxApprox = row => clamp01(row.leg_b_delta)
+/** The Upside metric: max profit ÷ collateral (per share basis cancels). */
+export const upsidePerCollateral = row => (row.leg_c_strike > 0 ? (row.net_premium + row.spread_width) / row.leg_c_strike : 0)
+/** Move to max: the rise from spot to the short call, as a share of spot. null without a spot. */
+export const moveToMax = row => (row.underlying_price > 0 ? (row.leg_b_strike - row.underlying_price) / row.underlying_price : null)
+
+/** Screener modes. Income is the validated scan; Upside is a calculator, not a recommender. */
+export const MODES = {
+  income: { label: 'Income', lead: 'Get paid to wait.', line: 'A credit up front; the short call caps the gain, the put means you may own the stock.', pick: 'Income pick' },
+  upside: { label: 'Upside', lead: 'Own the upside.',   line: 'A small credit or none, a wide call spread, the same put below.', pick: 'Upside pick' },
+}
+export const NOT_BACKTESTED = 'Not backtested — calculator only'
 
 /** The incumbent Screener metric: credit as a share of max profit. */
 export const creditShareOfMax = row => {
@@ -114,7 +135,7 @@ export function settlementSentence(row, outcome) {
   switch (outcome.outcome_type) {
     case 'expired_capped':      return `${at} — you captured the full spread (${fmtMoney0(maxP)}, max profit).`
     case 'expired_sweet_spot':  return `${at} — the long call finished in the money; you made ${fmtSigned0(pnl)} of the ${fmtMoney0(maxP)} max.`
-    case 'expired_credit_only': return `${at} — every leg expired worthless; you kept the full credit (${fmtMoney0(credit)}).`
+    case 'expired_credit_only': return credit > 0.5 ? `${at} — every leg expired worthless; you kept the full credit (${fmtMoney0(credit)}).` : `${at} — every leg expired worthless; nothing gained, nothing lost.`
     case 'expired_breakeven':   return `${at} — the put assignment cost about what the credit paid; you broke even.`
     case 'expired_loss':        return `${at} — you lost ${fmtMoney0(Math.abs(pnl))} (put assigned at ${row.leg_c_strike}).`
     default:                    return `${at} — realized ${fmtSigned0(pnl)} per contract.`
@@ -129,7 +150,7 @@ export function tradeAsSetup(t) {
     leg_b_strike: t.leg_b_strike, leg_b_prem: t.leg_b_premium, leg_b_delta: t.leg_b_delta,
     leg_c_strike: t.leg_c_strike, leg_c_prem: t.leg_c_premium, leg_c_delta: t.leg_c_delta,
     net_premium: t.net_premium, spread_width: t.spread_width, score: t.score, p_max_profit: t.p_max_profit,
-    result_id: t.result_id ?? null, scan_id: t.scan_id ?? null,
+    result_id: t.result_id ?? null, scan_id: t.scan_id ?? null, mode: t.mode ?? 'income',
   }
 }
 
