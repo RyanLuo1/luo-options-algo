@@ -559,7 +559,7 @@ def tradebook_save():
     except Exception as e:
         msg = str(e)
         if "PGRST204" in msg or ("mode" in msg and "column" in msg):
-            return jsonify({"error": "The Tradebook can’t store Upside trades until its mode column exists (docs/scan_mode_migration.sql). Income saves still work."}), 500
+            return jsonify({"error": "The Tradebook can’t store Upside trades yet. Income saves still work.", "detail": "tradebook.mode column missing — run docs/scan_mode_migration.sql"}), 500
         return jsonify({"error": "The Tradebook rejected this trade. Try again in a moment.",
                         "detail": msg, "traceback": traceback.format_exc()}), 500
 

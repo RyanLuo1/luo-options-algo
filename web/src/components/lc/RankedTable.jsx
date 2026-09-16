@@ -11,7 +11,7 @@ const TIP = {
 // Columns. `sort` names the accessor for user overrides; money columns sort
 // descending first. Rank is the scanner's order and is not a user sort.
 const COLUMNS = [
-  { key: 'rank',       label: 'Rank',              align: 'left'  },
+  { key: 'rank',       label: 'Rank',              align: 'left'  },   // Upside: 'Order' (a sorted list, not a ranking)
   { key: 'ticker',     label: 'Ticker',            align: 'left'  },
   { key: 'expiration', label: 'Expires',           align: 'left',  sort: r => r.expiration, firstDir: 'asc' },
   { key: 'strikes',    label: 'Put / Call / Call', align: 'left'  },
@@ -22,7 +22,7 @@ const COLUMNS = [
 ]
 // Upside adds one descriptive column: the rise from spot to the short call.
 const MOVE_COL = { key: 'move', label: 'Move to max', short: 'Move', wrap: true, title: 'The rise from today’s price to the short call, where max profit begins', align: 'right', sort: r => moveToMax(r) ?? Infinity, firstDir: 'asc' }
-const columnsFor = mode => (mode === 'upside' ? [...COLUMNS.slice(0, 6), MOVE_COL, ...COLUMNS.slice(6)] : COLUMNS)
+const columnsFor = mode => (mode === 'upside' ? [{ ...COLUMNS[0], label: 'Order', title: 'Sorted by max profit per $ of collateral — not a ranking' }, ...COLUMNS.slice(1, 6), MOVE_COL, ...COLUMNS.slice(6)] : COLUMNS)
 const SORTABLE = Object.fromEntries([...COLUMNS, MOVE_COL].filter(c => c.sort).map(c => [c.key, c]))
 const PAGE = 50
 
