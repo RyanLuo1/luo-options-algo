@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MetricBar from './MetricBar'
 import { Pill, SortIcon, InfoTip } from './ui'
-import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, rocOf, shortsWorthless, moveToMax, NOT_BACKTESTED } from './format'
+import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, rocOf, shortsWorthless, moveToMax } from './format'
 
 const TIP = {
   income: 'All dollars are per contract. Rank is the scanner’s order after your return floor. The bar under Max profit is the credit as a share of max profit, which is what the ranking follows. In the grouped view a ticker’s head row is its scanner-best setup.',
-  upside: 'All dollars are per contract. Upside is a calculator, not a ranking: setups are sorted by max profit per $ of collateral, the bar under Max profit. Move to max is the rise from today’s price to the short call. In the grouped view a ticker’s head row is its highest-upside setup.',
+  upside: 'All dollars are per contract. Upside setups are sorted by max profit per $ of collateral, the bar under Max profit. Move to max is the rise from today’s price to the short call. In the grouped view a ticker’s head row is its highest-upside setup.',
 }
 
 // Columns. `sort` names the accessor for user overrides; money columns sort
@@ -116,7 +116,6 @@ export default function RankedTable({
       <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3 flex-wrap">
         <div className="flex items-baseline gap-3">
           <span className="inline-flex items-center gap-1.5"><h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">{heading}</h2><InfoTip id="lc-table-tip" text={TIP[mode]} /></span>
-          {upside && <Pill tone="quiet" title="The Income ranking is the backtested product; Upside is the same three legs built for a wide call spread.">{NOT_BACKTESTED}</Pill>}
           <span className="text-[0.85rem] text-lc-ink-2 [font-variant-numeric:tabular-nums]">
             {grouped ? `${groups.length} ${groups.length === 1 ? 'ticker' : 'tickers'} · ${rows.length.toLocaleString()} setups` : `${rows.length.toLocaleString()} setups`} of {Number(totalEvaluated || 0).toLocaleString()} evaluated
           </span>

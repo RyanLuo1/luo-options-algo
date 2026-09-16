@@ -80,12 +80,11 @@ export const upsidePerCollateral = row => (row.leg_c_strike > 0 ? (row.net_premi
 /** Move to max: the rise from spot to the short call, as a share of spot. null without a spot. */
 export const moveToMax = row => (row.underlying_price > 0 ? (row.leg_b_strike - row.underlying_price) / row.underlying_price : null)
 
-/** Screener modes. Income is the validated scan; Upside is a calculator, not a recommender. */
+/** Screener modes: Income (a credit up front) and Upside (a wide call spread). */
 export const MODES = {
   income: { label: 'Income', lead: 'Get paid to wait.', line: 'A credit up front; the short call caps the gain, the put means you may own the stock.', pick: 'Income setup' },
   upside: { label: 'Upside', lead: 'Own the upside.',   line: 'A small credit or none, a wide call spread, the same put below.', pick: 'Upside setup' },
 }
-export const NOT_BACKTESTED = 'Not backtested — calculator only'
 
 /** The incumbent Screener metric: credit as a share of max profit. */
 export const creditShareOfMax = row => {

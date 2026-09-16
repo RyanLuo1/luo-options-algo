@@ -1,6 +1,6 @@
 import PayoffCurve from './PayoffCurve'
 import { Button, Pill } from './ui'
-import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence, shortsWorthless, pMaxApprox, pPutAssigned, upsidePerCollateral, NOT_BACKTESTED } from './format'
+import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence, shortsWorthless, pMaxApprox, pPutAssigned, upsidePerCollateral } from './format'
 
 // The detail panel: the setup dashboard, one component in two states.
 //   • open (default): live spot marker, P(max) gauge, the worst-case sentence.
@@ -42,7 +42,7 @@ export default function SetupPanel({
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {statusPill}
-          {mode === 'upside' && <><Pill tone="quiet">Upside</Pill><Pill tone="quiet" title="The Income ranking is the backtested product; Upside is the same three legs built for a wide call spread.">{NOT_BACKTESTED}</Pill></>}
+          {mode === 'upside' && <Pill tone="quiet">Upside</Pill>}
           <Pill>{expired ? `Expired ${exp.short}` : `Expires ${exp.short}`}</Pill>
           {!expired && <Pill tone="quiet">{row.week ? `W${row.week}` : ''}{row.week && exp.dte != null ? ' · ' : ''}{exp.dte != null ? `${exp.dte}d` : ''}</Pill>}
           {flags.length > 3

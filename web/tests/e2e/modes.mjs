@@ -1,6 +1,5 @@
 // Screener modes: Income · Upside. Mode switch swaps the gate row and help text → an Upside scan
-// stamps every row → the "Not backtested — calculator only" pill on the results header and the
-// panel → the metric bar and Move-to-max column → an Income run too → a shared ticker's group
+// stamps every row → the metric bar and Move-to-max column → an Income run too → a shared ticker's group
 // shows two head rows (Income pick / Upside pick) → the Upside head drives the panel → the gauge
 // reads "Chance the short legs expire worthless" and equals 1 − δ_B − δ_C → an Upside save lands in
 // the Tradebook labelled Upside with the right sentence. `node tests/e2e/modes.mjs [baseUrl]`
@@ -34,7 +33,6 @@ try {
   log('the Income request carries the unchanged 50% probability gate', bodies.length === 1 && JSON.parse(bodies[0]).min_p_profit === 0.5 && JSON.parse(bodies[0]).mode === 'income', bodies[0])
   const incomeRows = await page.locator('tbody tr[data-kind="best"]').count()
   log('Income scan produced rows, all stamped income', incomeRows > 0 && (await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind]:not([data-kind="other"])')].every(r => r.dataset.mode === 'income'))), `${incomeRows} tickers`)
-  log('no calculator pill in Income', !/Not backtested/.test(await body()))
   log('column header reads Shorts worthless', (await page.getByRole('button', { name: /Shorts worthless/ }).count()) === 1)
   const g = await page.evaluate(() => { const r = document.querySelector('tbody tr[data-selected="true"]'); const v = document.querySelector('[data-shorts-worthless]'); return { db: +r.dataset.db, dc: +r.dataset.dc, gauge: +v.dataset.shortsWorthless, label: v.previousElementSibling?.textContent } })
   log('gauge is the exact 1 − δ_B − δ_C with the new label', Math.abs(g.gauge - Math.max(0, 1 - g.db - g.dc)) < 0.00051 && g.label === 'Chance the short legs expire worthless', JSON.stringify(g))
@@ -54,8 +52,6 @@ try {
   log('the Upside request turns the probability gate off', bodies.length > 0 && bodies.every(b => JSON.parse(b).min_p_profit === 0 && JSON.parse(b).mode === 'upside'), bodies[0])
   // (the other mode's picks sit in the group as data-kind="other" and keep their own mode)
   log('Upside scan produced rows, all stamped upside', upsideRows > 0 && (await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind]:not([data-kind="other"])')].every(r => r.dataset.mode === 'upside'))), `${upsideRows} tickers`)
-  const pills = await page.locator('text=Not backtested — calculator only').count()
-  log('the calculator pill sits on the results header and the panel', pills === 2, `${pills} pills`)
   log('Upside is a sorted list, not a ranking: heading, status, no numerals, no lime', /Upside setups/.test(await page.textContent('h2')) && /Sorted by max profit per \$ of collateral/.test(await body()) && (await page.locator('tbody tr[data-kind="best"] td:first-child span.bg-lc-lime').count()) === 0 && (await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] td:first-child')].every(td => td.textContent.trim() === '·'))))
   const order = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] [role="img"]')].map(el => +el.getAttribute('aria-label').match(/(\d+)%$/)[1]))
   log('Upside heads are ordered by their own metric', order.every((v, i) => i === 0 || v <= order[i - 1]), order.join(' ≥ '))
@@ -70,7 +66,7 @@ try {
 
   // ── Both modes have run: each mode shows only its own results; the toggle is the side-by-side
   await page.getByRole('tab', { name: 'Income' }).click(); await page.waitForTimeout(300)
-  const incomeBack = await page.evaluate(() => ({ h2: document.querySelector('h2')?.textContent, others: document.querySelectorAll('tbody tr[data-kind="other"]').length, modes: [...new Set([...document.querySelectorAll('tbody tr[data-kind]')].map(r => r.dataset.mode))], pills: /Not backtested|Upside/.test(document.querySelector('section[aria-label$="setups"]').textContent) }))
+  const incomeBack = await page.evaluate(() => ({ h2: document.querySelector('h2')?.textContent, others: document.querySelectorAll('tbody tr[data-kind="other"]').length, modes: [...new Set([...document.querySelectorAll('tbody tr[data-kind]')].map(r => r.dataset.mode))], pills: /Upside/.test(document.querySelector('section[aria-label$="setups"]').textContent) }))
   log('switching back to Income shows Income’s own results only (kept from its last run)', incomeBack.h2 === 'Ranked setups' && incomeBack.others === 0 && incomeBack.modes.join() === 'income' && !incomeBack.pills, JSON.stringify(incomeBack))
   const fitIn = await page.evaluate(() => { const t = document.querySelector('section[aria-label$="setups"] table'); return { table: t.scrollWidth, wrap: t.parentElement.clientWidth } })
   log('the Income table fits its column at 1440', fitIn.table <= fitIn.wrap, `${fitIn.table} of ${fitIn.wrap}`)
@@ -82,7 +78,7 @@ try {
   const upsideBack = await page.evaluate(() => ({ h2: document.querySelector('h2')?.textContent, modes: [...new Set([...document.querySelectorAll('tbody tr[data-kind]')].map(r => r.dataset.mode))] }))
   log('switching back to Upside restores Upside’s own results', upsideBack.h2 === 'Upside setups' && upsideBack.modes.join() === 'upside', JSON.stringify(upsideBack))
   const panel = await page.textContent('section[aria-label^="Setup detail"]')
-  log('the Upside panel carries its pills', /Upside/.test(panel) && /Not backtested — calculator only/.test(panel))
+  log('the Upside panel carries its mode pill', /Upside/.test(panel))
   await shot('upside-pick-panel-1440')
 
   // ── Save the selected Upside setup → Tradebook
@@ -94,7 +90,7 @@ try {
     log('the saved row carries mode = upside', saved.length === 1 && saved[0].mode === 'upside', saved[0] ? `${saved[0].ticker} mode=${saved[0].mode}` : 'no row')
     await page.goto(BASE + '/tradebook', { waitUntil: 'networkidle' }); await page.waitForFunction(() => document.querySelectorAll('tbody tr').length > 0, null, { timeout: 20000 }); await page.waitForTimeout(400)
     const tb = await page.textContent('body')
-    log('the Tradebook labels it Upside in the row and the panel', (await page.locator('tbody tr').first().textContent()).includes('Upside') && /Not backtested — calculator only/.test(tb))
+    log('the Tradebook labels it Upside in the row and the panel', (await page.locator('tbody tr').first().textContent()).includes('Upside') && /Upside/.test(tb))
     await shot('tradebook-upside-1440')
     if (!ddl.scan_runs) log('scan_runs.mode column', false, 'not found — run docs/scan_mode_migration.sql (upside scans log without provenance until then)')
   }

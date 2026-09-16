@@ -511,7 +511,7 @@ A card laid out as a column with 16px gaps: a 36px violet circle badge (white di
 ### Copy conventions (decided 2026-09-15 in the Upside shape)
 - **One collateral definition everywhere.** Collateral is the put strike × 100 — "the cash to secure the put". The Collateral column, the Income return-on-collateral gate (credit ÷ collateral), both metric bars (credit ÷ max profit in Income; max profit ÷ collateral in Upside), the Upside gate, Move-to-max, and the panel's Collateral card all read `collateralOf` in `web/src/components/lc/format.js`. No screen ever shows two collateral numbers for one trade; if a future figure needs a different denominator it gets its own name, not "collateral".
 - **Probabilities say what they are.** "Chance the short legs expire worthless" is 1 − δ_B − δ_C (the stock between the put and the short call — you keep at least the credit); "Chance of max profit" is ≈ δ_B. The scanner's gate stays on the product (1 − δ_B)(1 − δ_C) and its control says "(approx.)". Never "P(max profit)" for the product.
-- **Modes wear their evidence.** Income is the backtested ranking and says nothing; Upside carries "Not backtested — calculator only" on the results header and the detail panel, and its rows are labelled "Upside" in the Tradebook. No ranking claim, no backtest figure, and no lime ever sits near an Upside result.
+- **Modes wear their name, not a verdict.** Upside rows and panels carry a quiet "Upside" pill (and the Tradebook labels Upside rows); no backtest claim or disclaimer sits near either mode (the calculator-only tag was retired 2026-09-16 as the Upside backtest neared completion). No lime ever sits near an Upside result.
 
 ### Inputs, states, and selection (decided 2026-09-12 in the Screener shape)
 
