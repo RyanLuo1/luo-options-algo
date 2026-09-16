@@ -344,7 +344,8 @@ def _exec_retry(op, what, attempts=4):
             transient = any(s in msg for s in (
                 "Connection reset", "ReadError", "WriteError", "ConnectError",
                 "ReadTimeout", "RemoteProtocolError", "timed out",
-                "Server disconnected", "ConnectionTerminated"))
+                "Server disconnected", "ConnectionTerminated",
+                "deadlock detected", "40P01"))
             if transient and i < attempts - 1:
                 wait = 2 ** i
                 print(f"  [db-retry] {what}: {msg[:90]} — retry {i + 1} "
