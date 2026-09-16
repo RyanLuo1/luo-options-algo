@@ -14,6 +14,9 @@ log('serves at the root', html.includes('One structure. Two ways to set it.'))
 const hits = BANNED.filter(re => re.test(text)).map(String)
 log('no evidence or outcome-implying language on the page', hits.length === 0, hits.join(' '))
 log('the Screener preview no longer cites a probability control', !/minimum credit and probability/i.test(text))
+log('the NVDA sample appears once per section (the compact card beside the table is gone)', !/class="card setup-card"/.test(html) && (html.match(/Sample setup · illustrative/g) || []).length === 1)
+log('the fourth tiles are shape facts, not ratios to compare', (html.match(/Stock must reach/g) || []).length === 2 && !/Upside per \$ of collateral/.test(text) && !/Return on collateral/.test(text))
+log('the dashboard and the table say Income', /What a row opens into/.test(html) && (html.match(/pill pill-quiet">Income</g) || []).length === 3)
 
 const browser = await chromium.launch()
 for (const [w, h] of [[1440, 900], [390, 844]]) {
