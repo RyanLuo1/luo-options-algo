@@ -55,8 +55,8 @@ export function zeroReasonText(reason, { minCredit, minRocPct, minPPct, minUpsid
   switch (code) {
     case 'roc':             return `no setup cleared the ${minRocPct}% return floor`
     case 'min_credit':      return Number(minCredit) === 0 ? `${n('below_min_premium')} candidates were all net debits — no true credit structure exists` : `${n('below_min_premium')} candidates all missed the ${credit} minimum`
-    case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but all missed the ${minPPct}% floor on the shorts expiring worthless`
-    case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but missed the ${minPPct}% floor on the shorts expiring worthless`
+    case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but failed the scanner’s ${minPPct}% probability rule (shorts expiring worthless, approx.)`
+    case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but failed the scanner’s ${minPPct}% probability rule`
     case 'min_upside':      return `${n('below_min_upside')} candidates cleared the credit floor but all missed ${minUpsidePct}% upside per $ of collateral`
     case 'no_legs':         return 'no contract met the delta and liquidity rules'
     case 'liquidity':       return 'no contract met the delta and liquidity rules'

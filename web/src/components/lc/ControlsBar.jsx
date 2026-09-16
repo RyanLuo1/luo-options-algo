@@ -15,7 +15,6 @@ export default function ControlsBar({
   weeksMin, weeksMax, setWeeksMin, setWeeksMax,
   minCreditStr, minCreditValid, onMinCreditChange, onMinCreditBlur, bumpMinCredit,
   minRocStr, minRocValid, onMinRocChange, onMinRocBlur, bumpMinRoc,
-  minPProfitStr, minPProfitValid, onMinPProfitChange, onMinPProfitBlur, bumpMinPProfit,
   mode = 'income', onModeChange,
   minUpsideStr, minUpsideValid, onMinUpsideChange, onMinUpsideBlur, bumpMinUpside,
 }) {
@@ -42,9 +41,7 @@ export default function ControlsBar({
         </p>
       </div>
       <div className={`lc-controls grid gap-x-5 gap-y-1.5 items-start
-                      ${mode === 'upside'
-                        ? 'grid-cols-[minmax(15rem,1.8fr)_minmax(11rem,1.1fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_auto]'
-                        : 'grid-cols-[minmax(15rem,1.8fr)_minmax(11rem,1.1fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(9rem,.9fr)_auto]'}
+                      grid-cols-[minmax(15rem,1.8fr)_minmax(11rem,1.1fr)_minmax(10rem,1fr)_minmax(11rem,1fr)_auto]
                       grid-rows-[auto_2.75rem_auto]
                       max-lc:grid-cols-[minmax(12rem,2fr)_minmax(11rem,1.2fr)_minmax(10rem,1fr)] max-lc:grid-rows-[auto_2.75rem_auto_auto_2.75rem_auto]`}>
 
@@ -82,15 +79,10 @@ export default function ControlsBar({
           </Field>
         )}
 
-        {/* Upside is a calculator: no probability gate (the gauge still shows every chance per setup). */}
-        {mode !== 'upside' && <Field label="Minimum chance shorts expire worthless (approx.)" htmlFor="lc-min-p" error={minPProfitValid ? null : '1 to 99.'}
-          tip="Gates ~5 pts above the chance the table and gauge show; rescan to apply. The scanner gates on (1 − short call delta) × (1 − short put delta), which runs a few points above the exact chance the table and gauge show (1 − δ short call − δ short put). Default 50%.">
-          <Stepper id="lc-min-p" value={minPProfitStr} onChange={onMinPProfitChange} onBlur={onMinPProfitBlur} onKeyDown={enterRuns(minPProfitValid)}
-            onMinus={() => bumpMinPProfit(-1)} onPlus={() => bumpMinPProfit(+1)} disabled={loading} error={!minPProfitValid} inputMode="numeric" suffix="%" />
-        </Field>}
+        {/* The scanner's probability gate is a strategy term, not a control: Income requests carry it unchanged (50%). */}
 
         {/* The page's one lime action, on the input row (second band's input row ≤1100) */}
-        <div className={`${mode === 'upside' ? 'col-start-5' : 'col-start-6'} row-start-2 max-lc:row-start-5 max-lc:col-start-3 max-lc:justify-self-end self-center`}>
+        <div className="col-start-5 row-start-2 max-lc:row-start-5 max-lc:col-start-3 max-lc:justify-self-end self-center">
           <Button variant="primary" onClick={onRun} disabled={loading || !canRun} title={!canRun ? 'Fix the highlighted field first' : '⌘ Enter runs from anywhere'}
             className={isStale ? 'ring-[3px] ring-lc-violet ring-offset-2 ring-offset-lc-card' : ''}>
             {loading ? 'Scanning…' : isStale ? 'Rescan needed' : 'Run scan'}

@@ -14,8 +14,8 @@ try {
   await page.waitForSelector('#lc-min-credit', { timeout: 15000 })   // the controls mount a beat after the shell
 
   // Defaults: dual-gate ($100 friction floor + 1% return on collateral), grouped view
-  const defaults = await page.evaluate(() => ({ credit: document.querySelector('#lc-min-credit')?.value, roc: document.querySelector('#lc-min-roc')?.value, p: document.querySelector('#lc-min-p')?.value }))
-  log('defaults: $100 min credit, 1% return floor, 50% P(max)', defaults.credit === '100' && defaults.roc === '1' && defaults.p === '50', JSON.stringify(defaults))
+  const defaults = await page.evaluate(() => ({ credit: document.querySelector('#lc-min-credit')?.value, roc: document.querySelector('#lc-min-roc')?.value, p: document.querySelectorAll('#lc-min-p').length }))
+  log('defaults: $100 min credit, 1% return floor, no probability control', defaults.credit === '100' && defaults.roc === '1' && defaults.p === 0, JSON.stringify(defaults))
 
   // 1. scan: grouped by default — one row per ticker, each with a real best or an explained zero
   await runScan(page, 'NVDA, AMD, MU')

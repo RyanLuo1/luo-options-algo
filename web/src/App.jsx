@@ -50,8 +50,9 @@ export default function App() {
   const [minRoc,        setMinRoc]        = useState(persisted.minRoc ?? 0.01)
   const [minRocStr,     setMinRocStr]     = useState(persisted.minRocStr ?? '1')
   const [grouped,       setGrouped]       = useState(persisted.grouped ?? true)
-  const [minPProfit,    setMinPProfit]    = useState(persisted.minPProfit ?? 0.50)
-  const [minPProfitStr, setMinPProfitStr] = useState(persisted.minPProfitStr ?? '50')
+  // The scanner's probability gate — (1 − δ_B)(1 − δ_C) ≥ 50% — is a strategy term, not a user control:
+  // Income requests carry it unchanged; Upside (a calculator) sends it off. The gauge is the probability view.
+  const MIN_P_PROFIT = 0.50
   const [tickerFilter,  setTickerFilter]  = useState(persisted.tickerFilter ?? null)
   // Sort override: null = the scanner's order. Persists across rescans of the
   // same scan context; a fresh context resets it (see below).
@@ -130,8 +131,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys] })
-  }, [tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, minPProfit, minPProfitStr, tickerFilter, sort, sortCtx, selectedKey, savedKeys])
+    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys] })
+  }, [tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys])
 
   // ── Derived rows ───────────────────────────────────────────────────────────
   // The return-on-collateral floor is applied here (the API keeps its own
@@ -151,7 +152,7 @@ export default function App() {
   const { reasons, reasonCodes } = useMemo(() => {
     const apiCounts = {}
     for (const r of ranked) apiCounts[r.ticker] = (apiCounts[r.ticker] ?? 0) + 1
-    const ctx = { minCredit: Math.round((minPremiumUsed ?? minPremium) * 100), minRocPct: +(minRoc * 100).toFixed(2), minPPct: Math.round((minPProfitUsed ?? minPProfit) * 100), minUpsidePct: +(((minUpsideUsed ?? minUpside) * 100).toFixed(2)) }
+    const ctx = { minCredit: Math.round((minPremiumUsed ?? minPremium) * 100), minRocPct: +(minRoc * 100).toFixed(2), minPPct: Math.round((minPProfitUsed ?? MIN_P_PROFIT) * 100), minUpsidePct: +(((minUpsideUsed ?? minUpside) * 100).toFixed(2)) }
     const reasons = {}, reasonCodes = {}
     for (const t of tickersUsed) {
       if ((counts[t] ?? 0) > 0) continue
@@ -160,7 +161,7 @@ export default function App() {
       reasons[t] = fromRoc ? zeroReasonText('roc', ctx) : zeroReasonText(tickerReasons?.[t], ctx)
     }
     return { reasons, reasonCodes }
-  }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minPProfit, minUpsideUsed, minUpside])
+  }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minUpsideUsed, minUpside])
   const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
 
@@ -179,17 +180,15 @@ export default function App() {
     (weeksMinUsed   !== null && weeksMin   !== weeksMinUsed)   ||
     (weeksMaxUsed   !== null && weeksMax   !== weeksMaxUsed)   ||
     (minPremiumUsed !== null && minPremium !== minPremiumUsed) ||
-    (mode === 'income' && minPProfitUsed !== null && minPProfit !== minPProfitUsed) ||
     (mode === 'upside' && minUpsideUsed !== null && minUpside !== minUpsideUsed) ||
     (!resolvedStale.error && resolvedStale.tickers.some(t => !tickersUsed.includes(t)))
   )
 
   // ── Field validity (gates every run path, including ⌘Enter) ───────────────
   const minCreditValid  = (() => { const s = minCreditStr.trim();  const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
-  const minPProfitValid = (() => { const s = minPProfitStr.trim(); const n = Number(s); return s !== '' && Number.isInteger(n) && n >= 1 && n <= 99 })()
   const minRocValid = (() => { const s = minRocStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
   const minUpsideValid = (() => { const s = minUpsideStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 && n <= 500 })()
-  const canRun = minCreditValid && (mode === 'income' ? minPProfitValid && minRocValid : minUpsideValid)
+  const canRun = minCreditValid && (mode === 'income' ? minRocValid : minUpsideValid)
 
   // ── Run scan ───────────────────────────────────────────────────────────────
   const [lastRunTickers, setLastRunTickers] = useState([])
@@ -204,12 +203,11 @@ export default function App() {
     setActiveTab('screener')
     setLastRunTickers(tickers)
     // Upside is a calculator: the probability gate is off (0); the gauge still shows every chance per setup.
-    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit: mode === 'upside' ? 0 : minPProfit, mode, minUpside, ...overrides })
-  }, [loading, canRun, tickerInput, watchlists, weeksMin, weeksMax, minPremium, minPProfit, mode, minUpside, runScan])
+    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit: mode === 'upside' ? 0 : MIN_P_PROFIT, mode, minUpside, ...overrides })
+  }, [loading, canRun, tickerInput, watchlists, weeksMin, weeksMax, minPremium, mode, minUpside, runScan])
   const handleRun = useCallback(() => runWith(), [runWith])
 
   // No-results actions: apply the lower threshold to the controls AND rerun with it.
-  function lowerPAndRerun()      { setMinPProfit(0.40); setMinPProfitStr('40'); runWith({ minPProfit: 0.40 }) }
   const showError = !!error && error !== dismissedError
 
   // A "Rerun this scan" from the Tradebook arrives as router state: prefill the
@@ -222,11 +220,10 @@ export default function App() {
     if (Number.isFinite(rerun.weeksMin)) setWeeksMin(rerun.weeksMin)
     if (Number.isFinite(rerun.weeksMax)) setWeeksMax(rerun.weeksMax)
     if (Number.isFinite(rerun.minPremium)) { setMinPremium(rerun.minPremium); setMinCreditStr(String(Math.round(rerun.minPremium * 100))) }
-    if (Number.isFinite(rerun.minPProfit)) { setMinPProfit(rerun.minPProfit); setMinPProfitStr(String(Math.round(rerun.minPProfit * 100))) }
     const runMode = rerun.mode === 'upside' ? 'upside' : 'income'
     if (runMode !== mode) setModeRaw(runMode)
     setActiveTab('screener'); setLastRunTickers(tickers); setDismissedError(null)
-    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: runMode === 'upside' ? 0 : (rerun.minPProfit ?? minPProfit), mode: runMode, minUpside })
+    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: runMode === 'upside' ? 0 : MIN_P_PROFIT, mode: runMode, minUpside })
     navigate(location.pathname, { replace: true, state: null })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rerun])
@@ -303,23 +300,6 @@ export default function App() {
     setMinUpside(parseFloat((next / 100).toFixed(6))); setMinUpsideStr(String(next))
   }
 
-  // ── Min P(max profit) ──────────────────────────────────────────────────────
-  function onMinPProfitChange(e) {
-    const raw = e.target.value.replace('%', '')
-    setMinPProfitStr(raw)
-    const n = Number(raw)
-    if (raw.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 99) setMinPProfit(parseFloat((n / 100).toFixed(4)))
-  }
-  function onMinPProfitBlur() {
-    const n = Number(minPProfitStr)
-    const clamped = !Number.isFinite(n) || minPProfitStr.trim() === '' ? Math.round(minPProfit * 100) : Math.min(99, Math.max(1, Math.round(n)))
-    setMinPProfitStr(String(clamped)); setMinPProfit(parseFloat((clamped / 100).toFixed(4)))
-  }
-  function bumpMinPProfit(delta) {
-    const next = Math.min(99, Math.max(1, Math.round(minPProfit * 100) + delta))
-    setMinPProfit(parseFloat((next / 100).toFixed(4))); setMinPProfitStr(String(next))
-  }
-
   // ── Save to Tradebook (double-insert-safe) + toast ────────────────────────
   const [saving,    setSaving]    = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -390,7 +370,6 @@ export default function App() {
             weeksMin={weeksMin} weeksMax={weeksMax} setWeeksMin={setWeeksMin} setWeeksMax={setWeeksMax}
             minCreditStr={minCreditStr} minCreditValid={minCreditValid} onMinCreditChange={onMinCreditChange} onMinCreditBlur={onMinCreditBlur} bumpMinCredit={bumpMinCredit}
             minRocStr={minRocStr} minRocValid={minRocValid} onMinRocChange={onMinRocChange} onMinRocBlur={onMinRocBlur} bumpMinRoc={bumpMinRoc}
-            minPProfitStr={minPProfitStr} minPProfitValid={minPProfitValid} onMinPProfitChange={onMinPProfitChange} onMinPProfitBlur={onMinPProfitBlur} bumpMinPProfit={bumpMinPProfit}
           />
 
           {manageOpen && (
@@ -432,9 +411,9 @@ export default function App() {
           ) : (
             <NoResults
               tickersUsed={tickersUsed} tickersSkipped={tickersSkipped} marketOpen={marketOpen} reasons={reasons} reasonCodes={reasonCodes}
-              minCredit={Math.round((minPremiumUsed ?? minPremium) * 100)} minPP={minPProfitUsed ?? minPProfit} minRocPct={+(minRoc * 100).toFixed(2)} mode={mode} minUpsidePct={+(((minUpsideUsed ?? minUpside) * 100).toFixed(2))}
+              minCredit={Math.round((minPremiumUsed ?? minPremium) * 100)} minRocPct={+(minRoc * 100).toFixed(2)} mode={mode} minUpsidePct={+(((minUpsideUsed ?? minUpside) * 100).toFixed(2))}
               onLowerRoc={() => { setMinRoc(0); setMinRocStr('0') }}
-              onLowerP={lowerPAndRerun} onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
+              onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
             />
           )}
         </div>
