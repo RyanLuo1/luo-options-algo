@@ -70,7 +70,7 @@ export function MarketClosedBanner() {
  * Cause-specific empty result. Causes, in order of what the user can do about them:
  * every ticker skipped → thresholds too strict → market closed placeholders.
  */
-export function NoResults({ tickersUsed, tickersSkipped, marketOpen, reasons = {}, reasonCodes = {}, minCredit, minPP, minRocPct = 0, onLowerP, onLowerRoc, onFocusTickers }) {
+export function NoResults({ tickersUsed, tickersSkipped, marketOpen, reasons = {}, reasonCodes = {}, minCredit, minPP, minRocPct = 0, mode = 'income', minUpsidePct = 0, onLowerP, onLowerRoc, onFocusTickers }) {
   const rocBlocked = Object.values(reasonCodes).some(c => c === 'roc')
   const byCause = new Map()
   for (const t of tickersUsed) { const c = reasons[t] ?? 'no setups in this scan'; byCause.set(c, [...(byCause.get(c) ?? []), t]) }
@@ -90,16 +90,16 @@ export function NoResults({ tickersUsed, tickersSkipped, marketOpen, reasons = {
           <h2 className="font-display font-bold text-[1.4rem] leading-[1.1] tracking-[-0.02em] mb-2">No setup cleared your thresholds</h2>
           <p className="text-lc-ink-2 leading-[1.6] max-w-[60ch] mb-3">
             Floors in force: <Pill tone="quiet" size="sm">${Number(minCredit).toLocaleString('en-US')} per contract</Pill>{' '}
-            <Pill tone="quiet" size="sm">{minRocPct}% return on collateral</Pill>{' '}
-            <Pill tone="quiet" size="sm">{Math.round(minPP * 100)}% chance of max profit</Pill>.
+            {mode === 'upside' ? <Pill tone="quiet" size="sm">{minUpsidePct}% upside per $ of collateral</Pill> : <Pill tone="quiet" size="sm">{minRocPct}% return on collateral</Pill>}{' '}
+            <Pill tone="quiet" size="sm">{Math.round(minPP * 100)}% chance the shorts expire worthless (approx.)</Pill>.
             {marketOpen === false && ' The market is closed, so quotes are the last ones printed; some names only clear during the session.'}
           </p>
           <ul className="text-[0.9rem] text-lc-ink-2 mb-4 flex flex-col gap-1">
             {[...byCause.entries()].map(([cause, ts]) => <li key={cause}><strong className="text-lc-ink font-semibold">{ts.join(', ')}</strong> — {cause}</li>)}
           </ul>
           <div className="flex gap-2 flex-wrap">
-            {rocBlocked && minRocPct > 0 && <Button size="sm" onClick={onLowerRoc}>Remove the return floor</Button>}
-            {minPP > 0.40 && <Button size="sm" onClick={onLowerP}>Lower P(max) to 40%</Button>}
+            {mode === 'income' && rocBlocked && minRocPct > 0 && <Button size="sm" onClick={onLowerRoc}>Remove the return floor</Button>}
+            {minPP > 0.40 && <Button size="sm" onClick={onLowerP}>Lower the floor to 40%</Button>}
             {tickersSkipped.length > 0 && <span className="text-[0.85rem] text-lc-ink-2 self-center">Skipped: {tickersSkipped.join(', ')}</span>}
           </div>
         </>

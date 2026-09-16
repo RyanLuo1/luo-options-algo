@@ -70,7 +70,7 @@ export default function TradebookPage() {
   function rerun(t) {
     const s = t.scan
     if (!s) return
-    navigate('/app', { state: { rerun: { tickers: s.tickers_used, weeksMin: s.weeks_min, weeksMax: s.weeks_max, minPremium: Number(s.min_premium), minPProfit: Number(s.min_p_profit) } } })
+    navigate('/app', { state: { rerun: { tickers: s.tickers_used, weeksMin: s.weeks_min, weeksMax: s.weeks_max, minPremium: Number(s.min_premium), minPProfit: Number(s.min_p_profit), mode: t.mode } } })
   }
   async function confirmDelete(t) {
     setDeleting(true)
@@ -145,6 +145,7 @@ export default function TradebookPage() {
                   spot={selected.status === 'open' ? spots[selected.ticker] ?? null : null}
                   settlement={selected.status === 'graded' ? selected.outcome : null}
                   expired={selected.status !== 'open'}
+                  mode={selected.mode}
                   statusPill={<StatusPill trade={selected} size="md" />}
                   provenance={provenance}
                   actions={actions}

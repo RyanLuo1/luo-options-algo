@@ -508,6 +508,11 @@ A card laid out as a column with 16px gaps: a 36px violet circle badge (white di
 - **Performance** → the two-curve chart from the Performance mini scaled up: violet solid for the book, `mini-bar-deep` dotted for SPY, round caps, ending level, inside a curve box; stat cards for the headline figures.
 - **Everywhere** → 24px outer radius with 18 / 12 derived inner radii; ground tiles inside white cards; money in ink, display 800, tabular, with a caption beneath.
 
+### Copy conventions (decided 2026-09-15 in the Upside shape)
+- **One collateral definition everywhere.** Collateral is the put strike × 100 — "the cash to secure the put". The Collateral column, the Income return-on-collateral gate (credit ÷ collateral), both metric bars (credit ÷ max profit in Income; max profit ÷ collateral in Upside), the Upside gate, Move-to-max, and the panel's Collateral card all read `collateralOf` in `web/src/components/lc/format.js`. No screen ever shows two collateral numbers for one trade; if a future figure needs a different denominator it gets its own name, not "collateral".
+- **Probabilities say what they are.** "Chance the short legs expire worthless" is 1 − δ_B − δ_C (the stock between the put and the short call — you keep at least the credit); "Chance of max profit" is ≈ δ_B. The scanner's gate stays on the product (1 − δ_B)(1 − δ_C) and its control says "(approx.)". Never "P(max profit)" for the product.
+- **Modes wear their evidence.** Income is the backtested ranking and says nothing; Upside carries "Not backtested — calculator only" on the results header and the detail panel, and its rows are labelled "Upside" in the Tradebook. No ranking claim, no backtest figure, and no lime ever sits near an Upside result.
+
 ### Inputs, states, and selection (decided 2026-09-12 in the Screener shape)
 
 - **Input / field:** white field, 1.5px `line` border, 12px radius (`rounded.half`), 44px tall, 14px side padding, table type. Label above in `ink-2` at label size and weight; a helper or error line beneath at the same size. Focus is the system ring (3px violet, 3px offset). Steppers keep their − and + buttons inside the field; every numeric field is tabular.

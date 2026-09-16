@@ -1,6 +1,6 @@
 import WeeksRangeSlider from '../WeeksRangeSlider'
 import { Button, Input, InfoTip } from './ui'
-import { INPUT_CLASS } from './format'
+import { INPUT_CLASS, MODES } from './format'
 
 // The controls bar is a three-row grid: label row · input row (one baseline, 44px)
 // · helper row (fixed two-line slot). Each field is a subgrid spanning the three
@@ -16,11 +16,31 @@ export default function ControlsBar({
   minCreditStr, minCreditValid, onMinCreditChange, onMinCreditBlur, bumpMinCredit,
   minRocStr, minRocValid, onMinRocChange, onMinRocBlur, bumpMinRoc,
   minPProfitStr, minPProfitValid, onMinPProfitChange, onMinPProfitBlur, bumpMinPProfit,
+  mode = 'income', onModeChange,
+  minUpsideStr, minUpsideValid, onMinUpsideChange, onMinUpsideBlur, bumpMinUpside,
 }) {
   const enterRuns = ok => e => { if (e.key === 'Enter' && !loading && ok) { e.preventDefault(); onRun() } }
 
   return (
     <section aria-label="Scan controls" className="bg-lc-card rounded-lc shadow-lc px-6 pt-5 pb-3">
+      {/* Mode: Income (the validated scan) · Upside (a calculator). Custom is a later segment. */}
+      <div className="flex items-center gap-4 flex-wrap mb-4">
+        <div role="tablist" aria-label="Screener mode" className="flex p-1.5 bg-lc-ground-deep/60 rounded-lc-plus"
+          onKeyDown={e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; e.preventDefault(); onModeChange?.(mode === 'income' ? 'upside' : 'income') }}>
+          {Object.entries(MODES).map(([id, m]) => {
+            const active = mode === id
+            return (
+              <button key={id} type="button" role="tab" id={`lc-mode-${id}`} aria-selected={active} tabIndex={active ? 0 : -1} disabled={loading} onClick={() => onModeChange?.(id)}
+                className={`h-9 px-4 rounded-lc-half font-display font-bold text-[0.95rem] whitespace-nowrap transition-colors ${active ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}>
+                {m.label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-[0.85rem] text-lc-ink-2 leading-[1.4] min-w-0" aria-live="polite">
+          <strong className="text-lc-ink font-semibold">{MODES[mode].lead}</strong><br />{MODES[mode].line}
+        </p>
+      </div>
       <div className="lc-controls grid gap-x-5 gap-y-1.5 items-start
                       grid-cols-[minmax(15rem,1.8fr)_minmax(11rem,1.1fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(9rem,.9fr)_auto]
                       grid-rows-[auto_2.75rem_2.4rem]
@@ -41,16 +61,24 @@ export default function ControlsBar({
         </Field>
 
         <Field label="Minimum credit" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter 0 or more.'} help="Rescan to apply."
-          tip="The friction floor: the credit must cover commissions and bid/ask slippage. Default $100 per contract ($1 per share).">
+          tip={mode === 'upside' ? 'Upside admits any true credit: default $0 per contract (a debit never qualifies). Raise it to demand some income too.' : 'The friction floor: the credit must cover commissions and bid/ask slippage. Default $100 per contract ($1 per share).'}>
           <Stepper id="lc-min-credit" value={minCreditStr} onChange={onMinCreditChange} onBlur={onMinCreditBlur} onKeyDown={enterRuns(minCreditValid)}
             onMinus={() => bumpMinCredit(-50)} onPlus={() => bumpMinCredit(+50)} disabled={loading} error={!minCreditValid} inputMode="decimal" prefix="$" />
         </Field>
 
-        <Field label="Minimum return on collateral" htmlFor="lc-min-roc" error={minRocValid ? null : 'Enter 0 or more.'} help="Applies instantly."
-          tip="Credit ÷ the cash the put ties up. Lets cheap and expensive stocks compete fairly. Default 1%. Filters the results you already have; no rescan.">
-          <Stepper id="lc-min-roc" value={minRocStr} onChange={onMinRocChange} onBlur={onMinRocBlur} onKeyDown={enterRuns(minRocValid)}
-            onMinus={() => bumpMinRoc(-0.5)} onPlus={() => bumpMinRoc(+0.5)} disabled={loading} error={!minRocValid} inputMode="decimal" suffix="%" />
-        </Field>
+        {mode === 'upside' ? (
+          <Field label="Minimum upside per $ of collateral" htmlFor="lc-min-upside" error={minUpsideValid ? null : '0 to 500.'} help="Rescan to apply."
+            tip="Max profit ÷ the cash to secure the put (the put strike × 100). Default 5%. The scanner applies it, so a change needs a rescan.">
+            <Stepper id="lc-min-upside" value={minUpsideStr} onChange={onMinUpsideChange} onBlur={onMinUpsideBlur} onKeyDown={enterRuns(minUpsideValid)}
+              onMinus={() => bumpMinUpside(-1)} onPlus={() => bumpMinUpside(+1)} disabled={loading} error={!minUpsideValid} inputMode="decimal" suffix="%" />
+          </Field>
+        ) : (
+          <Field label="Minimum return on collateral" htmlFor="lc-min-roc" error={minRocValid ? null : 'Enter 0 or more.'} help="Applies instantly."
+            tip="Credit ÷ the cash to secure the put (the put strike × 100). Lets cheap and expensive stocks compete fairly. Default 1%. Filters the results you already have; no rescan.">
+            <Stepper id="lc-min-roc" value={minRocStr} onChange={onMinRocChange} onBlur={onMinRocBlur} onKeyDown={enterRuns(minRocValid)}
+              onMinus={() => bumpMinRoc(-0.5)} onPlus={() => bumpMinRoc(+0.5)} disabled={loading} error={!minRocValid} inputMode="decimal" suffix="%" />
+          </Field>
+        )}
 
         <Field label="Minimum chance shorts expire worthless (approx.)" htmlFor="lc-min-p" error={minPProfitValid ? null : '1 to 99.'} help="Rescan to apply."
           tip="The scanner gates on (1 − short call delta) × (1 − short put delta), which runs a few points above the exact chance the table shows (1 − δ short call − δ short put). Default 50%.">

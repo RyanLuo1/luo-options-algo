@@ -83,6 +83,7 @@ export default function TradePage() {
       leg_b_strike: selB.strike, leg_b_premium: selB.premium, leg_b_delta: selB.delta,
       leg_c_strike: selC.strike, leg_c_premium: selC.premium, leg_c_delta: selC.delta,
       net_premium: m.net_premium, spread_width: m.spread_width, score: m.score, p_max_profit: m.p_max_profit,
+      mode: triplet.mode === 'upside' ? 'upside' : 'income',
     }
     try {
       const { data: { session } } = await supabase.auth.getSession()

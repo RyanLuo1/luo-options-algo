@@ -191,7 +191,7 @@ function Gauge({ row }) {
       </svg>
       <div className="flex flex-col gap-0.5 min-w-0">
         <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the short legs expire worthless</span>
-        <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink">{fmtPct0(p)}</span>
+        <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" data-shorts-worthless={p.toFixed(4)}>{fmtPct0(p)}</span>
         <span className="text-[0.85rem] text-lc-ink-2">the stock finishes between the put and the short call — you keep at least the credit</span>
         <span className="text-[0.85rem] text-lc-ink-2 mt-0.5">Chance of max profit <strong className="text-lc-ink font-semibold">≈ {fmtPct0(pMaxApprox(row))}</strong> <span className="text-lc-ink-3">(≈ δ of the short call)</span></span>
       </div>

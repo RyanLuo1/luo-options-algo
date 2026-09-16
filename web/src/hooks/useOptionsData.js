@@ -6,20 +6,25 @@ import { supabase } from '../lib/supabase'
 // which would trigger useEffect dependency checks in App and cause an infinite loop.
 const EMPTY = []
 
-export default function useOptionsData() {
+// Results are kept PER MODE (income · upside): each mode's last scan survives a
+// mode switch, so the grouped view can show the other mode's pick beside the
+// active one. `mode` selects which result the hook returns as `result`.
+export default function useOptionsData(mode = 'income') {
   // Hydrate persisted scan results from sessionStorage (single read on mount).
   const initial = useMemo(() => loadScreenerResults() ?? {}, [])
 
   const [status,  setStatus]  = useState(null)              // from GET /api/status
-  const [result,  setResult]  = useState(initial.result ?? null)  // risk reversal scan
+  const [results, setResults] = useState(() => initial.results ?? (initial.result ? { income: initial.result } : {}))
+  const result = results[mode] ?? null
+  const otherResult = results[mode === 'income' ? 'upside' : 'income'] ?? null
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)  // string or null
 
   // Persist scan results so they survive in-session navigation (/, /trade, /tradebook).
   // Cleared when the tab closes (sessionStorage default) or on logout (Header).
   useEffect(() => {
-    saveScreenerResults({ result })
-  }, [result])
+    saveScreenerResults({ results })
+  }, [results])
 
   // Fetch market status on mount (fast, no external calls)
   useEffect(() => {
@@ -30,7 +35,7 @@ export default function useOptionsData() {
   }, [])
 
   // ── Risk reversal scan ──────────────────────────────────────────────────────
-  const runScan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit } = {}) => {
+  const runScan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit, mode: runMode = 'income', minUpside } = {}) => {
     setLoading(true)
     setError(null)
 
@@ -41,6 +46,8 @@ export default function useOptionsData() {
       if (weeksMax   !== undefined)          body.weeks_max    = weeksMax
       if (minPremium !== undefined)          body.min_premium  = minPremium
       if (minPProfit !== undefined)          body.min_p_profit = minPProfit
+      body.mode = runMode
+      if (runMode === 'upside' && minUpside !== undefined) body.min_upside = minUpside
 
       // Forward the Supabase JWT so the server can attribute this scan in
       // scan_runs (logging is server-side, best-effort).
@@ -58,7 +65,7 @@ export default function useOptionsData() {
       if (!res.ok) {
         setError(data.error || `Server error (${res.status})`)
       } else {
-        setResult(data)
+        setResults(prev => ({ ...prev, [runMode]: data }))
         setStatus(prev => ({
           ...prev,
           market_open: data.market_open,
@@ -74,7 +81,7 @@ export default function useOptionsData() {
 
   // ── Clear results ───────────────────────────────────────────────────────────
   const clearAll = useCallback(() => {
-    setResult(null)
+    setResults({})
     setError(null)
   }, [])
 
@@ -97,6 +104,9 @@ export default function useOptionsData() {
     weeksMaxUsed:    result?.weeks_max_used   ?? null,
     minPremiumUsed:  result?.min_premium_used ?? null,
     minPProfitUsed:  result?.min_p_profit_used ?? null,
+    minUpsideUsed:   result?.min_upside_used ?? null,
+    modeUsed:        result?.mode_used ?? null,
+    otherResult,     // the other mode's last result (or null)
     totalEvaluated:  result?.total_evaluated  ?? 0,
     hasResult:       result !== null,
     // Scan provenance — propagated to tradebook saves so each saved trade

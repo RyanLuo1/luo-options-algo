@@ -113,7 +113,7 @@ export default function TradebookTable({ trades, sort, onSort, onResetSort, sele
                   onClick={() => !dimmed && onSelect?.(t)} onDoubleClick={() => !dimmed && onOpen?.(t)} aria-current={selected ? 'true' : undefined}
                   className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}>
                   <td className="px-1.5 py-2.5 whitespace-nowrap"><StatusPill trade={t} /></td>
-                  <td className="px-1.5 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink">{t.ticker}</td>
+                  <td className="px-1.5 py-2.5 font-display font-bold text-[1.05rem] text-lc-ink whitespace-nowrap">{t.ticker}{t.mode === 'upside' && <Pill tone="quiet" size="sm" className="ml-2 font-figtree font-semibold align-middle">Upside</Pill>}</td>
                   <td className="px-1.5 py-2.5 whitespace-nowrap">
                     <span className="text-lc-ink">{exp.short}</span>
                     <span className="text-lc-ink-2">{t.status === 'graded' ? ' · settled' : t.status === 'pending' ? ' · expired' : exp.dte != null ? ` · ${exp.dte}d` : ''}</span>

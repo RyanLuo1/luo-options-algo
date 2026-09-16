@@ -43,7 +43,7 @@ export default function useTradebook(user) {
         const joined = rows.map(r => {
           const outcome = outcomes.get(r.id) ?? null
           const status = r.expiration >= today ? 'open' : outcome ? 'graded' : 'pending'
-          return { ...r, outcome, status, scan: r.scan_id ? runs.get(r.scan_id) ?? null : null, result: r.result_id ? results.get(r.result_id) ?? null : null }
+          return { ...r, mode: r.mode === 'upside' ? 'upside' : 'income', outcome, status, scan: r.scan_id ? runs.get(r.scan_id) ?? null : null, result: r.result_id ? results.get(r.result_id) ?? null : null }
         })
         if (!cancelled) setTrades(joined)
       } catch (e) {
