@@ -11,8 +11,10 @@ import { BASE, OUT_DIR, ENV, log, finish, makeAccount, cleanupAccount, signIn, r
 mkdirSync(OUT_DIR, { recursive: true })
 const acct = await makeAccount('modes')
 const SUPABASE_URL = ENV.SUPABASE_URL || ENV.VITE_SUPABASE_URL, SERVICE = ENV.SUPABASE_SERVICE_KEY
-const columnExists = async t => (await fetch(`${SUPABASE_URL}/rest/v1/${t}?select=mode&limit=1`, { headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } })).ok
-const ddl = { scan_runs: await columnExists('scan_runs'), tradebook: await columnExists('tradebook') }
+// The REST schema lists each table's columns (a `select=mode` probe can't tell a missing column from a parse quirk).
+const schema = await fetch(`${SUPABASE_URL}/rest/v1/`, { headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } }).then(r => r.json()).catch(() => ({}))
+const columnExists = t => !!schema?.definitions?.[t]?.properties?.mode
+const ddl = { scan_runs: columnExists('scan_runs'), tradebook: columnExists('tradebook') }
 
 const browser = await chromium.launch()
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
@@ -77,8 +79,8 @@ try {
     log('Upside save round-trip', false, 'tradebook.mode column not found — run docs/scan_mode_migration.sql, then rerun')
   } else {
     await page.getByRole('button', { name: 'Save to Tradebook' }).click(); await page.waitForSelector('[role="status"]', { timeout: 30000 })
-    const saved = await rowsFor(acct, 'tradebook', 'ticker,mode,net_premium,spread_width')
-    log('the saved row carries mode = upside', saved.length === 1 && saved[0].mode === 'upside', JSON.stringify(saved[0]))
+    const saved = await rowsFor(acct, 'tradebook', '*')
+    log('the saved row carries mode = upside', saved.length === 1 && saved[0].mode === 'upside', saved[0] ? `${saved[0].ticker} mode=${saved[0].mode}` : 'no row')
     await page.goto(BASE + '/tradebook', { waitUntil: 'networkidle' }); await page.waitForFunction(() => document.querySelectorAll('tbody tr').length > 0, null, { timeout: 20000 }); await page.waitForTimeout(400)
     const tb = await page.textContent('body')
     log('the Tradebook labels it Upside in the row and the panel', (await page.locator('tbody tr').first().textContent()).includes('Upside') && /Not backtested — calculator only/.test(tb))
