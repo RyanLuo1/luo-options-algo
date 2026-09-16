@@ -216,7 +216,6 @@
   /* ── How it works ───────────────────────────────────────── */
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-5); }
   .step { display: flex; flex-direction: column; gap: var(--s-4); }
-  .step:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
   .step-badge {
     width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center;
     background: var(--violet); color: #fff; font-family: var(--font-display); font-weight: 700;
@@ -265,6 +264,11 @@
   .dash-leg .px { font-size: .92rem; color: var(--ink-2); }
   .curve-box { border: 1.5px solid var(--line); border-radius: calc(var(--radius) / 2 + 6px); padding: var(--s-4); }
   .curve-box svg { width: 100%; height: auto; display: block; }
+  @media (max-width: 640px) {
+    .curve-box svg text { font-size: 24px; }              /* the 600-unit viewBox renders at ~260px here */
+    .curve-box svg .ann-credit { transform: translate(-8px, -4px); }  /* user units: clear of the hollow point */
+    .curve-box svg .ann-max { transform: translate(4px, 7px); }        /* under the plateau, clear of the line */
+  }
   .curve-box .cap { display: flex; justify-content: space-between; gap: var(--s-3); font-size: .85rem; color: var(--ink-2); margin-top: var(--s-2); flex-wrap: wrap; }
   .worst { font-size: .95rem; color: var(--ink-2); margin: 0; }
   .worst strong { color: var(--ink); font-weight: 600; }
@@ -360,7 +364,7 @@
   .mode .label-row { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); }
   .mode h3 { margin: 0; }
   .mode > p { color: var(--ink-2); font-size: 1rem; margin: 0; }
-  .mode .payoff { padding-top: var(--s-2); }
+  .mode .payoff { padding-top: var(--s-2); margin-top: auto; }
   .mode .payoff svg { width: 100%; max-width: 340px; height: auto; display: block; margin-inline: auto; }
   .mode-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); margin-top: var(--s-2); }
   .mode-kpis .kpi .s { display: block; font-size: .8rem; color: var(--ink-2); margin-top: 4px; }
@@ -430,7 +434,7 @@
     <div class="hero-grid">
       <div class="hero-copy">
         <h1 id="hero-h">See what an options trade really pays, before you place it.</h1>
-        <p class="lede">Luo Capital scans large-cap stocks for Call Spread Risk Reversal setups — one three-leg structure, set for income or for upside — and prices every leg at the live bid and ask. <strong>The credit shown is the credit you could actually collect.</strong></p>
+        <p class="lede">Luo Capital scans large-cap stocks for Call Spread Risk Reversal setups — one three&#8209;leg structure, set for income or for upside — and prices every leg at the live bid and ask. <strong>The credit shown is the credit you could actually collect.</strong></p>
         <div class="cta-row">
           <a class="btn btn-primary" href="/app">
             Run a free scan
@@ -451,12 +455,12 @@
           <article class="card stack-back" aria-hidden="true">
             <div class="mini-head"><span class="ticker">AMD</span><span class="mini-meta num">Oct 17 · 5 wk</span></div>
             <div class="credit-big num">$505<small>credit per contract</small></div>
-            <div class="stat-row"><span>P(profit) <b class="num">55%</b></span><span>Collateral <b class="num">$15,000</b></span></div>
+            <div class="stat-row"><span>Shorts worthless <b class="num">55%</b></span><span>Collateral <b class="num">$15,000</b></span></div>
           </article>
           <article class="card stack-mid" aria-hidden="true">
             <div class="mini-head"><span class="ticker">META</span><span class="mini-meta num">Oct 24 · 6 wk</span></div>
             <div class="credit-big num">$1,290<small>credit per contract</small></div>
-            <div class="stat-row"><span>P(profit) <b class="num">52%</b></span></div>
+            <div class="stat-row"><span>Shorts worthless <b class="num">52%</b></span></div>
           </article>
           <article class="card stack-front">
             <div class="mini-head"><span class="ticker">NVDA</span><span class="mini-meta num">Oct 17 · 5 wk · stock $184.00</span></div>
@@ -573,12 +577,12 @@
         <div class="payoff" aria-hidden="true">
           <svg viewBox="0 0 240 120" fill="none">
             <line x1="12" y1="78" x2="228" y2="78" stroke="#E3DEE9" stroke-width="1.5" stroke-dasharray="3 5"/>
-            <path d="M14 108 L62 66 L118 66 L170 22 L226 22" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="62" cy="66" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
-            <circle cx="118" cy="66" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
-            <circle cx="170" cy="22" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
-            <text x="90" y="56" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$540 credit</text>
-            <text x="198" y="14" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$2,040 max</text>
+            <path d="M14 108 L62 62 L118 62 L170 36 L226 36" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="62" cy="62" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <circle cx="118" cy="62" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
+            <circle cx="170" cy="36" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <text x="90" y="49" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$540 credit</text>
+            <text x="198" y="24" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$2,040 max</text>
             <text x="62" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 165</text>
             <text x="118" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">buy 185</text>
             <text x="170" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 200</text>
@@ -586,7 +590,7 @@
         </div>
         <div class="mode-kpis num">
           <div class="kpi hi"><div class="k">Credit collected</div><div class="v">$540</div><span class="s">per contract, up front</span></div>
-          <div class="kpi"><div class="k">Max profit</div><div class="v">$2,040</div><span class="s">if NVDA is above $200</span></div>
+          <div class="kpi"><div class="k">Max profit</div><div class="v">$2,040</div><span class="s">per contract</span></div>
           <div class="kpi"><div class="k">Collateral</div><div class="v">$16,500</div><span class="s">the cash to secure the put</span></div>
           <div class="kpi"><div class="k">Stock must reach</div><div class="v">$200</div><span class="s">+8.7% from $184, for max profit</span></div>
         </div>
@@ -598,12 +602,12 @@
         <div class="payoff" aria-hidden="true">
           <svg viewBox="0 0 240 120" fill="none">
             <line x1="12" y1="78" x2="228" y2="78" stroke="#E3DEE9" stroke-width="1.5" stroke-dasharray="3 5"/>
-            <path d="M14 110 L44 72 L106 72 L204 22 L226 22" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="44" cy="72" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
-            <circle cx="106" cy="72" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
+            <path d="M14 110 L44 70 L106 70 L204 22 L226 22" stroke="#6547E6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="44" cy="70" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
+            <circle cx="106" cy="70" r="5" fill="#fff" stroke="#6547E6" stroke-width="3"/>
             <circle cx="204" cy="22" r="5" fill="#D4F53C" stroke="#15121A" stroke-width="3"/>
-            <text x="75" y="62" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$60 credit</text>
-            <text x="196" y="14" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$5,060 max</text>
+            <text x="82" y="57" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$60 credit</text>
+            <text x="196" y="10" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">+$5,060 max</text>
             <text x="44" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 165</text>
             <text x="106" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#6547E6" text-anchor="middle">buy 185</text>
             <text x="204" y="114" font-family="Figtree, sans-serif" font-size="11" font-weight="600" fill="#15121A" text-anchor="middle">sell 235</text>
@@ -611,7 +615,7 @@
         </div>
         <div class="mode-kpis num">
           <div class="kpi"><div class="k">Credit collected</div><div class="v">$60</div><span class="s">per contract, up front</span></div>
-          <div class="kpi hi"><div class="k">Max profit</div><div class="v">$5,060</div><span class="s">if NVDA is above $235</span></div>
+          <div class="kpi hi"><div class="k">Max profit</div><div class="v">$5,060</div><span class="s">per contract</span></div>
           <div class="kpi"><div class="k">Collateral</div><div class="v">$16,500</div><span class="s">the cash to secure the put</span></div>
           <div class="kpi"><div class="k">Stock must reach</div><div class="v">$235</div><span class="s">+27.7% from $184, for max profit</span></div>
         </div>
@@ -653,8 +657,8 @@
             <text x="195" y="222" font-size="12" text-anchor="middle" fill="#5A5266" font-family="Figtree, sans-serif">$165</text>
             <text x="335" y="222" font-size="12" text-anchor="middle" fill="#5A5266" font-family="Figtree, sans-serif">$185</text>
             <text x="440" y="222" font-size="12" text-anchor="middle" fill="#5A5266" font-family="Figtree, sans-serif">$200</text>
-            <text x="265" y="78" font-size="12" text-anchor="middle" fill="#6547E6" font-weight="600" font-family="Figtree, sans-serif">+$540 credit</text>
-            <text x="510" y="44" font-size="12" text-anchor="middle" fill="#6547E6" font-weight="600" font-family="Figtree, sans-serif">+$2,040 max</text>
+            <text class="ann-credit" x="265" y="78" font-size="12" text-anchor="middle" fill="#6547E6" font-weight="600" font-family="Figtree, sans-serif">+$540 credit</text>
+            <text class="ann-max" x="510" y="44" font-size="12" text-anchor="middle" fill="#6547E6" font-weight="600" font-family="Figtree, sans-serif">+$2,040 max</text>
           </svg>
           <div class="cap"><span>Payoff at expiration, per contract</span><span>Stock price →</span></div>
         </div>
@@ -685,7 +689,7 @@
     </div>
     <div class="output-grid">
       <article class="card table-card" aria-label="Sample ranked results">
-        <div class="label-row"><span><span class="pill pill-quiet">Income</span> <span class="pill">Sample scan · illustrative</span></span><span class="mini-meta">Ranked by credit per dollar of spread</span></div>
+        <div class="label-row"><span><span class="pill pill-quiet">Income</span> <span class="pill">Sample scan · illustrative</span></span><span class="mini-meta">Ranked by credit as a share of max profit</span></div>
         <div class="table-scroll">
           <table class="num">
             <thead>

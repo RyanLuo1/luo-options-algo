@@ -16,6 +16,8 @@ log('no evidence or outcome-implying language on the page', hits.length === 0, h
 log('the Screener preview no longer cites a probability control', !/minimum credit and probability/i.test(text))
 log('the NVDA sample appears once per section (the compact card beside the table is gone)', !/class="card setup-card"/.test(html) && (html.match(/Sample setup · illustrative/g) || []).length === 1)
 log('the fourth tiles are shape facts, not ratios to compare', (html.match(/Stock must reach/g) || []).length === 2 && !/Upside per \$ of collateral/.test(text) && !/Return on collateral/.test(text))
+log('no P(profit) survives on the page', !/P\(profit\)/.test(text))
+log('the table ranks by the app\'s own caption', /Ranked by credit as a share of max profit/.test(text))
 log('the dashboard and the table say Income', /What a row opens into/.test(html) && (html.match(/pill pill-quiet">Income</g) || []).length === 3)
 
 const browser = await chromium.launch()
