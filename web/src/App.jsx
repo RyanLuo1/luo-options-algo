@@ -179,7 +179,7 @@ export default function App() {
     (weeksMinUsed   !== null && weeksMin   !== weeksMinUsed)   ||
     (weeksMaxUsed   !== null && weeksMax   !== weeksMaxUsed)   ||
     (minPremiumUsed !== null && minPremium !== minPremiumUsed) ||
-    (minPProfitUsed !== null && minPProfit !== minPProfitUsed) ||
+    (mode === 'income' && minPProfitUsed !== null && minPProfit !== minPProfitUsed) ||
     (mode === 'upside' && minUpsideUsed !== null && minUpside !== minUpsideUsed) ||
     (!resolvedStale.error && resolvedStale.tickers.some(t => !tickersUsed.includes(t)))
   )
@@ -189,7 +189,7 @@ export default function App() {
   const minPProfitValid = (() => { const s = minPProfitStr.trim(); const n = Number(s); return s !== '' && Number.isInteger(n) && n >= 1 && n <= 99 })()
   const minRocValid = (() => { const s = minRocStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
   const minUpsideValid = (() => { const s = minUpsideStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 && n <= 500 })()
-  const canRun = minCreditValid && minPProfitValid && (mode === 'income' ? minRocValid : minUpsideValid)
+  const canRun = minCreditValid && (mode === 'income' ? minPProfitValid && minRocValid : minUpsideValid)
 
   // ── Run scan ───────────────────────────────────────────────────────────────
   const [lastRunTickers, setLastRunTickers] = useState([])
@@ -203,7 +203,8 @@ export default function App() {
     setDismissedError(null)
     setActiveTab('screener')
     setLastRunTickers(tickers)
-    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit, mode, minUpside, ...overrides })
+    // Upside is a calculator: the probability gate is off (0); the gauge still shows every chance per setup.
+    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit: mode === 'upside' ? 0 : minPProfit, mode, minUpside, ...overrides })
   }, [loading, canRun, tickerInput, watchlists, weeksMin, weeksMax, minPremium, minPProfit, mode, minUpside, runScan])
   const handleRun = useCallback(() => runWith(), [runWith])
 
@@ -225,7 +226,7 @@ export default function App() {
     const runMode = rerun.mode === 'upside' ? 'upside' : 'income'
     if (runMode !== mode) setModeRaw(runMode)
     setActiveTab('screener'); setLastRunTickers(tickers); setDismissedError(null)
-    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: rerun.minPProfit ?? minPProfit, mode: runMode, minUpside })
+    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: runMode === 'upside' ? 0 : (rerun.minPProfit ?? minPProfit), mode: runMode, minUpside })
     navigate(location.pathname, { replace: true, state: null })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rerun])

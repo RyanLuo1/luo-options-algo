@@ -91,7 +91,7 @@ export function NoResults({ tickersUsed, tickersSkipped, marketOpen, reasons = {
           <p className="text-lc-ink-2 leading-[1.6] max-w-[60ch] mb-3">
             Floors in force: <Pill tone="quiet" size="sm">${Number(minCredit).toLocaleString('en-US')} per contract</Pill>{' '}
             {mode === 'upside' ? <Pill tone="quiet" size="sm">{minUpsidePct}% upside per $ of collateral</Pill> : <Pill tone="quiet" size="sm">{minRocPct}% return on collateral</Pill>}{' '}
-            <Pill tone="quiet" size="sm">{Math.round(minPP * 100)}% chance the shorts expire worthless (approx.)</Pill>.
+            {mode !== 'upside' && <Pill tone="quiet" size="sm">{Math.round(minPP * 100)}% chance the shorts expire worthless (approx.)</Pill>}{mode !== 'upside' && '.'}
             {marketOpen === false && ' The market is closed, so quotes are the last ones printed; some names only clear during the session.'}
           </p>
           <ul className="text-[0.9rem] text-lc-ink-2 mb-4 flex flex-col gap-1">
@@ -99,7 +99,7 @@ export function NoResults({ tickersUsed, tickersSkipped, marketOpen, reasons = {
           </ul>
           <div className="flex gap-2 flex-wrap">
             {mode === 'income' && rocBlocked && minRocPct > 0 && <Button size="sm" onClick={onLowerRoc}>Remove the return floor</Button>}
-            {minPP > 0.40 && <Button size="sm" onClick={onLowerP}>Lower the floor to 40%</Button>}
+            {mode !== 'upside' && minPP > 0.40 && <Button size="sm" onClick={onLowerP}>Lower the floor to 40%</Button>}
             {tickersSkipped.length > 0 && <span className="text-[0.85rem] text-lc-ink-2 self-center">Skipped: {tickersSkipped.join(', ')}</span>}
           </div>
         </>
