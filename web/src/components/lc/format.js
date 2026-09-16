@@ -71,6 +71,8 @@ export const collateralOf = row => row.leg_c_strike * 100
 const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0))
 /** Chance both short legs expire worthless — the stock finishes between the put and the short call: 1 − δ_B − δ_C (each delta read as P(in the money)). */
 export const shortsWorthless = row => clamp01(1 - row.leg_b_delta - row.leg_c_delta)
+/** Chance the put is assigned — the stock at or below the put: ≈ δ_C (the loss zone). */
+export const pPutAssigned = row => clamp01(row.leg_c_delta)
 /** Chance of max profit — the stock at or above the short call: ≈ δ_B. */
 export const pMaxApprox = row => clamp01(row.leg_b_delta)
 /** The Upside metric: max profit ÷ collateral (per share basis cancels). */

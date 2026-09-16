@@ -1,6 +1,6 @@
 import PayoffCurve from './PayoffCurve'
 import { Button, Pill } from './ui'
-import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence, shortsWorthless, pMaxApprox, upsidePerCollateral, NOT_BACKTESTED } from './format'
+import { fmtMoney0, fmtMoney2, fmtPct0, fmtSigned0, expiryInfo, rowFigures, rocOf, zoneLabel, settlementSentence, shortsWorthless, pMaxApprox, pPutAssigned, upsidePerCollateral, NOT_BACKTESTED } from './format'
 
 // The detail panel: the setup dashboard, one component in two states.
 //   • open (default): live spot marker, P(max) gauge, the worst-case sentence.
@@ -190,7 +190,7 @@ function Gauge({ row }) {
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#EEE9FF" strokeWidth="12" strokeLinecap="round" />
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" strokeWidth="12" strokeLinecap="round" pathLength={len} strokeDasharray={len} strokeDashoffset={len * (1 - v)} />
       </svg>
-      <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-x-6 gap-y-1 flex-1 min-w-0">
+      <div className="grid grid-cols-[1.3fr_1fr_1fr] max-lc:grid-cols-1 gap-x-5 gap-y-1 flex-1 min-w-0">
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the short legs expire worthless</span>
           <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" data-shorts-worthless={p.toFixed(4)}>{fmtPct0(p)}</span>
@@ -199,7 +199,11 @@ function Gauge({ row }) {
           <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance of max profit</span>
           <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" title="≈ the delta of the short call: the stock at or above it">≈ {fmtPct0(pMaxApprox(row))}</span>
         </div>
-        <span className="col-span-2 max-lc:col-span-1 text-[0.85rem] text-lc-ink-2">the stock finishes between the put and the short call — you keep at least the credit</span>
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the put is assigned</span>
+          <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" title="≈ the delta of the put: the stock at or below it — the loss zone">≈ {fmtPct0(pPutAssigned(row))}</span>
+        </div>
+        <span className="col-span-3 max-lc:col-span-1 text-[0.85rem] text-lc-ink-2">the three add up: worthless shorts keep at least the credit, the short call caps the win, the put is where you own the stock</span>
       </div>
     </div>
   )

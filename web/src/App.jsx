@@ -111,7 +111,7 @@ export default function App() {
   // ── Scan data (unchanged hook) ─────────────────────────────────────────────
   const {
     marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped, tickerReasons,
-    weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minUpsideUsed,
+    weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minUpsideUsed, otherResult,
     totalEvaluated, hasResult, scanId, loading, error, runScan,
   } = useOptionsData(mode)
   function setMode(next) { if (next === mode || loading) return; setModeRaw(next); setSelectedKey(null); setTickerFilter(null) }
@@ -407,7 +407,7 @@ export default function App() {
           {hasResult && marketOpen === false && <MarketClosedBanner />}
 
           {!hasResult ? (
-            !loading && <FirstRun onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
+            !loading && <FirstRun mode={mode} otherHasResults={!!otherResult} onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
           ) : tableRows.length === 0 && rocRanked.length > 0 ? (
             <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the tickers you removed' : activeTickers.join(', '))} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
           ) : tableRows.length > 0 ? (
@@ -467,13 +467,16 @@ function parseMacro(s) {
 }
 
 // First-run empty state: what a scan does, example tickers, the watchlist hint. No developer text.
-function FirstRun({ onExample, onManage }) {
+function FirstRun({ mode = 'income', otherHasResults = false, onExample, onManage }) {
+  const upside = mode === 'upside'
   return (
     <Card className="max-w-[52rem]" padding="p-8">
-      <h2 className="font-display font-bold text-[1.6rem] leading-[1.1] tracking-[-0.02em] text-lc-ink mb-2">Run your first scan</h2>
+      <h2 className="font-display font-bold text-[1.6rem] leading-[1.1] tracking-[-0.02em] text-lc-ink mb-2">{upside ? 'Run an Upside scan' : otherHasResults ? 'Run an Income scan' : 'Run your first scan'}</h2>
       <p className="text-lc-ink-2 leading-[1.6] max-w-[60ch] mb-5">
-        Type a few tickers above and run the scan. For each one, the screener builds every three-leg credit trade for the next
-        1 to 12 weekly expirations, prices each leg at the real bid or ask, and ranks the ones that pay a credit up front.
+        {upside
+          ? 'Type a few tickers above and run the scan. For each one, the calculator builds the same three legs with a wide call spread — a small credit or none, most of the payoff in the ramp — and sorts them by max profit per $ of collateral. Nothing here is a ranking or a backtest.'
+          : 'Type a few tickers above and run the scan. For each one, the screener builds every three-leg credit trade for the next 1 to 12 weekly expirations, prices each leg at the real bid or ask, and ranks the ones that pay a credit up front.'}
+        {otherHasResults && <> <span className="text-lc-ink font-semibold">Your {upside ? 'Income' : 'Upside'} results are kept</span> — switch back any time.</>}
       </p>
       <div className="flex items-center gap-2 flex-wrap mb-5">
         <span className="text-[0.85rem] font-semibold text-lc-ink-2 mr-1">Try</span>

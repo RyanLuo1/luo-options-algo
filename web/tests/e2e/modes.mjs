@@ -36,7 +36,7 @@ try {
   log('column header reads Shorts worthless', (await page.getByRole('button', { name: /Shorts worthless/ }).count()) === 1)
   const g = await page.evaluate(() => { const r = document.querySelector('tbody tr[data-selected="true"]'); const v = document.querySelector('[data-shorts-worthless]'); return { db: +r.dataset.db, dc: +r.dataset.dc, gauge: +v.dataset.shortsWorthless, label: v.previousElementSibling?.textContent } })
   log('gauge is the exact 1 − δ_B − δ_C with the new label', Math.abs(g.gauge - Math.max(0, 1 - g.db - g.dc)) < 0.00051 && g.label === 'Chance the short legs expire worthless', JSON.stringify(g))
-  log('gauge shows Chance of max profit ≈ δ_B', /Chance of max profit\s*≈ \d+%/.test(await page.textContent('section[aria-label^="Setup detail"]')))
+  log('gauge shows Chance of max profit ≈ δ_B and Chance the put is assigned ≈ δ_C', /Chance of max profit\s*≈ \d+%/.test(await page.textContent('section[aria-label^="Setup detail"]')) && /Chance the put is assigned\s*≈ \d+%/.test(await page.textContent('section[aria-label^="Setup detail"]')))
   const incomeTickers = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] td:nth-child(2)')].map(td => td.getAttribute('aria-label')))
   await shot('income-1440')
 
@@ -44,7 +44,7 @@ try {
   await page.getByRole('tab', { name: 'Upside' }).click(); await page.waitForTimeout(200)
   log('Upside help text', /Own the upside\./.test(await page.textContent('section[aria-label="Scan controls"]')))
   log('Upside gate row: minimum upside per $ of collateral at 5%, credit at $0', (await page.locator('#lc-min-upside').inputValue()) === '5' && (await page.locator('#lc-min-credit').inputValue()) === '0' && (await page.locator('#lc-min-roc').count()) === 0)
-  log('Upside has no results yet: the first-run prompt shows', (await page.locator('tbody tr').count()) === 0)
+  log('Upside has no results yet: its own prompt shows and says Income’s results are kept', (await page.locator('tbody tr').count()) === 0 && /Run an Upside scan/.test(await body()) && /Your Income results are kept/.test(await body()))
   await page.getByRole('button', { name: /Run scan/ }).click()
   await page.waitForFunction(() => document.querySelector('tbody tr[data-kind]') || /No setup cleared/.test(document.body.textContent), null, { timeout: 120000 }); await page.waitForTimeout(400)
   const upsideRows = await page.locator('tbody tr[data-kind="best"]').count()
