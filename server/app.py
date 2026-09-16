@@ -21,6 +21,15 @@ from options_screener import get_next_fridays, massive_client, TICKERS as DEFAUL
 from event_filter import load_events, get_macro_events, get_earnings_flag
 from screener import scan_ticker, MAX_SPREAD_PCT
 
+# Screener modes. Income is today's validated scan (no extra scan_ticker kwargs —
+# byte-identical to the cron/replay/CLI path). Upside is the same three legs
+# built for a wide call spread and a small credit; a calculator, not a
+# recommender, and never part of the research corpus.
+SCAN_MODES = {
+    "income": {"kwargs": {},                                              "min_premium": 5.00},
+    "upside": {"kwargs": {"leg_b_delta": (0.05, 0.20), "min_upside": 0.05}, "min_premium": 0.00},
+}
+
 WEB_DIST = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist"
 )
@@ -49,9 +58,11 @@ except Exception:
 def _zero_reason(stats, evaluated):
     """Why a scanned ticker produced no setups, from scan_ticker's rejection counters.
     code: no_chain | no_legs | min_credit | min_p | min_credit_or_p, with the counters."""
-    prem, pp = stats.get("below_min_premium", 0), stats.get("below_min_p", 0)
+    prem, pp, up = stats.get("below_min_premium", 0), stats.get("below_min_p", 0), stats.get("below_min_upside", 0)
     if evaluated == 0:
         code = "no_chain" if stats.get("no_chain", 0) and not stats.get("no_legs", 0) else "no_legs"
+    elif up and not prem and not pp:
+        code = "min_upside"
     elif prem and not pp:
         code = "min_credit"
     elif pp and not prem:
@@ -59,7 +70,7 @@ def _zero_reason(stats, evaluated):
     else:
         code = "min_credit_or_p"
     return {"code": code, "evaluated": evaluated, "below_min_premium": prem, "below_min_p": pp,
-            "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
+            "below_min_upside": up, "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
 
 
 def verify_token(req):
@@ -174,7 +185,7 @@ def _get_market_context():
 def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
                  weeks_min, weeks_max, min_premium, min_p_profit,
                  ranked, total_evaluated, market_open, elapsed_ms,
-                 error_message, market_context):
+                 error_message, market_context, mode="income"):
     """
     Persist a scan run and all produced triplets.
 
@@ -203,6 +214,10 @@ def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
             "vix":               market_context.get("vix")       if market_context else None,
             "spy_price":         market_context.get("spy_price") if market_context else None,
         }
+        # scan_runs.mode (docs/scan_mode_migration.sql): only written for non-income
+        # scans, so income logging is byte-identical before and after the column exists.
+        if mode != "income":
+            run_row["mode"] = mode
         run_resp = _supabase.table("scan_runs").insert(run_row).execute()
         if not run_resp.data:
             return None, []
@@ -302,8 +317,19 @@ def run():
     requested_tickers   = body.get("tickers")
     requested_weeks_min = body.get("weeks_min", 1)
     requested_weeks_max = body.get("weeks_max", 12)
-    requested_min_prem  = body.get("min_premium", 5.00)
+    requested_mode      = body.get("mode", "income")
+    if requested_mode not in SCAN_MODES:
+        return jsonify({"error": "mode must be 'income' or 'upside'"}), 400
+    mode_cfg = SCAN_MODES[requested_mode]
+    requested_min_prem  = body.get("min_premium", mode_cfg["min_premium"])
     requested_min_pp    = body.get("min_p_profit", 0.50)
+    # Upside only: the floor on max profit ÷ collateral (per share) is a request parameter (Custom later).
+    scan_kwargs = dict(mode_cfg["kwargs"])
+    if requested_mode == "upside":
+        requested_min_upside = body.get("min_upside", scan_kwargs["min_upside"])
+        if not isinstance(requested_min_upside, (int, float)) or not (0 <= requested_min_upside <= 5):
+            return jsonify({"error": "min_upside must be a number between 0 and 5"}), 400
+        scan_kwargs["min_upside"] = float(requested_min_upside)
 
     # ── Validate (400 errors are not logged to scan_runs) ────────
     if not isinstance(requested_weeks_min, int) or not (1 <= requested_weeks_min <= 12):
@@ -374,7 +400,10 @@ def run():
                 float(requested_min_prem),
                 min_p_profit=float(requested_min_pp),
                 stats=stats,
+                **scan_kwargs,   # empty for Income: the call is exactly the pre-mode call
             )
+            for t in triplets:
+                t["mode"] = requested_mode
             total_evaluated += evaluated
             all_triplets.extend(triplets)
             if not triplets:
@@ -395,6 +424,7 @@ def run():
             weeks_max          = requested_weeks_max,
             min_premium        = float(requested_min_prem),
             min_p_profit       = float(requested_min_pp),
+            mode               = requested_mode,
             ranked             = ranked,
             total_evaluated    = total_evaluated,
             market_open        = is_open,
@@ -451,6 +481,9 @@ def run():
             "weeks_max_used":       requested_weeks_max,
             "min_premium_used":     float(requested_min_prem),
             "min_p_profit_used":    float(requested_min_pp),
+            "mode_used":            requested_mode,
+            "min_upside_used":      scan_kwargs.get("min_upside"),
+            "leg_b_delta_used":     list(scan_kwargs.get("leg_b_delta", (0.20, 0.40))),
             "elapsed_ms":           elapsed_ms,
         })
 
@@ -465,6 +498,7 @@ def run():
             weeks_max          = requested_weeks_max,
             min_premium        = float(requested_min_prem),
             min_p_profit       = float(requested_min_pp),
+            mode               = requested_mode,
             ranked             = [],
             total_evaluated    = 0,
             market_open        = is_open,
@@ -513,6 +547,11 @@ def tradebook_save():
     insert_row["scan_id"]   = scan_id
     insert_row["result_id"] = result_id
     insert_row.pop("id", None)  # never accept a client-supplied PK
+    # tradebook.mode (docs/scan_mode_migration.sql): only written for upside saves,
+    # so income saves are unchanged before and after the column exists.
+    mode = insert_row.pop("mode", None)
+    if mode == "upside":
+        insert_row["mode"] = "upside"
 
     try:
         ins = _supabase.table("tradebook").insert(insert_row).execute()
