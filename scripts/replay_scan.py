@@ -635,11 +635,15 @@ def main():
                     help="universe JSON to scan (default data/universe.json; "
                          "pass data/universe_extract.json for the 240-name "
                          "expansion test — '_'-prefixed groups are skipped)")
-    ap.add_argument("--source-tag", choices=["backtest2", "backtest3"],
+    ap.add_argument("--source-tag", choices=["backtest2", "backtest3", "backtest5"],
                     default="backtest2",
                     help="source prefix for --v2 writes (backtest3 = the "
                          "prespecified 240-name universe-expansion run; run "
                          "docs/backtest3_migration.sql first)")
+    ap.add_argument("--min-pp", type=float, default=None,
+                    help="override min P(max profit) (production 0.50; 0 = "
+                         "the prespecified no-gate run -> pair with "
+                         "--source-tag backtest5 and its migration)")
     ap.add_argument("--variant", choices=["upside"], default=None,
                     help="'upside' = the prespecified wide-spread variant "
                          "(leg B Δ0.05–0.20; gate credit ≥ $0 AND max-profit/"
@@ -695,6 +699,8 @@ def main():
         for slot in slots:
             replay_slot(ds, slot, supabase, top_n=args.top_n, write=args.write,
                         v2=args.v2, min_premium=min_prem,
+                        min_pp=(args.min_pp if args.min_pp is not None
+                                else DEFAULT_MIN_PP),
                         sleep_s=args.sleep, spot_source=args.spot_source,
                         universe_path=args.universe, source_tag=args.source_tag,
                         variant=args.variant)
