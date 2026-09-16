@@ -54,6 +54,8 @@ try {
   log('the Move to max column is present', (await page.getByRole('button', { name: /Move to max/ }).count()) === 1 && /\+\d+\.\d%/.test(await page.textContent('tbody')))
   const up = await page.evaluate(() => { const r = document.querySelector('tbody tr[data-selected="true"]'); return { db: +r.dataset.db } })
   log('Upside rows use the wide window (δ_B ≤ 0.20)', up.db <= 0.2001, `δ_B ${up.db}`)
+  const fitUp = await page.evaluate(() => { const t = document.querySelector('section[aria-label="Ranked setups"] table'); return { table: t.scrollWidth, wrap: t.parentElement.clientWidth } })
+  log('the Upside table fits its column at 1440 (Move to max included)', fitUp.table <= fitUp.wrap, `${fitUp.table} of ${fitUp.wrap}`)
   await shot('upside-1440')
   const upsideTickers = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] td:nth-child(2)')].map(td => td.getAttribute('aria-label')))
 
@@ -62,6 +64,8 @@ try {
   const shared = incomeTickers.filter(t => upsideTickers.includes(t))
   const others = await page.locator('tbody tr[data-kind="other"]').count()
   log('shared tickers show two head rows (Income pick / Upside pick)', shared.length > 0 && others === shared.length && /Income pick/.test(await page.textContent('tbody')) && /Upside pick/.test(await page.textContent('tbody')), `${shared.length} shared, ${others} second heads`)
+  const fitIn = await page.evaluate(() => { const t = document.querySelector('section[aria-label="Ranked setups"] table'); return { table: t.scrollWidth, wrap: t.parentElement.clientWidth } })
+  log('the Income table with second heads fits its column at 1440', fitIn.table <= fitIn.wrap, `${fitIn.table} of ${fitIn.wrap}`)
   await shot('both-1440')
   await page.locator('tbody tr[data-kind="other"]').first().click(); await page.waitForTimeout(300)
   const panel = await page.textContent('section[aria-label^="Setup detail"]')

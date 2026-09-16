@@ -415,7 +415,7 @@ export default function App() {
           ) : tableRows.length === 0 && rocRanked.length > 0 ? (
             <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the tickers you removed' : activeTickers.join(', '))} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
           ) : tableRows.length > 0 ? (
-            <div className="grid grid-cols-[minmax(0,60fr)_minmax(0,40fr)] gap-4 items-start">
+            <div className="grid grid-cols-[minmax(0,64fr)_minmax(0,36fr)] gap-4 items-start">
               <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">
                 <RankedTable
                   key={scanCtx}

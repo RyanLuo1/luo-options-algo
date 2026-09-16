@@ -12,11 +12,11 @@ const COLUMNS = [
   { key: 'strikes',    label: 'Put / Call / Call', align: 'left'  },
   { key: 'credit',     label: 'Credit /ct',        align: 'right', sort: r => r.net_premium, firstDir: 'desc' },
   { key: 'max',        label: 'Max profit /ct',    short: 'Max /ct', align: 'right', sort: r => r.net_premium + r.spread_width, firstDir: 'desc' },
-  { key: 'pmax',       label: 'Shorts worthless', title: 'Chance the short legs expire worthless: 1 − δ short call − δ short put', align: 'right', sort: r => shortsWorthless(r), firstDir: 'desc' },
+  { key: 'pmax',       label: 'Shorts worthless', wrap: true, title: 'Chance the short legs expire worthless: 1 − δ short call − δ short put', align: 'right', sort: r => shortsWorthless(r), firstDir: 'desc' },
   { key: 'collateral', label: 'Collateral',        align: 'right', sort: r => r.leg_c_strike, firstDir: 'desc', hideBelowXl: true },
 ]
 // Upside adds one descriptive column: the rise from spot to the short call.
-const MOVE_COL = { key: 'move', label: 'Move to max', short: 'Move', align: 'right', sort: r => moveToMax(r) ?? Infinity, firstDir: 'asc' }
+const MOVE_COL = { key: 'move', label: 'Move to max', short: 'Move', wrap: true, title: 'The rise from today’s price to the short call, where max profit begins', align: 'right', sort: r => moveToMax(r) ?? Infinity, firstDir: 'asc' }
 const columnsFor = mode => (mode === 'upside' ? [...COLUMNS.slice(0, 6), MOVE_COL, ...COLUMNS.slice(6)] : COLUMNS)
 const SORTABLE = Object.fromEntries([...COLUMNS, MOVE_COL].filter(c => c.sort).map(c => [c.key, c]))
 const PAGE = 50
@@ -142,7 +142,7 @@ export default function RankedTable({
                 const active = sort?.key === col.key
                 return (
                   <th key={col.key} scope="col" title={col.title}
-                    className={`sticky top-0 z-10 bg-lc-card text-[0.78rem] font-semibold tracking-[0.03em] text-lc-ink-2 border-b border-lc-line px-2 py-2.5 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.hideBelowXl ? 'max-lc:hidden' : ''}`}
+                    className={`sticky top-0 z-10 bg-lc-card text-[0.78rem] font-semibold tracking-[0.03em] text-lc-ink-2 border-b border-lc-line px-2 py-2.5 ${col.wrap ? 'whitespace-normal leading-[1.15] max-w-[5.5rem]' : 'whitespace-nowrap'} ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.hideBelowXl ? 'max-lc:hidden' : ''}`}
                     aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     {col.sort ? (
                       <button type="button" onClick={() => clickHeader(col)} className={`inline-flex items-center gap-1 hover:text-lc-ink ${active ? 'text-lc-violet' : ''}`}>
@@ -169,16 +169,16 @@ export default function RankedTable({
                   </td>
                   <td aria-label={r.ticker} className={`px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] whitespace-nowrap ${isVariant ? 'text-lc-ink-2 pl-6' : 'text-lc-ink'}`}>
                     {isVariant ? '↳' : r.ticker}
-                    {pick && <Pill tone="quiet" size="sm" className="ml-2 font-figtree font-semibold align-middle">{pick}</Pill>}
+                    {pick && <span className="block mt-0.5"><Pill tone="quiet" size="sm" className="font-figtree font-semibold">{pick}</Pill></span>}
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap">
-                    <span className="text-lc-ink">{exp.short}</span><span className="text-lc-ink-2 max-lc:hidden"> · W{r.week}</span><span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
+                    <span className="text-lc-ink">{exp.short}</span>{mode !== 'upside' && <span className="text-lc-ink-2 max-lc:hidden"> · W{r.week}</span>}<span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap text-lc-ink-2 max-lc:text-[0.9rem] [font-variant-numeric:tabular-nums]">
                     {r.leg_c_strike} / <span className="text-lc-ink font-semibold">{r.leg_a_strike}</span> / {r.leg_b_strike}
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
-                    <div className="flex flex-col items-end"><span className="font-bold text-lc-ink">{fmtMoney0(f.credit)}</span><span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span></div>
+                    <div className="flex flex-col items-end"><span className="font-bold text-lc-ink">{fmtMoney0(f.credit)}</span>{mode !== 'upside' && <span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span>}</div>
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
