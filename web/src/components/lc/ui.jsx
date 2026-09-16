@@ -1,6 +1,7 @@
 // v1 design-system primitives for the rebuilt app (DESIGN.md). Everything here
 // assumes it renders inside an element carrying the `.lc` class (index.css),
 // which sets the ground, ink, Figtree, tabular figures, selection, focus ring.
+import { useState } from 'react'
 import { INPUT_CLASS } from './format'
 
 const BTN_BASE =
@@ -111,8 +112,11 @@ export function SortIcon({ dir, className = 'w-3.5 h-3.5' }) {
 // ⓘ with a hover / focus tooltip (dark card under the icon). `text` is the whole explanation; keep it to a few lines.
 export
 function InfoTip({ id, text }) {
+  // Opens leftward when its own right edge is within a tooltip's width of the viewport edge.
+  const [flip, setFlip] = useState(false)
+  const place = e => { const r = e.currentTarget.getBoundingClientRect(); setFlip(r.right + 272 > window.innerWidth) }
   return (
-    <span className="relative group inline-flex shrink-0">
+    <span className="relative group inline-flex shrink-0" onMouseEnter={place} onFocus={place}>
       <button type="button" aria-label="More about this field" aria-describedby={id}
         className="w-4 h-4 rounded-full text-lc-ink-3 hover:text-lc-violet focus-visible:text-lc-violet grid place-items-center">
         <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" aria-hidden="true">
@@ -121,8 +125,8 @@ function InfoTip({ id, text }) {
         </svg>
       </button>
       <span id={id} role="tooltip"
-        className="pointer-events-none absolute left-0 top-full mt-2 z-20 w-64 rounded-lc-half bg-lc-ink text-lc-card text-[0.8rem] leading-[1.45] px-3 py-2 shadow-lc-lift
-                   hidden group-hover:block group-focus-within:block">
+        className={`pointer-events-none absolute ${flip ? 'right-0' : 'left-0'} top-full mt-2 z-20 w-64 rounded-lc-half bg-lc-ink text-lc-card text-[0.8rem] leading-[1.45] px-3 py-2 shadow-lc-lift
+                   hidden group-hover:block group-focus-within:block`}>
         {text}
       </span>
     </span>

@@ -3,6 +3,11 @@ import MetricBar from './MetricBar'
 import { Pill, SortIcon, InfoTip } from './ui'
 import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, rocOf, shortsWorthless, moveToMax, MODES, NOT_BACKTESTED } from './format'
 
+const TIP = {
+  income: 'All dollars are per contract. Rank is the scanner’s order after your return floor. The bar under Max profit is the credit as a share of max profit, which is what the ranking follows. In the grouped view a ticker’s head row is its scanner-best setup.',
+  upside: 'All dollars are per contract. Upside is a calculator, not a ranking: setups are sorted by max profit per $ of collateral, the bar under Max profit. Move to max is the rise from today’s price to the short call. In the grouped view a ticker’s head row is its highest-upside setup.',
+}
+
 // Columns. `sort` names the accessor for user overrides; money columns sort
 // descending first. Rank is the scanner's order and is not a user sort.
 const COLUMNS = [
@@ -37,7 +42,10 @@ export default function RankedTable({
   metric, metricLabel,
   totalEvaluated, dimmed = false,
   mode = 'income', otherHeads = null,   // otherHeads: Map ticker → the other mode's best row (grouped view's second head)
+  otherMetric, otherMetricLabel,        // the other mode's bar, for its head rows
 }) {
+  const upside = mode === 'upside'
+  const heading = upside ? 'Upside setups' : 'Ranked setups'
   const COLS = columnsFor(mode)
   const NCOLS = COLS.length
   const [shown, setShown] = useState(PAGE)
@@ -107,11 +115,11 @@ export default function RankedTable({
   const sortedCol = sort ? COLS.find(c => c.key === sort.key) : null
 
   return (
-    <section aria-label="Ranked setups" className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60' : ''}`} aria-busy={dimmed || undefined}>
+    <section aria-label={heading} className={`bg-lc-card rounded-lc shadow-lc flex flex-col min-h-0 transition-opacity ${dimmed ? 'opacity-60' : ''}`} aria-busy={dimmed || undefined}>
       <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3 flex-wrap">
         <div className="flex items-baseline gap-3">
-          <span className="inline-flex items-center gap-1.5"><h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">Ranked setups</h2><InfoTip id="lc-table-tip" text="All dollars are per contract. Rank is the scanner’s order after your return floor. The bar under Max profit is the credit as a share of max profit, which is what the ranking follows. In the grouped view a ticker’s head row is its scanner-best setup." /></span>
-          {mode === 'upside' && <Pill tone="quiet" size="sm" title="The Income ranking is the backtested product; Upside is the same three legs built for a wide call spread.">{NOT_BACKTESTED}</Pill>}
+          <span className="inline-flex items-center gap-1.5"><h2 className="font-display font-bold text-[1.3rem] leading-none tracking-[-0.01em]">{heading}</h2><InfoTip id="lc-table-tip" text={TIP[mode]} /></span>
+          {upside && <Pill tone="quiet" title="The Income ranking is the backtested product; Upside is the same three legs built for a wide call spread.">{NOT_BACKTESTED}</Pill>}
           <span className="text-[0.85rem] text-lc-ink-2 [font-variant-numeric:tabular-nums]">
             {grouped ? `${groups.length} ${groups.length === 1 ? 'ticker' : 'tickers'} · ${rows.length.toLocaleString()} setups` : `${rows.length.toLocaleString()} setups`} of {Number(totalEvaluated || 0).toLocaleString()} evaluated
           </span>
@@ -120,10 +128,10 @@ export default function RankedTable({
           {sortedCol ? (
             <>
               <span className="text-lc-ink-2">Sorted by {sortedCol.label} {sort.dir === 'desc' ? '↓' : '↑'}</span>
-              <button type="button" onClick={onResetSort} className="font-semibold text-lc-violet hover:underline">Back to ranked</button>
+              <button type="button" onClick={onResetSort} className="font-semibold text-lc-violet hover:underline">{upside ? 'Back to default' : 'Back to ranked'}</button>
             </>
           ) : (
-            <span className="text-lc-ink-2">Ranked by the scanner</span>
+            <span className="text-lc-ink-2">{upside ? 'Sorted by max profit per $ of collateral' : 'Ranked by the scanner'}</span>
           )}
           <span className="inline-flex rounded-lc bg-lc-ground p-0.5" role="group" aria-label="Table view">
             <button type="button" onClick={() => !grouped && onToggleGrouped()} aria-pressed={grouped} className={`h-7 px-3 rounded-lc text-[0.8rem] font-semibold ${grouped ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}>Best per ticker</button>
@@ -133,7 +141,7 @@ export default function RankedTable({
       </div>
 
       <div ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown}
-        aria-label={`Ranked setups table. Arrow keys move the selection${grouped ? ', right and left expand or collapse a ticker' : ''}, Enter opens the editor.`}
+        aria-label={`${heading} table. Arrow keys move the selection${grouped ? ', right and left expand or collapse a ticker' : ''}, Enter opens the editor.`}
         className="overflow-auto flex-1 min-h-0 px-3 max-lc:px-1.5 pb-3 rounded-b-lc outline-none focus-visible:ring-[3px] focus-visible:ring-lc-violet focus-visible:ring-inset">
         <table className="w-full border-collapse text-[0.95rem] [font-variant-numeric:tabular-nums]">
           <thead>
@@ -159,17 +167,19 @@ export default function RankedTable({
               const r = v.row, k = rowKey(r), selected = k === selectedKey
               const f = rowFigures(r), exp = expiryInfo(r.expiration)
               const isVariant = v.kind === 'variant', isOther = v.kind === 'other'
-              const pick = isOther ? MODES[r.mode]?.pick : v.paired ? MODES[mode].pick : null
+              const rowMode = r.mode ?? mode
+              const pick = isOther ? (rowMode === 'upside' ? 'Upside · not backtested' : MODES.income.pick) : v.paired ? MODES[mode].pick : null
+              const barMetric = rowMode === mode ? metric : (otherMetric ?? metric), barLabel = rowMode === mode ? metricLabel : (otherMetricLabel ?? metricLabel)
               return [
                 <tr key={k} data-selected={selected ? 'true' : undefined} data-kind={v.kind} data-mode={r.mode ?? mode} data-db={r.leg_b_delta} data-dc={r.leg_c_delta}
                   onClick={() => !dimmed && onSelect?.(r)} onDoubleClick={() => !dimmed && onOpen?.(r)} aria-current={selected ? 'true' : undefined}
                   className={`cursor-pointer border-b border-lc-line/70 transition-colors ${selected ? 'bg-lc-violet-soft' : 'hover:bg-lc-ground'}`}>
                   <td className="px-2 max-lc:px-1.5 py-2.5">
-                    {isOther ? <span className="inline-grid place-items-center w-[26px] h-[26px] text-lc-ink-3" title="The other mode’s pick — not ranked in this list">·</span> : <span title={`${r.rank} of ${rows.length} in the scanner’s order`} className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>}
+                    {isOther || upside ? <span className="inline-grid place-items-center w-[26px] h-[26px] text-lc-ink-3" title={isOther ? 'The other mode’s setup — not ranked in this list' : 'Upside is sorted, not ranked'}>·</span> : <span title={`${r.rank} of ${rows.length} in the scanner’s order`} className={`inline-grid place-items-center w-[26px] h-[26px] rounded-lc text-[0.8rem] font-bold ${selected ? 'bg-lc-violet text-lc-card' : r.rank === 1 ? 'bg-lc-lime text-lc-ink' : 'bg-lc-ground text-lc-ink-2'}`}>{r.rank}</span>}
                   </td>
                   <td aria-label={r.ticker} className={`px-2 max-lc:px-1.5 py-2.5 font-display font-bold text-[1.05rem] whitespace-nowrap ${isVariant ? 'text-lc-ink-2 pl-6' : 'text-lc-ink'}`}>
                     {isVariant ? '↳' : r.ticker}
-                    {pick && <span className="block mt-0.5"><Pill tone="quiet" size="sm" className="font-figtree font-semibold">{pick}</Pill></span>}
+                    {pick && <span className="block mt-0.5"><Pill tone="quiet" size="sm" className="font-figtree font-semibold whitespace-normal text-left leading-[1.2] max-w-[7.25rem] py-1">{pick}</Pill></span>}
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 whitespace-nowrap">
                     <span className="text-lc-ink">{exp.short}</span>{mode !== 'upside' && <span className="text-lc-ink-2 max-lc:hidden"> · W{r.week}</span>}<span className="text-lc-ink-2">{exp.dte != null ? ` · ${exp.dte}d` : ''}</span>
@@ -178,12 +188,12 @@ export default function RankedTable({
                     {r.leg_c_strike} / <span className="text-lc-ink font-semibold">{r.leg_a_strike}</span> / {r.leg_b_strike}
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
-                    <div className="flex flex-col items-end"><span className="font-bold text-lc-ink">{fmtMoney0(f.credit)}</span>{mode !== 'upside' && <span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span>}</div>
+                    <div className="flex flex-col items-end"><span className="font-bold text-lc-ink">{fmtMoney0(f.credit)}</span>{rowMode !== 'upside' && <span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span>}</div>
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
                       <span className="text-lc-ink">{fmtMoney0(f.maxProfit)}</span>
-                      <MetricBar value={metric(r)} label={metricLabel} className="w-[4.5rem] max-lc:w-[3rem]" />
+                      <MetricBar value={barMetric(r)} label={barLabel} className="w-[4.5rem] max-lc:w-[3rem]" />
                     </div>
                   </td>
                   {mode === 'upside' && <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap text-lc-ink">{moveToMax(r) == null ? '—' : `+${(moveToMax(r) * 100).toFixed(1)}%`}</td>}

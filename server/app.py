@@ -557,8 +557,11 @@ def tradebook_save():
         ins = _supabase.table("tradebook").insert(insert_row).execute()
         saved = ins.data[0] if ins.data else None
     except Exception as e:
-        return jsonify({"error": f"Tradebook insert failed: {e}",
-                        "traceback": traceback.format_exc()}), 500
+        msg = str(e)
+        if "PGRST204" in msg or ("mode" in msg and "column" in msg):
+            return jsonify({"error": "The Tradebook can’t store Upside trades until its mode column exists (docs/scan_mode_migration.sql). Income saves still work."}), 500
+        return jsonify({"error": "The Tradebook rejected this trade. Try again in a moment.",
+                        "detail": msg, "traceback": traceback.format_exc()}), 500
 
     # Flip was_saved on the linked scan_results row. Best-effort — a failure
     # here doesn't undo the save; we just print to stderr and move on.

@@ -139,11 +139,12 @@ export default function App() {
   // filters and scoring untouched). `rank` = position in the scanner's order
   // after the ROC floor; chip filters never re-rank.
   // Income only: the return floor. Upside results come back already gated server-side.
-  const rocRanked = useMemo(() => (mode === 'income' ? ranked.filter(r => rocOf(r) >= minRoc - 1e-9) : ranked).map((r, i) => ({ ...r, rank: i + 1 })), [ranked, minRoc, mode])
+  // Upside is a calculator: its default order is the metric it shows (max profit ÷ collateral), not the scanner's score.
+  const rocRanked = useMemo(() => (mode === 'income' ? ranked.filter(r => rocOf(r) >= minRoc - 1e-9) : [...ranked].sort((a, b) => upsidePerCollateral(b) - upsidePerCollateral(a))).map((r, i) => ({ ...r, rank: i + 1 })), [ranked, minRoc, mode])
   // The other mode's pick per ticker (its best row, after Income's return floor) for the grouped view's second head row.
   const otherHeads = useMemo(() => {
     const rows = otherResult?.ranked ?? []
-    const kept = otherMode === 'income' ? rows.filter(r => rocOf(r) >= minRoc - 1e-9) : rows
+    const kept = otherMode === 'income' ? rows.filter(r => rocOf(r) >= minRoc - 1e-9) : [...rows].sort((a, b) => upsidePerCollateral(b) - upsidePerCollateral(a))
     const m = new Map()
     for (const r of kept) if (!m.has(r.ticker) && activeTickers.includes(r.ticker)) m.set(r.ticker, { ...r, mode: otherMode, rank: null })
     return m
@@ -358,7 +359,12 @@ export default function App() {
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       const res  = await fetch('/api/tradebook/save', { method: 'POST', headers, body: JSON.stringify({ scan_id: scanIdFor(row), result_id: row.result_id ?? null, trade }) })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setSaveError(`Couldn’t save this trade (${data.error || res.status}). Nothing was written; try again.`); return }
+      if (!res.ok) {
+        // Never render a server internals blob; a plain sentence or the status.
+        const why = typeof data.error === 'string' && !/[{}]/.test(data.error) ? data.error : `the Tradebook rejected it (${res.status})`
+        setSaveError(`Couldn’t save this trade: ${why} Nothing was written.`)
+        return
+      }
       setSavedKeys(prev => new Set(prev).add(saveKeyOf(row)))
       showToast(`Saved ${row.ticker} ${expiryInfo(row.expiration).short} · ${row.leg_c_strike} / ${row.leg_a_strike} / ${row.leg_b_strike} to your Tradebook.`, '/tradebook')
     } catch (e) {
@@ -425,6 +431,7 @@ export default function App() {
                   selectedKey={displayedKey} onSelect={r => setSelectedKey(rowKey(r))} onOpen={handleEdit}
                   mode={mode} otherHeads={grouped ? otherHeads : null}
                   metric={mode === 'upside' ? upsidePerCollateral : creditShareOfMax} metricLabel={mode === 'upside' ? 'Max profit per $ of collateral' : 'Credit as a share of max profit'}
+                  otherMetric={mode === 'upside' ? creditShareOfMax : upsidePerCollateral} otherMetricLabel={mode === 'upside' ? 'Credit as a share of max profit' : 'Max profit per $ of collateral'}
                   totalEvaluated={totalEvaluated} dimmed={loading}
                 />
               </div>

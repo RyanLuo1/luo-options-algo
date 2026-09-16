@@ -80,8 +80,8 @@ export const moveToMax = row => (row.underlying_price > 0 ? (row.leg_b_strike - 
 
 /** Screener modes. Income is the validated scan; Upside is a calculator, not a recommender. */
 export const MODES = {
-  income: { label: 'Income', lead: 'Get paid to wait.', line: 'A credit up front; the short call caps the gain, the put means you may own the stock.', pick: 'Income pick' },
-  upside: { label: 'Upside', lead: 'Own the upside.',   line: 'A small credit or none, a wide call spread, the same put below.', pick: 'Upside pick' },
+  income: { label: 'Income', lead: 'Get paid to wait.', line: 'A credit up front; the short call caps the gain, the put means you may own the stock.', pick: 'Income setup' },
+  upside: { label: 'Upside', lead: 'Own the upside.',   line: 'A small credit or none, a wide call spread, the same put below.', pick: 'Upside setup' },
 }
 export const NOT_BACKTESTED = 'Not backtested — calculator only'
 

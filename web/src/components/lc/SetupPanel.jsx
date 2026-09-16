@@ -97,7 +97,7 @@ export default function SetupPanel({
               ? <Stat label="Grade pending" value="—" sub="posts after the next close" />
               : <Gauge row={row} />}
             <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub={expired ? 'cash that secured the put' : 'cash to secure the put while it’s open'} />
-            <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className="col-span-2 max-lc:col-span-1" />
+            <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className={expired ? 'col-span-2 max-lc:col-span-1' : ''} />
           </div>
 
           <p className="text-[0.95rem] text-lc-ink-2 leading-[1.55]">
@@ -178,22 +178,28 @@ function RealizedCard({ pnl, zone, hero = false }) {
 }
 
 // Chance the short legs expire worthless (1 − δ_B − δ_C) as a soft arc, with the
-// chance of max profit (≈ δ_B, the stock at or above the short call) beside it.
+// chance of max profit (≈ δ_B, the stock at or above the short call) as a second
+// figure beside it. Spans both stat columns.
 function Gauge({ row }) {
   const p = shortsWorthless(row)
   const v = Math.max(0, Math.min(1, p ?? 0))
   const len = 264
   return (
-    <div className="bg-lc-ground rounded-lc p-4 flex items-center gap-3 min-w-0">
+    <div className="bg-lc-ground rounded-lc p-4 col-span-2 max-lc:col-span-1 flex items-center gap-4 min-w-0">
       <svg viewBox="0 0 120 70" className="w-[64px] h-auto shrink-0" fill="none" aria-hidden="true">
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#EEE9FF" strokeWidth="12" strokeLinecap="round" />
         <path d="M12 62 A48 48 0 0 1 108 62" stroke="#6547E6" strokeWidth="12" strokeLinecap="round" pathLength={len} strokeDasharray={len} strokeDashoffset={len * (1 - v)} />
       </svg>
-      <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the short legs expire worthless</span>
-        <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" data-shorts-worthless={p.toFixed(4)}>{fmtPct0(p)}</span>
-        <span className="text-[0.85rem] text-lc-ink-2">the stock finishes between the put and the short call — you keep at least the credit</span>
-        <span className="text-[0.85rem] text-lc-ink-2 mt-0.5">Chance of max profit <strong className="text-lc-ink font-semibold">≈ {fmtPct0(pMaxApprox(row))}</strong> <span className="text-lc-ink-3">(≈ δ of the short call)</span></span>
+      <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-x-6 gap-y-1 flex-1 min-w-0">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the short legs expire worthless</span>
+          <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" data-shorts-worthless={p.toFixed(4)}>{fmtPct0(p)}</span>
+        </div>
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance of max profit</span>
+          <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" title="≈ the delta of the short call: the stock at or above it">≈ {fmtPct0(pMaxApprox(row))}</span>
+        </div>
+        <span className="col-span-2 max-lc:col-span-1 text-[0.85rem] text-lc-ink-2">the stock finishes between the put and the short call — you keep at least the credit</span>
       </div>
     </div>
   )

@@ -80,8 +80,8 @@ export default function ControlsBar({
           </Field>
         )}
 
-        <Field label="Minimum chance shorts expire worthless (approx.)" htmlFor="lc-min-p" error={minPProfitValid ? null : '1 to 99.'} help="Rescan to apply."
-          tip="The scanner gates on (1 − short call delta) × (1 − short put delta), which runs a few points above the exact chance the table shows (1 − δ short call − δ short put). Default 50%.">
+        <Field label="Minimum chance shorts expire worthless (approx.)" htmlFor="lc-min-p" error={minPProfitValid ? null : '1 to 99.'} help="Gates ~5 pts above the chance shown."
+          tip="Rescan to apply. The scanner gates on (1 − short call delta) × (1 − short put delta), which runs a few points above the exact chance the table and gauge show (1 − δ short call − δ short put). Default 50%.">
           <Stepper id="lc-min-p" value={minPProfitStr} onChange={onMinPProfitChange} onBlur={onMinPProfitBlur} onKeyDown={enterRuns(minPProfitValid)}
             onMinus={() => bumpMinPProfit(-1)} onPlus={() => bumpMinPProfit(+1)} disabled={loading} error={!minPProfitValid} inputMode="numeric" suffix="%" />
         </Field>
