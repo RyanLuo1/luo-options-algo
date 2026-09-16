@@ -64,24 +64,24 @@ try {
   await shot('upside-1440')
   const upsideTickers = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] td:nth-child(2)')].map(td => td.getAttribute('aria-label')))
 
-  // ── Both modes have run: two head rows on a shared ticker
+  // ── Both modes have run: each mode shows only its own results; the toggle is the side-by-side
   await page.getByRole('tab', { name: 'Income' }).click(); await page.waitForTimeout(300)
-  const shared = incomeTickers.filter(t => upsideTickers.includes(t))
-  const others = await page.locator('tbody tr[data-kind="other"]').count()
-  log('shared tickers show two head rows (Income setup / Upside · not backtested)', shared.length > 0 && others === shared.length && /Income setup/.test(await page.textContent('tbody')) && /Upside · not backtested/.test(await page.textContent('tbody')), `${shared.length} shared, ${others} second heads`)
-  log('an Upside row inside the Income table carries its own bar', (await page.locator('tbody tr[data-kind="other"] [role="img"][aria-label^="Max profit per $ of collateral"]').count()) === others)
+  const incomeBack = await page.evaluate(() => ({ h2: document.querySelector('h2')?.textContent, others: document.querySelectorAll('tbody tr[data-kind="other"]').length, modes: [...new Set([...document.querySelectorAll('tbody tr[data-kind]')].map(r => r.dataset.mode))], pills: /Not backtested|Upside/.test(document.querySelector('section[aria-label$="setups"]').textContent) }))
+  log('switching back to Income shows Income’s own results only (kept from its last run)', incomeBack.h2 === 'Ranked setups' && incomeBack.others === 0 && incomeBack.modes.join() === 'income' && !incomeBack.pills, JSON.stringify(incomeBack))
   const fitIn = await page.evaluate(() => { const t = document.querySelector('section[aria-label$="setups"] table'); return { table: t.scrollWidth, wrap: t.parentElement.clientWidth } })
-  log('the Income table with second heads fits its column at 1440', fitIn.table <= fitIn.wrap, `${fitIn.table} of ${fitIn.wrap}`)
+  log('the Income table fits its column at 1440', fitIn.table <= fitIn.wrap, `${fitIn.table} of ${fitIn.wrap}`)
   await shot('both-1440')
-  await page.locator('tbody tr[data-kind="other"]').first().click(); await page.waitForTimeout(300)
-  const panel = await page.textContent('section[aria-label^="Setup detail"]')
-  log('selecting the Upside setup drives the panel with its pills', /Upside/.test(panel) && /Not backtested — calculator only/.test(panel))
   await page.locator('#lc-min-p-tip').locator('..').locator('button').hover(); await page.waitForTimeout(150)
   const tipBox = await page.locator('#lc-min-p-tip').boundingBox()
   log('the P control’s ⓘ tooltip stays inside the viewport', !!tipBox && tipBox.x >= 0 && tipBox.x + tipBox.width <= 1440, tipBox ? `right edge ${Math.round(tipBox.x + tipBox.width)}` : 'no tooltip')
+  await page.getByRole('tab', { name: 'Upside' }).click(); await page.waitForTimeout(300)
+  const upsideBack = await page.evaluate(() => ({ h2: document.querySelector('h2')?.textContent, modes: [...new Set([...document.querySelectorAll('tbody tr[data-kind]')].map(r => r.dataset.mode))] }))
+  log('switching back to Upside restores Upside’s own results', upsideBack.h2 === 'Upside setups' && upsideBack.modes.join() === 'upside', JSON.stringify(upsideBack))
+  const panel = await page.textContent('section[aria-label^="Setup detail"]')
+  log('the Upside panel carries its pills', /Upside/.test(panel) && /Not backtested — calculator only/.test(panel))
   await shot('upside-pick-panel-1440')
 
-  // ── Save the Upside pick → Tradebook
+  // ── Save the selected Upside setup → Tradebook
   if (!ddl.tradebook) {
     log('Upside save round-trip', false, 'tradebook.mode column not found — run docs/scan_mode_migration.sql, then rerun')
   } else {

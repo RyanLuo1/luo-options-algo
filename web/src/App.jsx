@@ -111,10 +111,9 @@ export default function App() {
   // ── Scan data (unchanged hook) ─────────────────────────────────────────────
   const {
     marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped, tickerReasons,
-    weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minUpsideUsed, otherResult,
+    weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minUpsideUsed,
     totalEvaluated, hasResult, scanId, loading, error, runScan,
   } = useOptionsData(mode)
-  const otherMode = mode === 'income' ? 'upside' : 'income'
   function setMode(next) { if (next === mode || loading) return; setModeRaw(next); setSelectedKey(null); setTickerFilter(null) }
 
   // A new scan result re-seeds the chips, resets the selection, and resets the
@@ -141,15 +140,6 @@ export default function App() {
   // Income only: the return floor. Upside results come back already gated server-side.
   // Upside is a calculator: its default order is the metric it shows (max profit ÷ collateral), not the scanner's score.
   const rocRanked = useMemo(() => (mode === 'income' ? ranked.filter(r => rocOf(r) >= minRoc - 1e-9) : [...ranked].sort((a, b) => upsidePerCollateral(b) - upsidePerCollateral(a))).map((r, i) => ({ ...r, rank: i + 1 })), [ranked, minRoc, mode])
-  // The other mode's pick per ticker (its best row, after Income's return floor) for the grouped view's second head row.
-  const otherHeads = useMemo(() => {
-    const rows = otherResult?.ranked ?? []
-    const kept = otherMode === 'income' ? rows.filter(r => rocOf(r) >= minRoc - 1e-9) : [...rows].sort((a, b) => upsidePerCollateral(b) - upsidePerCollateral(a))
-    const m = new Map()
-    for (const r of kept) if (!m.has(r.ticker) && activeTickers.includes(r.ticker)) m.set(r.ticker, { ...r, mode: otherMode, rank: null })
-    return m
-  }, [otherResult, otherMode, minRoc, activeTickers])
-  const scanIdFor = row => (row?.mode && row.mode !== mode ? otherResult?.scan_id ?? null : scanId)
   const baseRanked = rocRanked.filter(r => activeTickers.includes(r.ticker))
   const tableRows  = tickerFilter ? baseRanked.filter(r => r.ticker === tickerFilter) : baseRanked
   const counts = useMemo(() => {
@@ -171,7 +161,7 @@ export default function App() {
     }
     return { reasons, reasonCodes }
   }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minPProfit, minUpsideUsed, minUpside])
-  const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? [...otherHeads.values()].find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
+  const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
 
   // Macro events (FOMC / CPI / PPI / NFP) dated before a setup's expiration, shown
@@ -357,7 +347,7 @@ export default function App() {
       const { data: { session } } = await supabase.auth.getSession()
       const headers = { 'Content-Type': 'application/json' }
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-      const res  = await fetch('/api/tradebook/save', { method: 'POST', headers, body: JSON.stringify({ scan_id: scanIdFor(row), result_id: row.result_id ?? null, trade }) })
+      const res  = await fetch('/api/tradebook/save', { method: 'POST', headers, body: JSON.stringify({ scan_id: scanId, result_id: row.result_id ?? null, trade }) })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         // Never render a server internals blob; a plain sentence or the status.
@@ -373,7 +363,7 @@ export default function App() {
       setSaving(false)
     }
   }
-  function handleEdit(row) { navigate('/trade', { state: { triplet: { ...row, mode: row.mode ?? mode }, scan_id: scanIdFor(row), from: 'screener' } }) }
+  function handleEdit(row) { navigate('/trade', { state: { triplet: { ...row, mode: row.mode ?? mode }, scan_id: scanId, from: 'screener' } }) }
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   async function handleLogout() {
@@ -429,9 +419,8 @@ export default function App() {
                   sort={sort} onSort={setSort} onResetSort={() => setSort(null)}
                   grouped={grouped} onToggleGrouped={() => setGrouped(g => !g)}
                   selectedKey={displayedKey} onSelect={r => setSelectedKey(rowKey(r))} onOpen={handleEdit}
-                  mode={mode} otherHeads={grouped ? otherHeads : null}
+                  mode={mode}
                   metric={mode === 'upside' ? upsidePerCollateral : creditShareOfMax} metricLabel={mode === 'upside' ? 'Max profit per $ of collateral' : 'Credit as a share of max profit'}
-                  otherMetric={mode === 'upside' ? creditShareOfMax : upsidePerCollateral} otherMetricLabel={mode === 'upside' ? 'Credit as a share of max profit' : 'Max profit per $ of collateral'}
                   totalEvaluated={totalEvaluated} dimmed={loading}
                 />
               </div>
