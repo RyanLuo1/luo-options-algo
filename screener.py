@@ -155,7 +155,8 @@ def _live_chain_provider(ticker, exp, side, strike_low, strike_high):
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
 def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
-                chain_provider=None, as_of=None, stats=None):
+                chain_provider=None, as_of=None, stats=None,
+                leg_b_delta=None, min_upside=0.0):
     """
     Builds all valid triplets for one ticker across the provided expirations.
 
@@ -179,6 +180,19 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                          rejection counters (no_chain, no_legs, below_min_premium,
                          below_min_p) so a caller can explain a zero-result
                          ticker. Pure bookkeeping: no filter or score changes.
+        leg_b_delta    : (low, high) or None — the short-call delta window.
+                         Defaults to (LEG_B_DELTA_LOW, LEG_B_DELTA_HIGH), the
+                         validated Income window. The Screener's Upside mode
+                         passes (0.05, 0.20) for a wide call spread.
+        min_upside     : float — floor on max profit ÷ collateral per share,
+                         (net_premium + spread_width) / leg_c_strike. 0.0 (the
+                         default) disables the gate entirely; when active, a
+                         `below_min_upside` counter is added to `stats`.
+
+    Every existing caller (the sector cron, the backtest replay, the CLI,
+    /api/run's Income mode) passes neither keyword, and the default path is
+    byte-identical to the pre-parameter scanner — tests/test_mode_defaults.py
+    holds a golden fixture recorded from that code.
 
     Returns:
         (triplets: list[dict], total_evaluated: int)
@@ -189,12 +203,16 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
         chain_provider = _live_chain_provider
     if as_of is None:
         as_of = datetime.today().date()
+    leg_b_low, leg_b_high = leg_b_delta if leg_b_delta is not None else (LEG_B_DELTA_LOW, LEG_B_DELTA_HIGH)
+    upside_gate = float(min_upside or 0.0) > 0.0
 
     triplets        = []
     total_evaluated = 0
     if stats is None:
         stats = {}
     stats.update(no_chain=0, no_legs=0, below_min_premium=0, below_min_p=0)
+    if upside_gate:
+        stats["below_min_upside"] = 0
 
     strike_low  = round(price * 0.70, 2)
     strike_high = round(price * 1.30, 2)
@@ -218,7 +236,7 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                        if LEG_A_DELTA_LOW <= c["delta"] <= LEG_A_DELTA_HIGH]
 
         leg_b_pool  = [{**c, "premium": c["bid"]} for c in calls
-                       if LEG_B_DELTA_LOW <= c["delta"] <= LEG_B_DELTA_HIGH]
+                       if leg_b_low <= c["delta"] <= leg_b_high]
 
         leg_c_cands = [{**c, "premium": c["bid"]} for c in puts
                        if LEG_C_DELTA_LOW <= c["delta"] <= LEG_C_DELTA_HIGH
@@ -267,6 +285,12 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                     p_max = (1 - leg_b["delta"]) * (1 - leg_c["delta"])
                     if p_max < min_p_profit:
                         stats["below_min_p"] += 1
+                        continue
+
+                    # Upside gate (off by default): max profit ÷ collateral,
+                    # both per share — collateral is the put strike (cash-secured).
+                    if upside_gate and (net_premium + spread_width) / leg_c["strike"] < min_upside:
+                        stats["below_min_upside"] += 1
                         continue
 
                     triplets.append({
