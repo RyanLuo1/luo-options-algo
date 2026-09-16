@@ -112,18 +112,49 @@ def upside_ev(t):
             - dC * UPSIDE_EV_BREACH * float(t["leg_c_strike"]))
 
 
+def upside_sigma_annotate(ranked, price_by_ticker, as_of):
+    """Ranking (3) inputs: each triplet gets _spot and _sigma (leg A's
+    BS-implied vol from its ask — the same solver/inputs the provider used,
+    so eval-time recomputation from stored columns is exact)."""
+    for t in ranked:
+        spot = price_by_ticker.get(t["ticker"])
+        T = (datetime.strptime(t["expiration"], "%Y-%m-%d").date()
+             - as_of).days / 365.0
+        t["_spot"] = spot
+        t["_sigma"] = (implied_vol("call", float(t["leg_a_prem"]), spot,
+                                   float(t["leg_a_strike"]), T)
+                       if spot and T > 0 else None)
+        t["_T"] = T
+
+
+def upside_sigma_payoff(t):
+    """Ranking (3): structure P&L at a +1σ√T implied move, ÷ collateral.
+    Triplets without a solvable leg-A IV rank last (never top-50 by (3))."""
+    if not t.get("_sigma") or not t.get("_spot"):
+        return float("-inf")
+    tgt = t["_spot"] * (1 + t["_sigma"] * (t["_T"] ** 0.5))
+    ka, kb, kc = (float(t["leg_a_strike"]), float(t["leg_b_strike"]),
+                  float(t["leg_c_strike"]))
+    credit = float(t["net_premium"])
+    pay = (credit + max(0.0, tgt - ka) - max(0.0, tgt - kb)
+           - max(0.0, kc - tgt))
+    coll = kc - credit
+    return pay / coll if coll > 0 else float("-inf")
+
+
 def upside_select(ranked, date_str, slot):
-    """Deep slice: top-50 by maxp/coll ∪ top-50 by EV ∪ 20 seeded-random.
-    picks[0] = ranking-1 (maxp/coll) best → is_best_in_sector."""
+    """Deep slice: top-50 by maxp/coll ∪ top-50 by EV ∪ top-50 by +1σ
+    payoff ∪ 20 seeded-random. picks[0] = ranking-1 best."""
     import random as _random
 
     def key(t):
         return (t["ticker"], t["expiration"], t["leg_a_strike"],
                 t["leg_b_strike"], t["leg_c_strike"])
-    by1 = sorted(ranked, key=upside_maxp_coll, reverse=True)
-    by2 = sorted(ranked, key=upside_ev, reverse=True)
+    heads = (sorted(ranked, key=upside_maxp_coll, reverse=True)[:V2_TOP_EACH]
+             + sorted(ranked, key=upside_ev, reverse=True)[:V2_TOP_EACH]
+             + sorted(ranked, key=upside_sigma_payoff, reverse=True)[:V2_TOP_EACH])
     picks, have = [], set()
-    for t in by1[:V2_TOP_EACH] + by2[:V2_TOP_EACH]:
+    for t in heads:
         if key(t) not in have:
             picks.append(t)
             have.add(key(t))
@@ -513,9 +544,10 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
         ranked = sorted(sector_triplets, key=lambda t: t["score"], reverse=True)
         if variant == "upside":
             # Upside gate: credit ≥ $0 came in via min_premium=0.0; apply
-            # the max-profit/collateral floor, then the two-ranking slice.
+            # the max-profit/collateral floor, then the three-ranking slice.
             ranked = [t for t in ranked
                       if upside_maxp_coll(t) >= UPSIDE_MIN_MAXP_COLL]
+            upside_sigma_annotate(ranked, price_by_ticker, as_of)
             picks = upside_select(ranked, date_str, slot)
         elif v2:
             # v2 dual gate (RANKER_SPEC §5b): scan_ticker already applied the
