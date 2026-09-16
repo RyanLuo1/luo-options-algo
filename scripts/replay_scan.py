@@ -81,6 +81,59 @@ from sector_scan import (  # noqa: E402
     load_macro_proximity, _next_event_days, DEFAULT_TOP_N,
 )
 
+# ── Upside variant (prespecified single run, 2026-09-15) ─────────────────────
+# Legs A/C as production (Δ0.40–0.60 / Δ0.15–0.30); leg B Δ0.05–0.20 (far
+# OTM → ~wide spread, big cap). Gate: net credit ≥ $0 AND max-profit ÷
+# collateral ≥ 5%. Two prespecified rankings: (1) max-profit ÷ collateral;
+# (2) delta-weighted EV with a FIXED 10%-of-K_C breach-depth assumption:
+#   EV = credit + δ_B·W + (δ_A−δ_B)·W/2 − δ_C·(0.10·K_C)
+# (zone probs from leg deltas: capped=δ_B, climbing=δ_A−δ_B, loss=δ_C).
+# Leg-B window is overridden on the screener MODULE at runtime (constants
+# are read at call time) — screener.py itself is untouched.
+
+UPSIDE_LEG_B = (0.05, 0.20)
+UPSIDE_MIN_MAXP_COLL = 0.05
+UPSIDE_EV_BREACH = 0.10
+
+
+def upside_maxp_coll(t):
+    coll = float(t["leg_c_strike"]) - float(t["net_premium"])
+    if coll <= 0:
+        return 0.0
+    return (float(t["net_premium"]) +
+            float(t["leg_b_strike"]) - float(t["leg_a_strike"])) / coll
+
+
+def upside_ev(t):
+    w = float(t["leg_b_strike"]) - float(t["leg_a_strike"])
+    dA, dB, dC = (float(t["leg_a_delta"]), float(t["leg_b_delta"]),
+                  float(t["leg_c_delta"]))
+    return (float(t["net_premium"]) + dB * w + max(0.0, dA - dB) * w / 2
+            - dC * UPSIDE_EV_BREACH * float(t["leg_c_strike"]))
+
+
+def upside_select(ranked, date_str, slot):
+    """Deep slice: top-50 by maxp/coll ∪ top-50 by EV ∪ 20 seeded-random.
+    picks[0] = ranking-1 (maxp/coll) best → is_best_in_sector."""
+    import random as _random
+
+    def key(t):
+        return (t["ticker"], t["expiration"], t["leg_a_strike"],
+                t["leg_b_strike"], t["leg_c_strike"])
+    by1 = sorted(ranked, key=upside_maxp_coll, reverse=True)
+    by2 = sorted(ranked, key=upside_ev, reverse=True)
+    picks, have = [], set()
+    for t in by1[:V2_TOP_EACH] + by2[:V2_TOP_EACH]:
+        if key(t) not in have:
+            picks.append(t)
+            have.add(key(t))
+    rest = [t for t in ranked if key(t) not in have]
+    rng = _random.Random(f"upside-{date_str}-{slot}")
+    for t in (rng.sample(rest, min(V2_RANDOM_N, len(rest))) if rest else []):
+        picks.append(t)
+    return picks
+
+
 # ── v2 replay selection (RANKER_SPEC §5b) ─────────────────────────────────────
 
 V2_TOP_EACH = 50      # deep slice per ranking
@@ -389,7 +442,7 @@ def days_to_earnings_pit(ticker, ref):
 def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
                 min_premium=DEFAULT_MIN_PREMIUM, min_pp=DEFAULT_MIN_PP, write=False, v2=False,
                 sleep_s=0.15, spot_source="rest",
-                universe_path=None, source_tag="backtest2"):
+                universe_path=None, source_tag="backtest2", variant=None):
     as_of = datetime.strptime(date_str, "%Y-%m-%d").date()
     h, m = SLOTS[slot]
     scan_timestamp = datetime(as_of.year, as_of.month, as_of.day, h, m, tzinfo=ET).isoformat()
@@ -397,7 +450,8 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
     # (source, scan_date, sector)-shaped, so the slot must live inside source
     # or a both-slots replay's close pass would replace the open pass's rows.
     # Requires docs/backtest_slot_split_migration.sql applied.
-    source = f"{source_tag}_{slot}" if v2 else f"backtest_{slot}"
+    source = (f"backtest4_{slot}" if variant == "upside"
+              else f"{source_tag}_{slot}" if v2 else f"backtest_{slot}")
 
     store = ExtractStore(date_str)
     # SPY context: parity-implied from the extract first (SPY is in the
@@ -457,7 +511,13 @@ def replay_slot(date_str, slot, supabase, top_n=DEFAULT_TOP_N,
             price_by_ticker[ticker] = spot
 
         ranked = sorted(sector_triplets, key=lambda t: t["score"], reverse=True)
-        if v2:
+        if variant == "upside":
+            # Upside gate: credit ≥ $0 came in via min_premium=0.0; apply
+            # the max-profit/collateral floor, then the two-ranking slice.
+            ranked = [t for t in ranked
+                      if upside_maxp_coll(t) >= UPSIDE_MIN_MAXP_COLL]
+            picks = upside_select(ranked, date_str, slot)
+        elif v2:
             # v2 dual gate (RANKER_SPEC §5b): scan_ticker already applied the
             # $1.00 absolute floor via min_premium; apply min 1% ROC here.
             ranked = [t for t in ranked if roc_value(t) >= V2_MIN_ROC]
@@ -548,6 +608,12 @@ def main():
                     help="source prefix for --v2 writes (backtest3 = the "
                          "prespecified 240-name universe-expansion run; run "
                          "docs/backtest3_migration.sql first)")
+    ap.add_argument("--variant", choices=["upside"], default=None,
+                    help="'upside' = the prespecified wide-spread variant "
+                         "(leg B Δ0.05–0.20; gate credit ≥ $0 AND max-profit/"
+                         "collateral ≥ 5%%; rankings maxp/coll + delta-EV; "
+                         "sources backtest4_*; run docs/backtest4_migration.sql "
+                         "first)")
     ap.add_argument("--v2", action="store_true",
                     help="v2 replay (RANKER_SPEC §5b): dual-gate threshold "
                          "(min $1.00 credit AND min 1% return-on-collateral), "
@@ -579,6 +645,14 @@ def main():
     supabase = _make_supabase() if args.write else None
     slots = ["open", "close"] if args.slot == "both" else [args.slot]
     min_prem = V2_MIN_PREMIUM if args.v2 else DEFAULT_MIN_PREMIUM
+    if args.variant == "upside":
+        min_prem = 0.0                      # gate: net credit ≥ $0
+        import screener as _scr             # runtime window override —
+        _scr.LEG_B_DELTA_LOW, _scr.LEG_B_DELTA_HIGH = UPSIDE_LEG_B
+        print(f"[upside] leg B Δ window {UPSIDE_LEG_B}; gate credit ≥ $0 AND "
+              f"max-profit/collateral ≥ {UPSIDE_MIN_MAXP_COLL:.0%}; "
+              f"EV breach depth {UPSIDE_EV_BREACH:.0%}·K_C; "
+              f"sources backtest4_*", flush=True)
     if args.v2:
         print(f"[v2] dual gate: net_premium >= ${V2_MIN_PREMIUM:.2f} AND "
               f"ROC >= {V2_MIN_ROC:.0%}; deep-slice logging "
@@ -590,7 +664,8 @@ def main():
             replay_slot(ds, slot, supabase, top_n=args.top_n, write=args.write,
                         v2=args.v2, min_premium=min_prem,
                         sleep_s=args.sleep, spot_source=args.spot_source,
-                        universe_path=args.universe, source_tag=args.source_tag)
+                        universe_path=args.universe, source_tag=args.source_tag,
+                        variant=args.variant)
 
 
 if __name__ == "__main__":
