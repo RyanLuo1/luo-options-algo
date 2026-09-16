@@ -64,6 +64,9 @@ export default function useOptionsData(mode = 'income') {
 
       if (!res.ok) {
         setError(data.error || `Server error (${res.status})`)
+      } else if (runMode !== 'income' && data.mode_used !== runMode) {
+        // A backend that predates modes ignores `mode` and runs the Income scan; never show that as Upside.
+        setError('This server ran an Income scan: it doesn’t know Upside mode yet. Restart the server and run again.')
       } else {
         setResults(prev => ({ ...prev, [runMode]: data }))
         setStatus(prev => ({
