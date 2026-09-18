@@ -96,7 +96,7 @@ export const MODES = {
 }
 
 /** The liquidity census behind a zero chip, for the hover: what the scanner saw and where each contract died. */
-export function zeroReasonDetail(reason) {
+export function zeroReasonDetail(reason, relaxedGroup = null) {
   const c = reason?.census
   if (!c || !c.contracts) return null
   const n = k => Number(c[k] ?? 0).toLocaleString('en-US')
@@ -107,7 +107,29 @@ export function zeroReasonDetail(reason) {
   if (c.untraded) parts.push(`${n('untraded')} untraded`)
   parts.push(`${n('tradeable')} tradeable`)
   const tail = reason?.code === 'no_triplet' ? ' — never all three legs on one expiration' : ''
-  return `${n('contracts')} contracts seen: ${parts.join(' · ')}${tail}`
+  const relaxedNote = relaxedGroup && (relaxedGroup.rows?.length ?? 0) === 0 ? ' · none with the volume floor off either' : ''
+  return `${n('contracts')} contracts seen: ${parts.join(' · ')}${tail}${relaxedNote}`
+}
+
+/** Liquidity cost of a setup, per contract: what the structure is worth at the quote mids versus
+ *  its worst-case transactable entry (sell legs at the bid, the bought leg at the ask). The gap is
+ *  what patience is worth — a limit order inside the spread fills somewhere between the two.
+ *  Null when the row carries no mids (Tier 0 rows don't). */
+export function liquidityCost(row) {
+  const a = row.leg_a_mid, b = row.leg_b_mid, c = row.leg_c_mid
+  if (![a, b, c].every(Number.isFinite)) return null
+  const atMid = (b + c - a) * 100
+  const worst = row.net_premium * 100
+  return { atMid, worst, gap: Math.max(0, atMid - worst) }
+}
+
+/** The legs a relaxed row admitted below the Tier 0 volume floor, in words ("call 240 · put 190"). */
+export function thinLegs(row, floor = 20) {
+  const out = []
+  if (Number.isFinite(row.leg_a_volume) && row.leg_a_volume < floor) out.push({ leg: `call ${row.leg_a_strike}`, volume: row.leg_a_volume })
+  if (Number.isFinite(row.leg_b_volume) && row.leg_b_volume < floor) out.push({ leg: `call ${row.leg_b_strike}`, volume: row.leg_b_volume })
+  if (Number.isFinite(row.leg_c_volume) && row.leg_c_volume < floor) out.push({ leg: `put ${row.leg_c_strike}`, volume: row.leg_c_volume })
+  return out
 }
 
 /** The incumbent Screener metric: credit as a share of max profit. */

@@ -103,6 +103,8 @@ export default function useOptionsData(mode = 'income') {
     tickersUsed:     result?.tickers_used     ?? EMPTY,
     tickersSkipped:  result?.tickers_skipped  ?? EMPTY,
     tickerReasons:   result?.ticker_reasons   ?? null,
+    relaxed:         result?.relaxed          ?? null,   // Upside only: display-only Tier 1 rows per zero ticker
+    ladder:          result?.ladder           ?? null,
     weeksMinUsed:    result?.weeks_min_used   ?? null,
     weeksMaxUsed:    result?.weeks_max_used   ?? null,
     minPremiumUsed:  result?.min_premium_used ?? null,

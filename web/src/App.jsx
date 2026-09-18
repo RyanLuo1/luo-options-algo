@@ -11,6 +11,7 @@ import AppShell         from './components/lc/AppShell'
 import LockedTeaser     from './components/lc/LockedTeaser'
 import ControlsBar      from './components/lc/ControlsBar'
 import ScanChips        from './components/lc/ScanChips'
+import RelaxedGroup     from './components/lc/RelaxedGroup'
 import RankedTable      from './components/lc/RankedTable'
 import SetupPanel       from './components/lc/SetupPanel'
 import WatchlistManager from './components/WatchlistManager'
@@ -59,6 +60,8 @@ export default function App() {
   const [sort,        setSort]        = useState(persisted.sort ?? null)
   const [sortCtx,     setSortCtx]     = useState(persisted.sortCtx ?? null)
   const [selectedKey, setSelectedKey] = useState(persisted.selectedKey ?? null)
+  const [relaxedOpen, setRelaxedOpen] = useState(persisted.relaxedOpen ?? { ctx: null, tickers: [] })   // per-ticker opt-in (Upside, display-only); persisted with its scan context so a trip to the editor comes back to it
+  const [relaxedSel, setRelaxedSel] = useState(persisted.relaxedSel ?? {})   // ticker -> selected Tier 1 row key
   // Rows already saved this session (by result_id, else rowKey): Save becomes idempotent.
   const [savedKeys,   setSavedKeys]   = useState(() => new Set(persisted.savedKeys ?? []))
 
@@ -111,7 +114,7 @@ export default function App() {
 
   // ── Scan data (unchanged hook) ─────────────────────────────────────────────
   const {
-    marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped, tickerReasons,
+    marketOpen, lastRun, ranked, macroEvents, tickersUsed, tickersSkipped, tickerReasons, relaxed, ladder,
     weeksMinUsed, weeksMaxUsed, minPremiumUsed, minPProfitUsed, minUpsideUsed, otherResult,
     totalEvaluated, hasResult, scanId, loading, error, runScan,
   } = useOptionsData(mode)
@@ -131,8 +134,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys] })
-  }, [tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys])
+    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys], relaxedOpen, relaxedSel })
+  }, [tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys, relaxedOpen, relaxedSel])
 
   // ── Derived rows ───────────────────────────────────────────────────────────
   // The return-on-collateral floor is applied here (the API keeps its own
@@ -159,10 +162,25 @@ export default function App() {
       const fromRoc = (apiCounts[t] ?? 0) > 0
       reasonCodes[t] = fromRoc ? 'roc' : (tickerReasons?.[t]?.code ?? tickerReasons?.[t] ?? null)
       reasons[t] = fromRoc ? zeroReasonText('roc', ctx) : zeroReasonText(tickerReasons?.[t], ctx)
-      reasonDetails[t] = fromRoc ? null : zeroReasonDetail(tickerReasons?.[t])
+      reasonDetails[t] = fromRoc ? null : zeroReasonDetail(tickerReasons?.[t], relaxed?.[t])
     }
     return { reasons, reasonCodes, reasonDetails }
-  }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minUpsideUsed, minUpside])
+  }, [ranked, counts, tickersUsed, tickerReasons, relaxed, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minUpsideUsed, minUpside])
+  // Thin-quote (Tier 1) groups: Upside only, per-ticker opt-in from the chip, shown under the ranked list.
+  const relaxedAvailable = useMemo(() => {
+    const out = {}
+    if (mode !== 'upside' || !relaxed) return out
+    for (const t of tickersUsed) if ((counts[t] ?? 0) === 0 && (relaxed[t]?.rows?.length ?? 0) > 0) out[t] = relaxed[t].rows.length
+    return out
+  }, [mode, relaxed, tickersUsed, counts])
+  const openRelaxed = relaxedOpen.ctx === scanCtx ? relaxedOpen.tickers.filter(t => relaxedAvailable[t]) : []
+  function toggleRelaxed(t) {
+    setRelaxedOpen(prev => {
+      const cur = prev.ctx === scanCtx ? prev.tickers : []
+      return { ctx: scanCtx, tickers: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] }
+    })
+  }
+  function handleView(row) { navigate('/trade', { state: { triplet: { ...row, mode: 'upside' }, scan_id: null, source: { id: null, status: 'relaxed' }, from: 'screener' } }) }
   const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
 
@@ -381,7 +399,8 @@ export default function App() {
           )}
 
           {tickersUsed.length > 0 && (
-            <ScanChips tickers={activeTickers} counts={counts} reasons={reasons} details={reasonDetails} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
+            <ScanChips tickers={activeTickers} counts={counts} reasons={reasons} details={reasonDetails} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker}
+              relaxedAvailable={relaxedAvailable} relaxedOpen={openRelaxed} onToggleRelaxed={toggleRelaxed} />
           )}
 
           {loading && <ProgressStrip tickerCount={lastRunTickers.length} />}
@@ -418,6 +437,11 @@ export default function App() {
               onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
             />
           )}
+          {openRelaxed.map(t => (
+            <RelaxedGroup key={`${scanCtx}:${t}`} ticker={t} group={relaxed[t]} ladder={ladder} scannedAt={lastRun ? String(lastRun).slice(11, 16) : null}
+              onView={handleView} onClose={() => toggleRelaxed(t)} dimmed={loading}
+              initialKey={relaxedSel[t] ?? null} onSelect={k => setRelaxedSel(prev => ({ ...prev, [t]: k }))} />
+          ))}
         </div>
       )}
 

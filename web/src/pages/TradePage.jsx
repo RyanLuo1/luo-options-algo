@@ -18,7 +18,7 @@ import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, shortsWorthless, pMaxApprox,
 // so an edit never duplicates the ledger. Graded trades open read-only.
 
 function legFromTriplet(triplet, leg) {
-  return { strike: triplet[`leg_${leg}_strike`], premium: triplet[`leg_${leg}_prem`], delta: triplet[`leg_${leg}_delta`], volume: null, oi: null }
+  return { strike: triplet[`leg_${leg}_strike`], premium: triplet[`leg_${leg}_prem`], delta: triplet[`leg_${leg}_delta`], volume: triplet[`leg_${leg}_volume`] ?? null, oi: null }
 }
 function calcMetrics(a, b, c) {
   const net = (b.premium ?? 0) + (c.premium ?? 0) - (a.premium ?? 0)
@@ -34,7 +34,8 @@ export default function TradePage() {
   const scanId  = location.state?.scan_id ?? null
   const source  = location.state?.source ?? null          // { id, status } when opened from the Tradebook
   const from    = location.state?.from ?? (source ? 'tradebook' : 'screener')
-  const readOnly = !!source && source.status !== 'open'   // expired trades (graded or grading-pending) can't be changed
+  const readOnly = !!source && source.status !== 'open'   // expired trades (graded or grading-pending) and thin-quote setups can't be changed
+  const relaxedView = source?.status === 'relaxed'        // a Tier 1 setup from the Screener: viewed, never edited against a Tier 0 chain
 
   const [activeTab, setActiveTab] = useState(from === 'tradebook' ? 'tradebook' : 'screener')
   const [selA, setSelA] = useState(() => (triplet ? legFromTriplet(triplet, 'a') : null))
@@ -137,9 +138,9 @@ export default function TradePage() {
             <button type="button" onClick={back} className="text-[0.9rem] font-semibold text-lc-violet hover:underline">← Back to {from === 'tradebook' ? 'Tradebook' : 'Screener'}</button>
             <div className="font-display font-bold text-[1.6rem] leading-none tracking-[-0.02em] flex items-baseline gap-2.5">
               {triplet.ticker}
-              <small className="font-figtree font-medium text-[1rem] text-lc-ink-2 tracking-normal">{readOnly ? `expired ${exp.short}` : `expires ${exp.short}${exp.dte != null && exp.dte >= 0 ? ` · ${exp.dte}d` : ''}`}</small>
+              <small className="font-figtree font-medium text-[1rem] text-lc-ink-2 tracking-normal">{readOnly && !relaxedView ? `expired ${exp.short}` : `expires ${exp.short}${exp.dte != null && exp.dte >= 0 ? ` · ${exp.dte}d` : ''}`}</small>
             </div>
-            {readOnly && <Pill tone="quiet">{source.status === 'graded' ? 'Expired and graded · read-only' : 'Expired · grade pending · read-only'}</Pill>}
+            {readOnly && <Pill tone="quiet">{relaxedView ? 'Thin-quote setup · Tier 1 · read-only' : source.status === 'graded' ? 'Expired and graded · read-only' : 'Expired · grade pending · read-only'}</Pill>}
             {source && !readOnly && <Pill tone="quiet">Editing a saved trade</Pill>}
           </div>
           {metrics && (
@@ -165,7 +166,7 @@ export default function TradePage() {
         {/* Actions */}
         <section className="bg-lc-card rounded-lc shadow-lc px-6 py-4 flex items-center gap-4 flex-wrap">
           {readOnly ? (
-            <span className="text-[0.95rem] text-lc-ink-2">{source.status === 'graded' ? 'This trade has expired and been graded; its legs are shown as saved. Nothing here can change the grade.' : 'This trade has expired; its legs are shown as saved. The grade posts after the next close and nothing here can change it.'}</span>
+            <span className="text-[0.95rem] text-lc-ink-2">{relaxedView ? 'This setup includes legs that traded fewer than 20 contracts today; its legs are shown as scanned, priced at the bid and ask like every row. It can’t be edited against the live chain or saved.' : source.status === 'graded' ? 'This trade has expired and been graded; its legs are shown as saved. Nothing here can change the grade.' : 'This trade has expired; its legs are shown as saved. The grade posts after the next close and nothing here can change it.'}</span>
           ) : (
             <>
               <Button variant="secondary" onClick={() => setMetrics(calcMetrics(selA, selB, selC))}>Recalculate</Button>

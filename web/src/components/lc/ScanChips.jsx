@@ -4,7 +4,7 @@ import { XIcon } from './ui'
 // Click filters to that ticker (click again clears); × removes it from the
 // scan set. A ticker that yielded zero carries its cause in words, as the
 // scanner reported it (or the client-side return floor).
-export default function ScanChips({ tickers, counts, reasons, details, skipped, activeFilter, onToggle, onRemove }) {
+export default function ScanChips({ tickers, counts, reasons, details, skipped, activeFilter, onToggle, onRemove, relaxedAvailable, relaxedOpen, onToggleRelaxed }) {
   if ((!tickers || tickers.length === 0) && (!skipped || skipped.length === 0)) return null
   return (
     <div className="flex items-center gap-2 flex-wrap px-1" aria-label="Tickers in this scan">
@@ -41,6 +41,13 @@ export default function ScanChips({ tickers, counts, reasons, details, skipped, 
               </button>
             </span>
             {why && <span className="text-[0.82rem] text-lc-ink-2" title={detail ?? undefined}>— {why}</span>}
+            {n === 0 && relaxedAvailable?.[t] > 0 && (
+              <button type="button" onClick={() => onToggleRelaxed?.(t)} aria-pressed={relaxedOpen?.includes(t) || false} data-relax={t}
+                title={`${relaxedAvailable[t]} setups with the volume floor off, priced at the worst case. Display only; never ranked, never saved.`}
+                className="text-[0.82rem] font-semibold text-lc-violet hover:underline">
+                {relaxedOpen?.includes(t) ? 'Hide thin-quote setups' : 'Show thin-quote setups (worst-case priced)'}
+              </button>
+            )}
           </span>
         )
       })}

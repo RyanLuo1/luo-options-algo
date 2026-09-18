@@ -97,7 +97,7 @@ def passes_quote_guards(bid, ask):
 CENSUS_KEYS = ("contracts", "no_greeks", "placeholder_iv", "no_quote", "wide_spread", "untraded", "tradeable")
 
 
-def _parse_massive_contracts(raw, census=None):
+def _parse_massive_contracts(raw, census=None, min_volume=MIN_VOLUME):
     """Filter and normalize a list of Massive option snapshot objects.
 
     Prices come from the live quote (Options Advanced plan), not day.close —
@@ -109,6 +109,11 @@ def _parse_massive_contracts(raw, census=None):
     contract is tallied under the first guard it fails (keys in CENSUS_KEYS),
     accumulated across calls. It never changes which contracts survive —
     the default path (census=None) is byte-identical to before.
+
+    `min_volume` is the volume floor (default MIN_VOLUME = Tier 0). The web
+    Screener's Upside ladder passes 0 (Tier 1) to re-parse an in-memory chain
+    for a ticker that produced nothing at Tier 0 — display-only rows; no
+    research writer ever passes it.
     """
     if census is not None:
         for k in CENSUS_KEYS:
@@ -137,7 +142,7 @@ def _parse_massive_contracts(raw, census=None):
             tally("no_quote" if (bid <= 0 or ask <= 0 or ask < bid) else "wide_spread")
             continue
         vol = int(o.day.volume) if o.day is not None and o.day.volume is not None else 0
-        if vol < MIN_VOLUME:
+        if vol < min_volume:
             tally("untraded")
             continue
         tally("tradeable")
@@ -152,14 +157,8 @@ def _parse_massive_contracts(raw, census=None):
     return result
 
 
-def _live_chain_provider(ticker, exp, side, strike_low, strike_high, census=None):
-    """Default chain source: Massive live snapshot → parsed contract dicts.
-
-    Returns a list of {strike, bid, ask, mid, delta, volume} or None on a
-    fetch error (the caller skips that side/expiration, matching the old
-    inline behavior). The backtest replay passes its own provider with the
-    same signature/shape — everything downstream is shared.
-    """
+def _fetch_chain_raw(ticker, exp, side, strike_low, strike_high):
+    """One Massive snapshot call → the raw contract objects, or None on a fetch error."""
     try:
         raw = list(massive_client.list_snapshot_options_chain(
             ticker,
@@ -174,7 +173,52 @@ def _live_chain_provider(ticker, exp, side, strike_low, strike_high, census=None
     except Exception as e:
         print(f"\n    [!] {exp}: {side} chain error — {e}")
         return None
+    return raw
+
+
+def _live_chain_provider(ticker, exp, side, strike_low, strike_high, census=None):
+    """Default chain source: Massive live snapshot → parsed contract dicts.
+
+    Returns a list of {strike, bid, ask, mid, delta, volume} or None on a
+    fetch error (the caller skips that side/expiration, matching the old
+    inline behavior). The backtest replay passes its own provider with the
+    same signature/shape — everything downstream is shared.
+    """
+    raw = _fetch_chain_raw(ticker, exp, side, strike_low, strike_high)
+    if raw is None:
+        return None
     return _parse_massive_contracts(raw, census=census)
+
+
+class CachedLiveChains:
+    """The web Screener's chain source for the Upside ladder: each (ticker,
+    expiration, side) snapshot is fetched once and parsed per tier, so a
+    Tier 1 pass for a zero-at-Tier-0 ticker costs zero extra Massive calls.
+    `provider(min_volume=MIN_VOLUME)` is Tier 0 (identical to the live
+    provider); `provider(min_volume=0)` is Tier 1. Parsed contracts are kept
+    by (ticker, exp, side, strike) so relaxed rows can carry each leg's mid
+    and volume for the liquidity-cost figure."""
+
+    def __init__(self):
+        self.raw = {}
+        self.contracts = {}
+
+    def _fetch(self, ticker, exp, side, strike_low, strike_high):
+        key = (ticker, exp, side)
+        if key not in self.raw:
+            self.raw[key] = _fetch_chain_raw(ticker, exp, side, strike_low, strike_high)
+        return self.raw[key]
+
+    def provider(self, min_volume=MIN_VOLUME, census=None):
+        def _provider(ticker, exp, side, strike_low, strike_high):
+            raw = self._fetch(ticker, exp, side, strike_low, strike_high)
+            if raw is None:
+                return None
+            parsed = _parse_massive_contracts(raw, census=census, min_volume=min_volume)
+            for c in parsed:
+                self.contracts[(ticker, exp, side, c["strike"])] = c
+            return parsed
+        return _provider
 
 
 # ── Core scan ──────────────────────────────────────────────────────────────────

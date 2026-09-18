@@ -19,7 +19,7 @@ import yfinance as yf
 
 from options_screener import get_next_fridays, massive_client, TICKERS as DEFAULT_TICKERS
 from event_filter import load_events, get_macro_events, get_earnings_flag
-from screener import scan_ticker, MAX_SPREAD_PCT
+from screener import scan_ticker, MAX_SPREAD_PCT, MIN_VOLUME, CachedLiveChains
 
 # Screener modes. Income is today's validated scan (no extra scan_ticker kwargs —
 # byte-identical to the cron/replay/CLI path). Upside is the same three legs
@@ -88,6 +88,41 @@ def _zero_reason(stats, evaluated, census=None):
     if census is not None:
         out["census"] = dict(census)
     return out
+
+
+# The fixed liquidity ladder (owner, 2026-09-17). Tier 0 = today's guards, never changed here.
+# Tier 1 = the volume floor off; the spread cap and the two-sided quote hold. Display-only, Upside-only.
+LADDER = {
+    "tier0": {"volume_floor": MIN_VOLUME, "spread_cap": MAX_SPREAD_PCT},
+    "tier1": {"volume_floor": 0,          "spread_cap": MAX_SPREAD_PCT},
+}
+
+
+def _tier1_rows(chains, ticker, price, week_exps, min_premium, min_p_profit, scan_kwargs):
+    """Re-run the Upside scan for one zero-at-Tier-0 ticker with the volume floor off, from the
+    chains already fetched (zero extra Massive calls). Rows are stamped tier=1 and carry each
+    leg's mid and volume so the UI can show the liquidity cost (mid vs worst-case entry).
+    The user's credit / probability / upside floors are applied unchanged."""
+    stats = {}
+    rows, evaluated = scan_ticker(
+        ticker, price, week_exps, min_premium,
+        min_p_profit=min_p_profit, stats=stats,
+        chain_provider=chains.provider(min_volume=0),
+        **scan_kwargs,
+    )
+    out = []
+    for r in rows:
+        row = dict(r)
+        row["mode"] = "upside"
+        row["tier"] = 1
+        row["underlying_price"] = price
+        for leg, side, k in (("a", "call", "leg_a_strike"), ("b", "call", "leg_b_strike"), ("c", "put", "leg_c_strike")):
+            c = chains.contracts.get((ticker, r["expiration"], side, r[k]))
+            row[f"leg_{leg}_mid"] = c["mid"] if c else None
+            row[f"leg_{leg}_volume"] = c["volume"] if c else None
+        out.append(row)
+    out.sort(key=lambda r: (r["net_premium"] + r["spread_width"]) / r["leg_c_strike"], reverse=True)
+    return {"tier": 1, "rows": out, "evaluated": evaluated, "reason": None if out else _zero_reason(stats, evaluated)}
 
 
 def verify_token(req):
@@ -348,6 +383,16 @@ def run():
             return jsonify({"error": "min_upside must be a number between 0 and 5"}), 400
         scan_kwargs["min_upside"] = float(requested_min_upside)
 
+    # ── The liquidity ladder is fixed (display-only, Upside-only): no tier parameter exists,
+    #    and an Income request may not ask for relaxation at all.
+    if "tier" in body:
+        return jsonify({"error": "tier is not a request parameter: the liquidity ladder is fixed"}), 400
+    if "relax" in body and requested_mode != "upside":
+        return jsonify({"error": "relax is Upside-only: Income has no relaxation path"}), 400
+    relax = body.get("relax", True)
+    if not isinstance(relax, bool):
+        return jsonify({"error": "relax must be true or false"}), 400
+
     # ── Validate (400 errors are not logged to scan_runs) ────────
     if not isinstance(requested_weeks_min, int) or not (1 <= requested_weeks_min <= 12):
         return jsonify({"error": "weeks_min must be an integer between 1 and 12"}), 400
@@ -402,6 +447,8 @@ def run():
         tickers_scanned = []
         price_by_ticker = {}   # live yfinance price used for each ticker's scan
         ticker_reasons  = {}   # ticker -> why it produced zero setups (for the UI chips)
+        relaxed         = {}   # Upside only: ticker -> its Tier 1 (volume floor off) rows, display-only
+        chains          = CachedLiveChains() if requested_mode == "upside" else None
 
         for ticker in tickers:
             try:
@@ -416,19 +463,33 @@ def run():
 
             tickers_scanned.append(ticker)
             stats, census = {}, {}
-            triplets, evaluated = scan_ticker(
-                ticker, price, week_exps,
-                float(requested_min_prem),
-                min_p_profit=float(requested_min_pp),
-                stats=stats, census=census,   # bookkeeping only; the census never changes a filter
-                **scan_kwargs,   # empty for Income: the call is exactly the pre-mode call
-            )
+            if chains is None:
+                triplets, evaluated = scan_ticker(
+                    ticker, price, week_exps,
+                    float(requested_min_prem),
+                    min_p_profit=float(requested_min_pp),
+                    stats=stats, census=census,   # bookkeeping only; the census never changes a filter
+                    **scan_kwargs,   # empty for Income: the call is exactly the pre-mode call
+                )
+            else:
+                # Upside: the same Tier 0 parse through the cached chain source (identical contracts),
+                # so a zero ticker's Tier 1 pass below re-parses the chains already in memory.
+                triplets, evaluated = scan_ticker(
+                    ticker, price, week_exps,
+                    float(requested_min_prem),
+                    min_p_profit=float(requested_min_pp),
+                    stats=stats, chain_provider=chains.provider(census=census),
+                    **scan_kwargs,
+                )
             for t in triplets:
                 t["mode"] = requested_mode
             total_evaluated += evaluated
             all_triplets.extend(triplets)
             if not triplets:
                 ticker_reasons[ticker] = _zero_reason(stats, evaluated, census)
+                if chains is not None and relax:
+                    relaxed[ticker] = _tier1_rows(chains, ticker, price, week_exps, float(requested_min_prem),
+                                                  float(requested_min_pp), scan_kwargs)
 
         ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
         tickers_used    = sorted(tickers_scanned)
@@ -463,6 +524,7 @@ def run():
             row = dict(r)
             row["result_id"] = result_ids[i] if i < len(result_ids) else None
             row["underlying_price"] = price_by_ticker.get(r["ticker"])
+            row["tier"] = 0
             ranked_with_ids.append(row)
 
         # Per-ticker grouping for the overview cards. Purely a reorganization
@@ -494,6 +556,9 @@ def run():
             "tickers_used":         tickers_used,
             "tickers_skipped":      tickers_skipped,
             "ticker_reasons":       ticker_reasons,
+            # Upside only: display-only Tier 1 rows for tickers that produced nothing at Tier 0.
+            # Never logged, never saveable, never in the ranked list. (Income responses carry no key.)
+            **({"relaxed": relaxed, "ladder": LADDER} if chains is not None else {}),
             "tickers_with_results": len(by_ticker),
             "market_open":          is_open,
             "time_et":              et_time,
@@ -558,6 +623,8 @@ def tradebook_save():
     scan_id   = body.get("scan_id")    # may be None for legacy / unlinked saves
     result_id = body.get("result_id")  # may be None
     trade     = body.get("trade") or {}
+    if int(trade.pop("tier", 0) or 0) >= 1:
+        return jsonify({"error": "Thin-quote setups can't be saved: they're priced at the worst case and never enter the Tradebook."}), 400
 
     if not isinstance(trade, dict) or not trade.get("ticker") or not trade.get("expiration"):
         return jsonify({"error": "trade payload must include ticker and expiration"}), 400
