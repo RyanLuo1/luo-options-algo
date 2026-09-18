@@ -133,22 +133,28 @@ export default function SetupPanel({
   )
 }
 
+// A leg that came in below the volume floor (thin-quote setups carry each leg's volume) wears it on
+// its tile: a quiet pill with today's count, so the diagram itself says which legs are thin.
+const THIN_FLOOR = 20
 function Legs({ row }) {
+  const vol = k => (Number.isFinite(row[k]) ? row[k] : null)
   return (
     <div className="grid grid-cols-3 max-lc:grid-cols-1 gap-3">
-      <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay />
-      <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" />
-      <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" />
+      <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay volume={vol('leg_a_volume')} />
+      <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" volume={vol('leg_b_volume')} />
+      <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" volume={vol('leg_c_volume')} />
     </div>
   )
 }
 
-function Leg({ role, strike, px, side, pay }) {
+function Leg({ role, strike, px, side, pay, volume = null }) {
+  const thin = volume != null && volume < THIN_FLOOR
   return (
-    <div className="bg-lc-ground rounded-lc-plus p-4 flex flex-col gap-1">
+    <div className={`rounded-lc-plus p-4 flex flex-col gap-1 ${thin ? 'bg-lc-ground border-[1.5px] border-dashed border-lc-violet/50' : 'bg-lc-ground'}`} data-thin={thin || undefined}>
       <span className={`text-[0.85rem] font-semibold ${pay ? 'text-lc-violet' : 'text-lc-ink-2'}`}>{role}</span>
       <span className="font-display font-extrabold text-[1.35rem] leading-tight tracking-[-0.01em] text-lc-ink">{strike}</span>
       <span className="text-[0.92rem] text-lc-ink-2">{fmtMoney2(px)} · {side}</span>
+      {thin && <span className="mt-1 self-start"><Pill tone="violet" title={`Below the ${THIN_FLOOR}-contract volume floor: quoted, thinly traded`}>Thin · {volume} traded today</Pill></span>}
     </div>
   )
 }

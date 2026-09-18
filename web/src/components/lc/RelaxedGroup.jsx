@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Pill, Button, InfoTip } from './ui'
 import SetupPanel from './SetupPanel'
-import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, upsidePerCollateral, shortsWorthless, liquidityCost, thinLegs } from './format'
+import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, upsidePerCollateral, shortsWorthless, liquidityCost } from './format'
 
 // One ticker's thin-quote setups (Tier 1: the volume floor off; the spread cap and the
 // two-sided quote unchanged; the user's floors unchanged). Display-only: a view of the
@@ -84,13 +84,13 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
               <table className="w-full text-[0.95rem] border-separate border-spacing-0" data-tier="1">
                 <thead>
                   <tr className="text-[0.78rem] font-semibold text-lc-ink-2 align-bottom">
-                    <Th>Expires</Th><Th>Put / Call / Call</Th><Th right>Credit /ct<br /><span className="font-medium">at the bid/ask</span></Th><Th right>Gap<br /><span className="font-medium">mid − bid/ask</span></Th><Th right>Max profit /ct</Th><Th right>Max profit per<br />$ of collateral</Th><Th right>Shorts<br />worthless</Th><Th>Thin legs</Th>
+                    <Th>Expires</Th><Th>Put / Call / Call</Th><Th right>Credit /ct<br /><span className="font-medium">at the bid/ask</span></Th><Th right>Gap<br /><span className="font-medium">mid − bid/ask</span></Th><Th right>Max profit /ct</Th><Th right>Max profit per<br />$ of collateral</Th><Th right>Shorts<br />worthless</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.map((r, i) => {
                     const key = rowKey(r), on = key === selKey
-                    const f = rowFigures(r), lc = liquidityCost(r), thin = thinLegs(r, floor)
+                    const f = rowFigures(r), lc = liquidityCost(r)
                     const exp = expiryInfo(r.expiration)
                     return [
                       <tr key={key} ref={el => { rowRefs.current[key] = el }} data-tier="1" data-selected={on || undefined} aria-selected={on}
@@ -104,11 +104,10 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
                         <Td right className="font-semibold">{fmtMoney0(f.maxProfit)}</Td>
                         <Td right>{(upsidePerCollateral(r) * 100).toFixed(1)}%</Td>
                         <Td right>{fmtPct0(shortsWorthless(r))}</Td>
-                        <Td wrap><span className="text-[0.85rem] text-lc-ink-2" title={thin.length ? thin.map(t => `${t.leg}: ${t.volume} traded today`).join(' · ') : undefined}>{thin.length ? thin.map(t => t.leg).join(' · ') : 'none'}</span></Td>
                       </tr>,
                       i === 0 && more > 0 && (
                         <tr key={`${key}-more`} className="border-b border-lc-line/70">
-                          <td colSpan={8} className="px-2 py-1.5">
+                          <td colSpan={7} className="px-2 py-1.5">
                             <button type="button" onClick={() => setExpanded(x => !x)} aria-expanded={expanded} data-relaxed-more
                               className="text-[0.82rem] font-semibold text-lc-violet hover:underline">
                               {expanded ? `Show fewer ${ticker} setups` : `+${more} more ${ticker} ${more === 1 ? 'setup' : 'setups'}`}
@@ -121,7 +120,7 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
                 </tbody>
               </table>
             </div>
-            <p className="text-[0.82rem] text-lc-ink-2">Best setup first by max profit per $ of collateral; thin legs are quoted but traded fewer than {floor} contracts today (hover for the count). Click or ↑/↓ for a row’s dashboard, → / ← to show or hide the rest; Enter or double-click views it in the editor.</p>
+            <p className="text-[0.82rem] text-lc-ink-2">Best setup first by max profit per $ of collateral. The dashboard marks each thin leg (quoted, but fewer than {floor} contracts traded today). Click or ↑/↓ for a row’s dashboard, → / ← to show or hide the rest; Enter or double-click views it in the editor.</p>
           </div>
 
           <div className="min-w-0">
