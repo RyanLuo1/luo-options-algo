@@ -160,7 +160,7 @@ function Leg({ role, strike, px, side, pay, volume = null, oi = null }) {
       {hasFigures && (
         <span id={`leg-${role.replace(/\s/g, '-')}-${strike}`} role="tooltip" data-leg-figures
           className="pointer-events-none absolute left-0 top-full mt-2 z-20 w-56 rounded-lc-half bg-lc-ink text-lc-card text-[0.8rem] leading-[1.45] px-3 py-2 shadow-lc-lift hidden group-hover:block group-focus-within:block [font-variant-numeric:tabular-nums]">
-          Volume {n(volume)} today · Open interest {n(oi)}{thin ? ` — below the ${THIN_FLOOR}-contract volume floor` : ''}
+          Volume: {n(volume)} · OI: {n(oi)}
         </span>
       )}
     </div>
