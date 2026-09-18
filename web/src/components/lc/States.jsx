@@ -51,6 +51,12 @@ function humanizeError(message, hadResults) {
   if (/429|rate limit/i.test(m)) {
     return { problem: 'The options data feed is rate-limited right now.', recovery: `${keep} Wait a minute and try again, or scan fewer tickers.`.trim() }
   }
+  if (/non-negative number/i.test(m)) {
+    return { problem: 'This server doesn’t accept a negative credit floor yet: it’s running an older build.', recovery: `${keep} Set Minimum credit to $0 or more, or update the server, then run again.`.trim() }
+  }
+  if (/must be/i.test(m)) {   // a server validation sentence — say what it said
+    return { problem: 'The server rejected this scan.', recovery: `${m.replace(/\.$/, '')}. ${keep}`.trim() }
+  }
   if (/5\d\d|Server error/i.test(m)) {
     return { problem: 'The scan failed on the server.', recovery: `${keep} Try again; if it keeps failing, the data feed may be down.`.trim() }
   }
