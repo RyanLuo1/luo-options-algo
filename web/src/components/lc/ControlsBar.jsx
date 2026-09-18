@@ -59,8 +59,8 @@ export default function ControlsBar({
           </div>
         </Field>
 
-        <Field label="Minimum credit" htmlFor="lc-min-credit" error={minCreditValid ? null : 'Enter 0 or more.'}
-          tip={mode === 'upside' ? 'Upside admits any true credit: default $0 per contract (a debit never qualifies). Raise it to demand some income too. Rescan to apply.' : 'The friction floor: the credit must cover commissions and bid/ask slippage. Default $100 per contract ($1 per share). Rescan to apply.'}>
+        <Field label="Minimum credit" htmlFor="lc-min-credit" error={minCreditValid ? null : (mode === 'upside' ? 'Enter a number.' : 'Enter 0 or more.')}
+          tip={mode === 'upside' ? 'Default $0 per contract: any true credit. Go negative to see net-debit structures too — −$200 admits setups that cost up to $200 to open. Raise it to demand some income. Rescan to apply.' : 'The friction floor: the credit must cover commissions and bid/ask slippage. Default $100 per contract ($1 per share). Rescan to apply.'}>
           <Stepper id="lc-min-credit" value={minCreditStr} onChange={onMinCreditChange} onBlur={onMinCreditBlur} onKeyDown={enterRuns(minCreditValid)}
             onMinus={() => bumpMinCredit(-50)} onPlus={() => bumpMinCredit(+50)} disabled={loading} error={!minCreditValid} inputMode="decimal" prefix="$" />
         </Field>

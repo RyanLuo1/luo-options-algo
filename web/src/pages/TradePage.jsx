@@ -7,7 +7,7 @@ import { clearScreenerSession } from '../lib/sessionState'
 import AppShell from '../components/lc/AppShell'
 import LockedTeaser from '../components/lc/LockedTeaser'
 import { Button, Pill, XIcon } from '../components/lc/ui'
-import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo } from '../components/lc/format'
+import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, shortsWorthless, pMaxApprox, pPutAssigned } from '../components/lc/format'
 
 // ── Trade editor (/trade) — re-skinned on the v1 design system. ───────────────
 // Functionally as before: three leg columns with live chains (ask for the leg
@@ -23,7 +23,7 @@ function legFromTriplet(triplet, leg) {
 function calcMetrics(a, b, c) {
   const net = (b.premium ?? 0) + (c.premium ?? 0) - (a.premium ?? 0)
   const width = (b.strike ?? 0) - (a.strike ?? 0)
-  return { net_premium: net, spread_width: width, score: width > 0 ? net / width : 0, p_max_profit: (1 - (b.delta ?? 0)) * (1 - (c.delta ?? 0)) }
+  return { net_premium: net, spread_width: width, score: width > 0 ? net / width : 0, p_max_profit: (1 - (b.delta ?? 0)) * (1 - (c.delta ?? 0)), leg_b_delta: b.delta ?? 0, leg_c_delta: c.delta ?? 0 }
 }
 
 export default function TradePage() {
@@ -44,7 +44,7 @@ export default function TradePage() {
   const [puts, setPuts] = useState([])
   const [chainLoading, setChainLoading] = useState(!readOnly)
   const [chainError, setChainError] = useState(null)
-  const [metrics, setMetrics] = useState(() => (triplet ? { net_premium: triplet.net_premium, spread_width: triplet.spread_width, score: triplet.score, p_max_profit: triplet.p_max_profit } : null))
+  const [metrics, setMetrics] = useState(() => (triplet ? { net_premium: triplet.net_premium, spread_width: triplet.spread_width, score: triplet.score, p_max_profit: triplet.p_max_profit, leg_b_delta: triplet.leg_b_delta ?? 0, leg_c_delta: triplet.leg_c_delta ?? 0 } : null))
   const [replace, setReplace] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -144,10 +144,13 @@ export default function TradePage() {
           </div>
           {metrics && (
             <div className="flex items-end gap-6 flex-wrap">
-              <Metric label="Credit /ct" value={fmtMoney0(metrics.net_premium * 100)} hi />
+              <Metric label={metrics.net_premium < 0 ? 'Debit /ct' : 'Credit /ct'} value={fmtMoney0(Math.abs(metrics.net_premium) * 100)} hi />
               <Metric label="Max profit /ct" value={fmtMoney0((metrics.net_premium + metrics.spread_width) * 100)} />
               <Metric label="Spread width" value={String(metrics.spread_width)} />
-              <Metric label="P(max)" value={fmtPct0(metrics.p_max_profit)} />
+              {/* the gauge triad, from the two short legs' deltas (p_max_profit is still saved; it is not shown) */}
+              <Metric label="Shorts worthless" value={fmtPct0(shortsWorthless(metrics))} title="1 − δ of the short call − δ of the put: the stock finishes between them" />
+              <Metric label="Max profit ≈" value={fmtPct0(pMaxApprox(metrics))} title="≈ the delta of the short call: the stock at or above it" />
+              <Metric label="Put assigned ≈" value={fmtPct0(pPutAssigned(metrics))} title="≈ the delta of the put: the stock at or below it" />
             </div>
           )}
         </section>
@@ -193,9 +196,9 @@ export default function TradePage() {
   )
 }
 
-function Metric({ label, value, hi }) {
+function Metric({ label, value, hi, title }) {
   return (
-    <div className="flex flex-col items-end">
+    <div className="flex flex-col items-end" title={title}>
       <span className="text-[0.78rem] font-semibold text-lc-ink-2">{label}</span>
       <span className={`font-display font-extrabold text-[1.3rem] leading-tight tracking-[-0.01em] ${hi ? 'text-lc-ink' : 'text-lc-ink'}`}>{value}</span>
     </div>

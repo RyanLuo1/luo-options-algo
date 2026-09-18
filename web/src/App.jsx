@@ -185,7 +185,8 @@ export default function App() {
   )
 
   // ── Field validity (gates every run path, including ⌘Enter) ───────────────
-  const minCreditValid  = (() => { const s = minCreditStr.trim();  const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
+  // Income: a credit floor, ≥ 0. Upside: any number — a negative floor admits net-debit structures (owner, 2026-09-17).
+  const minCreditValid  = (() => { const s = minCreditStr.trim();  const n = Number(s); return s !== '' && Number.isFinite(n) && (n >= 0 || mode === 'upside') })()
   const minRocValid = (() => { const s = minRocStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 })()
   const minUpsideValid = (() => { const s = minUpsideStr.trim(); const n = Number(s); return s !== '' && Number.isFinite(n) && n >= 0 && n <= 500 })()
   const canRun = minCreditValid && (mode === 'income' ? minRocValid : minUpsideValid)
@@ -250,18 +251,18 @@ export default function App() {
 
   // ── Min credit ($ per contract in the UI; per share for the API) ──────────
   function onMinCreditChange(e) {
-    const raw = e.target.value.replace(/[$,]/g, '')
+    const raw = e.target.value.replace(/[$,]/g, '').replace(/[−–]/g, '-')
     setMinCreditStr(raw)
     const n = Number(raw)
-    if (raw.trim() !== '' && Number.isFinite(n) && n >= 0) setMinPremium(parseFloat((n / 100).toFixed(4)))
+    if (raw.trim() !== '' && Number.isFinite(n) && (n >= 0 || mode === 'upside')) setMinPremium(parseFloat((n / 100).toFixed(4)))
   }
   function onMinCreditBlur() {
     const n = Number(minCreditStr)
-    if (!Number.isFinite(n) || n < 0 || minCreditStr.trim() === '') setMinCreditStr(String(Math.round(minPremium * 100)))
+    if (!Number.isFinite(n) || (n < 0 && mode !== 'upside') || minCreditStr.trim() === '') setMinCreditStr(String(Math.round(minPremium * 100)))
     else setMinCreditStr(String(Math.round(n)))
   }
   function bumpMinCredit(delta) {
-    const next = Math.max(0, Math.round(minPremium * 100) + delta)
+    const next = mode === 'upside' ? Math.round(minPremium * 100) + delta : Math.max(0, Math.round(minPremium * 100) + delta)
     setMinPremium(parseFloat((next / 100).toFixed(4)))
     setMinCreditStr(String(next))
   }

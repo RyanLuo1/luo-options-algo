@@ -2,8 +2,8 @@
 // file only exports components — Fast Refresh requirement).
 
 /** Money and figure formatting (per-contract dollars; Money Is Ink). */
-export const fmtMoney0 = n => (n == null || Number.isNaN(n) ? '—' : `$${Math.round(n).toLocaleString('en-US')}`)
-export const fmtMoney2 = n => (n == null || Number.isNaN(n) ? '—' : `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+export const fmtMoney0 = n => (n == null || Number.isNaN(n) ? '—' : `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString('en-US')}`)
+export const fmtMoney2 = n => (n == null || Number.isNaN(n) ? '—' : `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 export const fmtPct0   = p => (p == null ? '—' : `${Math.round(p * 100)}%`)
 export const fmtStrike = k => (k == null ? '—' : String(k))
 
@@ -29,8 +29,12 @@ export function rowFigures(r) {
   const credit     = r.net_premium * 100
   const maxProfit  = (r.net_premium + r.spread_width) * 100
   const collateral = r.leg_c_strike * 100
-  const breakeven  = r.leg_c_strike - r.net_premium
-  return { credit, maxProfit, collateral, breakeven }
+  // The effective cost of the stock if the put is assigned: the put strike less the credit (plus a debit).
+  const effectiveCost = r.leg_c_strike - r.net_premium
+  // Breakeven: with a credit the trade loses only below the put (K_C − credit); with a debit the flat
+  // zone is itself a loss, so it breaks even above the long call (K_A + debit), or never if max profit ≤ 0.
+  const breakeven = r.net_premium >= 0 ? effectiveCost : (maxProfit > 0 ? r.leg_a_strike - r.net_premium : null)
+  return { credit, maxProfit, collateral, breakeven, effectiveCost, debit: r.net_premium < 0 }
 }
 
 /** The four-tab shell definition (Tradebook is a route; Picks/Performance are locked). */
@@ -54,7 +58,7 @@ export function zeroReasonText(reason, { minCredit, minRocPct, minPPct, minUpsid
   const credit = `$${Number(minCredit).toLocaleString('en-US')}`
   switch (code) {
     case 'roc':             return `no setup cleared the ${minRocPct}% return floor`
-    case 'min_credit':      return Number(minCredit) === 0 ? `${n('below_min_premium')} candidates were all net debits — no true credit structure exists` : `${n('below_min_premium')} candidates all missed the ${credit} minimum`
+    case 'min_credit':      return Number(minCredit) === 0 ? `${n('below_min_premium')} candidates were all net debits — no true credit structure exists` : Number(minCredit) < 0 ? `${n('below_min_premium')} candidates all cost more than ${fmtMoney0(-Number(minCredit))} to open` : `${n('below_min_premium')} candidates all missed the ${credit} minimum`
     case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but failed the scanner’s ${minPPct}% probability rule (shorts expiring worthless, approx.)`
     case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but failed the scanner’s ${minPPct}% probability rule`
     case 'min_upside':      return `${n('below_min_upside')} candidates cleared the credit floor but all missed ${minUpsidePct}% upside per $ of collateral`

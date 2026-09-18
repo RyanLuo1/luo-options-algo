@@ -1,4 +1,4 @@
-import { fmtMoney0 } from './format'
+import { fmtMoney0, rowFigures } from './format'
 
 // Payoff at expiration, per contract, for the three-leg structure. Zones are
 // labelled in words (never color alone); the spot price is a marker when known.
@@ -9,7 +9,7 @@ export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
   const kc = row.leg_c_strike, ka = row.leg_a_strike, kb = row.leg_b_strike
   const credit = row.net_premium * 100
   const maxP = (row.net_premium + row.spread_width) * 100
-  const breakeven = kc - row.net_premium
+  const { breakeven, debit } = rowFigures(row)
 
   const span = Math.max(kb - kc, 1)
   const xMin = kc - span * 0.45, xMax = kb + span * 0.35
@@ -29,7 +29,7 @@ export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
   return (
     <div className="border-[1.5px] border-lc-line rounded-lc-plus p-4">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" fill="none" role="img"
-        aria-label={`Payoff at expiration per contract: loses below ${kc}, flat at ${fmtMoney0(credit)} credit between ${kc} and ${ka}, rises to ${fmtMoney0(maxP)} at ${kb} and stays there above.`}>
+        aria-label={`Payoff at expiration per contract: loses below ${kc}, flat at ${fmtMoney0(Math.abs(credit))} ${debit ? 'debit' : 'credit'} between ${kc} and ${ka}, rises to ${fmtMoney0(maxP)} at ${kb} and stays there above.`}>
         {/* zones */}
         <rect x={X(xMin)} y={TOP} width={X(kc) - X(xMin)} height={H - TOP - BOTTOM} fill="#FBE3E9" opacity=".55" />
         <rect x={X(kc)} y={TOP} width={X(ka) - X(kc)} height={H - TOP - BOTTOM} fill="#F1EEF3" />
@@ -37,7 +37,7 @@ export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
         <rect x={X(kb)} y={TOP} width={X(xMax) - X(kb)} height={H - TOP - BOTTOM} fill="#F1EEF3" />
         {/* breakeven line */}
         <line x1={PADX} y1={y0} x2={W - PADX} y2={y0} stroke="#E3DEE9" strokeWidth="1.5" strokeDasharray="4 6" />
-        <text x={W - PADX} y={y0 - 6} textAnchor="end" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11">break even {breakeven.toFixed(2)}</text>
+        <text x={W - PADX} y={y0 - 6} textAnchor="end" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11">{breakeven == null ? 'never breaks even' : `break even ${breakeven.toFixed(2)}`}</text>
         {/* spot marker */}
         {hasSpot && (
           <>
@@ -56,17 +56,17 @@ export default function PayoffCurve({ row, spot, markerLabel = 'spot' }) {
         <text x={callsClose ? X(kb) + 6 : X(kb)} y={H - 22} textAnchor={callsClose ? 'start' : 'middle'} fill="#15121A" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">sell {kb} call</text>
         {/* zone words — only where the zone is wide enough to hold them */}
         {zoneWide.loss && <text x={(X(xMin) + X(kc)) / 2} y={H - 6} textAnchor="middle" fill="#C8325A" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">loss zone</text>}
-        {zoneWide.keep && <text x={(X(kc) + X(ka)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">keep credit</text>}
+        {zoneWide.keep && <text x={(X(kc) + X(ka)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">{debit ? 'flat loss' : 'keep credit'}</text>}
         {zoneWide.sweet && <text x={(X(ka) + X(kb)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">sweet spot</text>}
         {zoneWide.capped && <text x={(X(kb) + X(xMax)) / 2} y={H - 6} textAnchor="middle" fill="#5A5266" fontFamily="Figtree, sans-serif" fontSize="11" fontWeight="600">capped</text>}
         {/* value labels — the credit label drops below its line when the line sits near the top */}
-        <text x={(X(kc) + X(ka)) / 2} y={Y(credit) < TOP + 30 ? Y(credit) + 20 : Y(credit) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">+{fmtMoney0(credit)} credit</text>
+        <text x={(X(kc) + X(ka)) / 2} y={Y(credit) < TOP + 30 ? Y(credit) + 20 : Y(credit) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">{debit ? `${fmtMoney0(credit)} debit` : `+${fmtMoney0(credit)} credit`}</text>
         <text x={(X(kb) + X(xMax)) / 2} y={Y(maxP) - 12} textAnchor="middle" fill="#6547E6" fontFamily="Figtree, sans-serif" fontSize="12" fontWeight="600">+{fmtMoney0(maxP)} max</text>
       </svg>
       {needLegend && (
         <div className="flex gap-x-4 gap-y-1 flex-wrap text-[0.8rem] mt-2" aria-label="Zones, left to right">
           <span className="inline-flex items-center gap-1.5 text-lc-loss font-semibold"><i className="w-3 h-3 rounded-sm bg-lc-loss-tint border border-lc-loss/40" /> loss zone, below {kc}</span>
-          <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-ground border border-lc-line" /> keep credit, {kc}–{ka}</span>
+          <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-ground border border-lc-line" /> {debit ? 'flat loss' : 'keep credit'}, {kc}–{ka}</span>
           <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-violet-soft border border-lc-violet/30" /> sweet spot, {ka}–{kb}</span>
           <span className="inline-flex items-center gap-1.5 text-lc-ink-2"><i className="w-3 h-3 rounded-sm bg-lc-ground border border-lc-line" /> capped, above {kb}</span>
         </div>

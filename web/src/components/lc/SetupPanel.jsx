@@ -75,10 +75,10 @@ export default function SetupPanel({
               <Legs row={row} />
               <PayoffCurve row={row} spot={spot} markerLabel="settled" />
               <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
-                <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={`per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} />
+                <Stat label={f.debit ? 'Debit paid' : 'Credit collected'} value={fmtMoney0(Math.abs(f.credit))} sub={f.debit ? 'per contract, paid to open' : `per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral`} />
                 <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={`if ${row.ticker} had finished above ${row.leg_b_strike}`} />
                 <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub="cash that secured the put" />
-                <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this the trade lost money" />
+                <Stat label="Breakeven" value={f.breakeven == null ? '—' : fmtMoney2(f.breakeven)} sub={f.breakeven == null ? 'none — max profit was below zero' : 'below this the trade lost money'} />
               </div>
             </div>
           </details>
@@ -91,20 +91,20 @@ export default function SetupPanel({
 
           {/* Stats */}
           <div className="grid grid-cols-2 max-lc:grid-cols-1 gap-3">
-            <Stat label="Credit collected" value={fmtMoney0(f.credit)} sub={f.credit > 0.5 ? `per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral` : 'none — this setup costs nothing to open'} hi={mode !== 'upside'} />
+            <Stat label={f.debit ? 'Debit paid' : 'Credit collected'} value={fmtMoney0(Math.abs(f.credit))} sub={f.debit ? 'per contract, paid to open — the flat zone is a loss' : f.credit > 0.5 ? `per contract, up front · ${(rocOf(row) * 100).toFixed(1)}% of collateral` : 'none — this setup costs nothing to open'} hi={mode !== 'upside'} />
             <Stat label="Max profit" value={fmtMoney0(f.maxProfit)} sub={mode === 'upside' ? `${(upsidePerCollateral(row) * 100).toFixed(1)}% of collateral · if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}` : `if ${row.ticker} ${expired ? 'finished' : 'is'} above ${row.leg_b_strike}`} hi={mode === 'upside'} />
             {expired
               ? <Stat label="Grade pending" value="—" sub="posts after the next close" />
               : <Gauge row={row} />}
             <Stat label="Collateral" value={fmtMoney0(f.collateral)} sub={expired ? 'cash that secured the put' : 'cash to secure the put while it’s open'} />
-            <Stat label="Breakeven" value={fmtMoney2(f.breakeven)} sub="below this you lose money" className={expired ? 'col-span-2 max-lc:col-span-1' : ''} />
+            <Stat label="Breakeven" value={f.breakeven == null ? '—' : fmtMoney2(f.breakeven)} sub={f.breakeven == null ? 'none — max profit is below zero' : f.debit ? `below this you lose money (the debit needs ${row.ticker} above ${row.leg_a_strike})` : 'below this you lose money'} className={expired ? 'col-span-2 max-lc:col-span-1' : ''} />
           </div>
 
           <p className="text-[0.95rem] text-lc-ink-2 leading-[1.55]">
             {expired ? (
               <><strong className="text-lc-ink font-semibold">Outcome:</strong> expired {exp.short}. The closing price on expiration decides the zone; the grade posts after the next close.</>
             ) : (
-              <><strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.breakeven)}, which is {fmtMoney0(f.breakeven * worstShares)} of stock. That is the downside in plain dollars.</>
+              <><strong className="text-lc-ink font-semibold">Worst case:</strong> the stock drops below {row.leg_c_strike} and you own {worstShares} {row.ticker} at an effective {fmtMoney2(f.effectiveCost)}, which is {fmtMoney0(f.effectiveCost * worstShares)} of stock. That is the downside in plain dollars.</>
             )}
           </p>
         </>
@@ -203,7 +203,7 @@ function Gauge({ row }) {
           <span className="text-[0.85rem] font-semibold text-lc-ink-2">Chance the put is assigned</span>
           <span className="font-display font-extrabold text-[1.7rem] leading-[1.1] tracking-[-0.02em] text-lc-ink" title="≈ the delta of the put: the stock at or below it — the loss zone">≈ {fmtPct0(pPutAssigned(row))}</span>
         </div>
-        <span className="col-span-3 max-lc:col-span-1 text-[0.85rem] text-lc-ink-2">the three add up: worthless shorts keep at least the credit, the short call caps the win, the put is where you own the stock</span>
+        <span className="col-span-3 max-lc:col-span-1 text-[0.85rem] text-lc-ink-2">{row.net_premium < 0 ? 'the three add up: worthless shorts still leave the debit unpaid unless the stock clears the call you bought, the short call caps the win, the put is where you own the stock' : 'the three add up: worthless shorts keep at least the credit, the short call caps the win, the put is where you own the stock'}</span>
       </div>
     </div>
   )

@@ -338,7 +338,11 @@ def run():
         return jsonify({"error": "weeks_max must be an integer between 1 and 12"}), 400
     if requested_weeks_min > requested_weeks_max:
         return jsonify({"error": "weeks_min must be ≤ weeks_max"}), 400
-    if not isinstance(requested_min_prem, (int, float)) or requested_min_prem < 0:
+    # Income: a credit floor, never negative. Upside: any finite number — a negative floor admits
+    # net-debit structures (owner decision 2026-09-17: "a calculator"); the default stays $0.00.
+    if not isinstance(requested_min_prem, (int, float)) or requested_min_prem != requested_min_prem or requested_min_prem in (float("inf"), float("-inf")):
+        return jsonify({"error": "min_premium must be a number"}), 400
+    if requested_mode != "upside" and requested_min_prem < 0:
         return jsonify({"error": "min_premium must be a non-negative number"}), 400
     if not isinstance(requested_min_pp, (int, float)) or not (0 <= requested_min_pp <= 1):
         return jsonify({"error": "min_p_profit must be a float between 0 and 1"}), 400

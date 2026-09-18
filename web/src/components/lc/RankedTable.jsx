@@ -180,7 +180,7 @@ export default function RankedTable({
                     {r.leg_c_strike} / <span className="text-lc-ink font-semibold">{r.leg_a_strike}</span> / {r.leg_b_strike}
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
-                    <div className="flex flex-col items-end"><span className="font-bold text-lc-ink">{fmtMoney0(f.credit)}</span>{!upside && <span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span>}</div>
+                    <div className="flex flex-col items-end"><span className={`font-bold ${f.debit ? 'text-lc-loss-ink' : 'text-lc-ink'}`}>{fmtMoney0(f.credit)}</span>{!upside && <span className="text-[0.72rem] text-lc-ink-2 max-lc:hidden">{(rocOf(r) * 100).toFixed(1)}% of collateral</span>}</div>
                   </td>
                   <td className="px-2 max-lc:px-1.5 py-2.5 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1">
