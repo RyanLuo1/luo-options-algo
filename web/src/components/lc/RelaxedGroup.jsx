@@ -120,7 +120,7 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
                 </tbody>
               </table>
             </div>
-            <p className="text-[0.82rem] text-lc-ink-2">Best setup first by max profit per $ of collateral. The dashboard marks each thin leg (quoted, but fewer than {floor} contracts traded today). Click or ↑/↓ for a row’s dashboard, → / ← to show or hide the rest; Enter or double-click views it in the editor.</p>
+            <p className="text-[0.82rem] text-lc-ink-2">Best setup first by max profit per $ of collateral. The dashboard marks each thin leg (quoted, but fewer than {floor} contracts traded today); hover a leg for its volume and open interest. Click or ↑/↓ for a row’s dashboard, → / ← to show or hide the rest; Enter or double-click views it in the editor.</p>
           </div>
 
           <div className="min-w-0">
