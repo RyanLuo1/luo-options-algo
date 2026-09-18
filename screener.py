@@ -153,6 +153,7 @@ def _parse_massive_contracts(raw, census=None, min_volume=MIN_VOLUME):
             "mid":    round((bid + ask) / 2, 4),
             "delta":  round(abs(float(o.greeks.delta)), 6),
             "volume": vol,
+            "oi":     int(o.open_interest) if getattr(o, "open_interest", None) is not None else None,   # carried for display; no filter reads it
         })
     return result
 

@@ -133,28 +133,36 @@ export default function SetupPanel({
   )
 }
 
-// A leg that came in below the volume floor (thin-quote setups carry each leg's volume) wears it on
-// its tile: a quiet pill with today's count, so the diagram itself says which legs are thin.
+// Thin-quote setups carry each leg's volume and open interest. A leg below the volume floor wears a
+// quiet dashed edge; hovering (or focusing) any leg tile that has the figures shows them.
 const THIN_FLOOR = 20
 function Legs({ row }) {
-  const vol = k => (Number.isFinite(row[k]) ? row[k] : null)
+  const num = k => (Number.isFinite(row[k]) ? row[k] : null)
   return (
     <div className="grid grid-cols-3 max-lc:grid-cols-1 gap-3">
-      <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay volume={vol('leg_a_volume')} />
-      <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" volume={vol('leg_b_volume')} />
-      <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" volume={vol('leg_c_volume')} />
+      <Leg role="Buy call"  strike={row.leg_a_strike} px={row.leg_a_prem} side="ask" pay volume={num('leg_a_volume')} oi={num('leg_a_oi')} />
+      <Leg role="Sell call" strike={row.leg_b_strike} px={row.leg_b_prem} side="bid" volume={num('leg_b_volume')} oi={num('leg_b_oi')} />
+      <Leg role="Sell put"  strike={row.leg_c_strike} px={row.leg_c_prem} side="bid" volume={num('leg_c_volume')} oi={num('leg_c_oi')} />
     </div>
   )
 }
 
-function Leg({ role, strike, px, side, pay, volume = null }) {
+function Leg({ role, strike, px, side, pay, volume = null, oi = null }) {
   const thin = volume != null && volume < THIN_FLOOR
+  const hasFigures = volume != null
+  const n = v => (v == null ? '—' : Number(v).toLocaleString('en-US'))
   return (
-    <div className={`rounded-lc-plus p-4 flex flex-col gap-1 ${thin ? 'bg-lc-ground border-[1.5px] border-dashed border-lc-violet/50' : 'bg-lc-ground'}`} data-thin={thin || undefined}>
+    <div className={`relative group rounded-lc-plus p-4 flex flex-col gap-1 outline-none ${thin ? 'bg-lc-ground border-[1.5px] border-dashed border-lc-violet/50' : 'bg-lc-ground'}`}
+      data-thin={thin || undefined} tabIndex={hasFigures ? 0 : undefined} aria-describedby={hasFigures ? `leg-${role.replace(/\s/g, '-')}-${strike}` : undefined}>
       <span className={`text-[0.85rem] font-semibold ${pay ? 'text-lc-violet' : 'text-lc-ink-2'}`}>{role}</span>
       <span className="font-display font-extrabold text-[1.35rem] leading-tight tracking-[-0.01em] text-lc-ink">{strike}</span>
       <span className="text-[0.92rem] text-lc-ink-2">{fmtMoney2(px)} · {side}</span>
-      {thin && <span className="mt-1 self-start whitespace-nowrap"><Pill tone="violet" title={`Quoted, but only ${volume} contract${volume === 1 ? '' : 's'} traded today — below the ${THIN_FLOOR}-contract volume floor`}>Thin · {volume} today</Pill></span>}
+      {hasFigures && (
+        <span id={`leg-${role.replace(/\s/g, '-')}-${strike}`} role="tooltip" data-leg-figures
+          className="pointer-events-none absolute left-0 top-full mt-2 z-20 w-56 rounded-lc-half bg-lc-ink text-lc-card text-[0.8rem] leading-[1.45] px-3 py-2 shadow-lc-lift hidden group-hover:block group-focus-within:block [font-variant-numeric:tabular-nums]">
+          Volume {n(volume)} today · Open interest {n(oi)}{thin ? ` — below the ${THIN_FLOOR}-contract volume floor` : ''}
+        </span>
+      )}
     </div>
   )
 }

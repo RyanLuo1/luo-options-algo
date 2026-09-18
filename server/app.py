@@ -120,6 +120,7 @@ def _tier1_rows(chains, ticker, price, week_exps, min_premium, min_p_profit, sca
             c = chains.contracts.get((ticker, r["expiration"], side, r[k]))
             row[f"leg_{leg}_mid"] = c["mid"] if c else None
             row[f"leg_{leg}_volume"] = c["volume"] if c else None
+            row[f"leg_{leg}_oi"] = c.get("oi") if c else None
         out.append(row)
     out.sort(key=lambda r: (r["net_premium"] + r["spread_width"]) / r["leg_c_strike"], reverse=True)
     return {"tier": 1, "rows": out, "evaluated": evaluated, "reason": None if out else _zero_reason(stats, evaluated)}
