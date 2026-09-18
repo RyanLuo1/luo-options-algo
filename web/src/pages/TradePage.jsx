@@ -140,7 +140,7 @@ export default function TradePage() {
               {triplet.ticker}
               <small className="font-figtree font-medium text-[1rem] text-lc-ink-2 tracking-normal">{readOnly && !relaxedView ? `expired ${exp.short}` : `expires ${exp.short}${exp.dte != null && exp.dte >= 0 ? ` · ${exp.dte}d` : ''}`}</small>
             </div>
-            {readOnly && <Pill tone="quiet">{relaxedView ? 'Thin-quote setup · Tier 1 · read-only' : source.status === 'graded' ? 'Expired and graded · read-only' : 'Expired · grade pending · read-only'}</Pill>}
+            {readOnly && <Pill tone="quiet">{relaxedView ? 'Thin-quote setup · read-only' : source.status === 'graded' ? 'Expired and graded · read-only' : 'Expired · grade pending · read-only'}</Pill>}
             {source && !readOnly && <Pill tone="quiet">Editing a saved trade</Pill>}
           </div>
           {metrics && (

@@ -13,9 +13,12 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
   const rows = group?.rows ?? []
   const floor = ladder?.tier0?.volume_floor ?? 20
   const capPct = Math.round((ladder?.tier1?.spread_cap ?? 0.15) * 100)
+  const [expanded, setExpanded] = useState(false)   // the ranked list's grammar: the best row, then "+N more" reveals the rest
   const [selectedKey, setSelectedKeyState] = useState(initialKey)
   const setSelectedKey = k => { setSelectedKeyState(k); onSelect?.(k) }
-  const selected = rows.find(r => rowKey(r) === selectedKey) ?? rows[0] ?? null
+  const visible = expanded ? rows : rows.slice(0, 1)
+  const more = rows.length - 1
+  const selected = visible.find(r => rowKey(r) === selectedKey) ?? visible[0] ?? null
   const selKey = selected ? rowKey(selected) : null
   const cost = selected ? liquidityCost(selected) : null
   const f0 = selected ? rowFigures(selected) : null
@@ -25,10 +28,12 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
   function onRowKey(e, i) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const j = Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))
-      setSelectedKey(rowKey(rows[j])); rowRefs.current[rowKey(rows[j])]?.focus()
-    } else if (e.key === 'Enter') { onView?.(rows[i]) }
-    else if (e.key === ' ') { e.preventDefault(); setSelectedKey(rowKey(rows[i])) }
+      const j = Math.max(0, Math.min(visible.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))
+      setSelectedKey(rowKey(visible[j])); rowRefs.current[rowKey(visible[j])]?.focus()
+    } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && i === 0 && more > 0) {
+      e.preventDefault(); setExpanded(e.key === 'ArrowRight')   // → / ← expand or collapse from the head row, as in the ranked list
+    } else if (e.key === 'Enter') { onView?.(visible[i]) }
+    else if (e.key === ' ') { e.preventDefault(); setSelectedKey(rowKey(visible[i])) }
   }
 
   return (
@@ -44,7 +49,7 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
             <h2 ref={headRef} tabIndex={-1} className="font-display font-bold text-[1.4rem] leading-tight tracking-[-0.02em] outline-none flex items-baseline gap-2.5">
               {ticker} <span className="font-figtree font-medium text-[1rem] text-lc-ink-2 tracking-normal">thin-quote setups</span>
             </h2>
-            <Pill tone="violet" title={`Tier 1: the ${floor}-contract volume floor is off. Two-sided quotes and the ${capPct}% spread cap still apply.`}>Tier 1 · volume floor off</Pill>
+            <Pill tone="violet" title={`The ${floor}-contract volume floor is off. Two-sided quotes and the ${capPct}% spread cap still apply.`}>Volume floor off</Pill>
           </div>
           <p className="text-[0.9rem] text-lc-ink-2">
             Two-sided quotes and the {capPct}% spread cap still required · your credit and upside floors still apply · every leg priced at the side you’d hit, as above
@@ -83,11 +88,11 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => {
+                  {visible.map((r, i) => {
                     const key = rowKey(r), on = key === selKey
                     const f = rowFigures(r), lc = liquidityCost(r), thin = thinLegs(r, floor)
                     const exp = expiryInfo(r.expiration)
-                    return (
+                    return [
                       <tr key={key} ref={el => { rowRefs.current[key] = el }} data-tier="1" data-selected={on || undefined} aria-selected={on}
                         onClick={() => setSelectedKey(key)} onDoubleClick={() => onView?.(r)}
                         onKeyDown={e => onRowKey(e, i)} tabIndex={on ? 0 : -1}
@@ -100,20 +105,30 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
                         <Td right>{(upsidePerCollateral(r) * 100).toFixed(1)}%</Td>
                         <Td right>{fmtPct0(shortsWorthless(r))}</Td>
                         <Td wrap><span className="text-[0.85rem] text-lc-ink-2" title={thin.length ? thin.map(t => `${t.leg}: ${t.volume} traded today`).join(' · ') : undefined}>{thin.length ? thin.map(t => t.leg).join(' · ') : 'none'}</span></Td>
-                      </tr>
-                    )
+                      </tr>,
+                      i === 0 && more > 0 && (
+                        <tr key={`${key}-more`} className="border-b border-lc-line/70">
+                          <td colSpan={8} className="px-2 py-1.5">
+                            <button type="button" onClick={() => setExpanded(x => !x)} aria-expanded={expanded} data-relaxed-more
+                              className="text-[0.82rem] font-semibold text-lc-violet hover:underline">
+                              {expanded ? `Show fewer ${ticker} setups` : `+${more} more ${ticker} ${more === 1 ? 'setup' : 'setups'}`}
+                            </button>
+                          </td>
+                        </tr>
+                      ),
+                    ]
                   })}
                 </tbody>
               </table>
             </div>
-            <p className="text-[0.82rem] text-lc-ink-2">Thin legs are quoted but traded fewer than {floor} contracts today (hover for the count). Click or ↑/↓ for a row’s dashboard; Enter or double-click views it in the editor.</p>
+            <p className="text-[0.82rem] text-lc-ink-2">Best setup first by max profit per $ of collateral; thin legs are quoted but traded fewer than {floor} contracts today (hover for the count). Click or ↑/↓ for a row’s dashboard, → / ← to show or hide the rest; Enter or double-click views it in the editor.</p>
           </div>
 
           <div className="min-w-0">
             {selected && (
               <SetupPanel
                 row={selected} mode="upside" dimmed={dimmed}
-                statusPill={<Pill tone="violet">Tier 1 · volume floor off</Pill>}
+                statusPill={<Pill tone="violet">Volume floor off</Pill>}
                 actions={<Button variant="secondary" onClick={() => onView?.(selected)}>View in editor</Button>}
                 note="Not saveable — thin-quote setups don’t enter the Tradebook."
               />
