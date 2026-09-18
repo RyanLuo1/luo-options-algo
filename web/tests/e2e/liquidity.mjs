@@ -30,8 +30,9 @@ try {
   await runScan(page, TICKERS)
 
   // ── the zero chip: exact cause, census on hover, the opt-in
-  const chip = await page.evaluate(t => { const s = [...document.querySelectorAll('[aria-label="Tickers in this scan"] > span')].find(x => x.querySelector('button')?.textContent.startsWith(t)); return s ? { text: s.textContent.trim().replace(/\s+/g, ' '), title: s.querySelector('button').title, relax: !!s.querySelector('[data-relax]') } : null }, ZERO)
+  const chip = await page.evaluate(t => { const s = [...document.querySelectorAll('[aria-label="Tickers in this scan"] [data-chip]')].find(x => x.querySelector('button')?.textContent.startsWith(t)); return s ? { text: s.textContent.trim().replace(/\s+/g, ' '), title: s.querySelector('button').title, relax: !!s.querySelector('[data-relax]') } : null }, ZERO)
   log(`${ZERO} is a zero chip with an exact cause`, !!chip && /— (quotes too wide|no live quotes|untraded|no complete three-leg setup|candidates|no setup cleared)/.test(chip.text), chip?.text)
+  log('the zero chip sits under the hits, in its own “Didn’t make the cut” line', await page.evaluate(t => { const m = document.querySelector('[aria-label="Tickers in this scan"] [data-misses]'); const first = document.querySelector('[aria-label="Tickers in this scan"] > div:first-child'); return !!m && !!m.querySelector(`[data-chip="${t}"]`) && !first.querySelector(`[data-chip="${t}"]`) && m.getBoundingClientRect().top > first.getBoundingClientRect().top }, ZERO))
   log('the hover carries the census', !!chip && /contracts seen: .*tradeable/.test(chip.title), chip?.title)
   log('the chip offers the thin-quote setups (Tier 1 found rows)', !!chip?.relax, chip?.relax ? '' : 'no Tier 1 rows in this window tonight — pick another window')
   await page.screenshot({ path: `${OUT_DIR}/liquidity-chips-1440.png` })

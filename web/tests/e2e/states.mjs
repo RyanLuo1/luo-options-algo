@@ -22,7 +22,7 @@ try {
   const g = await page.evaluate(() => {
     const best = [...document.querySelectorAll('tbody tr[data-kind="best"]')].map(tr => tr.children[1].textContent.trim())
     const chips = [...document.querySelectorAll('[aria-label="Tickers in this scan"] button[aria-pressed]')].map(b => b.textContent.trim())
-    const reasons = [...document.querySelectorAll('[aria-label="Tickers in this scan"] > span')].map(s => s.textContent.trim()).filter(t => /—/.test(t))
+    const reasons = [...document.querySelectorAll('[aria-label="Tickers in this scan"] [data-chip]')].map(s => s.textContent.trim()).filter(t => /—/.test(t))
     const groupedOn = document.querySelector('button[aria-pressed="true"]')?.textContent.includes('Best per ticker')
     const more = [...document.querySelectorAll('button[aria-expanded]')].map(b => b.textContent.trim())
     return { best, chips, reasons, groupedOn, more, variants: document.querySelectorAll('tbody tr[data-kind="variant"]').length }
