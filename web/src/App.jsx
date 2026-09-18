@@ -16,7 +16,7 @@ import SetupPanel       from './components/lc/SetupPanel'
 import WatchlistManager from './components/WatchlistManager'
 import { Card, Button, Pill, XIcon } from './components/lc/ui'
 import { ProgressStrip, ErrorStrip, MarketClosedBanner, NoResults, FilteredEmpty } from './components/lc/States'
-import { expiryInfo, rowKey, creditShareOfMax, rocOf, zeroReasonText, upsidePerCollateral } from './components/lc/format'
+import { expiryInfo, rowKey, creditShareOfMax, rocOf, zeroReasonText, zeroReasonDetail, upsidePerCollateral } from './components/lc/format'
 
 // ── Screener (/app) — rebuilt on the v1 design system (DESIGN.md). ──────────
 // Shell (b), controls (c), chips (d), ranked table (e), detail panel (f) and
@@ -149,18 +149,19 @@ export default function App() {
     return m
   }, [rocRanked])
   // Why a ticker shows zero: the scanner's reason, or the client-side return floor.
-  const { reasons, reasonCodes } = useMemo(() => {
+  const { reasons, reasonCodes, reasonDetails } = useMemo(() => {
     const apiCounts = {}
     for (const r of ranked) apiCounts[r.ticker] = (apiCounts[r.ticker] ?? 0) + 1
     const ctx = { minCredit: Math.round((minPremiumUsed ?? minPremium) * 100), minRocPct: +(minRoc * 100).toFixed(2), minPPct: Math.round((minPProfitUsed ?? MIN_P_PROFIT) * 100), minUpsidePct: +(((minUpsideUsed ?? minUpside) * 100).toFixed(2)) }
-    const reasons = {}, reasonCodes = {}
+    const reasons = {}, reasonCodes = {}, reasonDetails = {}
     for (const t of tickersUsed) {
       if ((counts[t] ?? 0) > 0) continue
       const fromRoc = (apiCounts[t] ?? 0) > 0
       reasonCodes[t] = fromRoc ? 'roc' : (tickerReasons?.[t]?.code ?? tickerReasons?.[t] ?? null)
       reasons[t] = fromRoc ? zeroReasonText('roc', ctx) : zeroReasonText(tickerReasons?.[t], ctx)
+      reasonDetails[t] = fromRoc ? null : zeroReasonDetail(tickerReasons?.[t])
     }
-    return { reasons, reasonCodes }
+    return { reasons, reasonCodes, reasonDetails }
   }, [ranked, counts, tickersUsed, tickerReasons, minPremiumUsed, minPremium, minRoc, minPProfitUsed, minUpsideUsed, minUpside])
   const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
@@ -380,7 +381,7 @@ export default function App() {
           )}
 
           {tickersUsed.length > 0 && (
-            <ScanChips tickers={activeTickers} counts={counts} reasons={reasons} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
+            <ScanChips tickers={activeTickers} counts={counts} reasons={reasons} details={reasonDetails} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker} />
           )}
 
           {loading && <ProgressStrip tickerCount={lastRunTickers.length} />}

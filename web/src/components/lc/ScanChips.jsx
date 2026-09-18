@@ -4,7 +4,7 @@ import { XIcon } from './ui'
 // Click filters to that ticker (click again clears); × removes it from the
 // scan set. A ticker that yielded zero carries its cause in words, as the
 // scanner reported it (or the client-side return floor).
-export default function ScanChips({ tickers, counts, reasons, skipped, activeFilter, onToggle, onRemove }) {
+export default function ScanChips({ tickers, counts, reasons, details, skipped, activeFilter, onToggle, onRemove }) {
   if ((!tickers || tickers.length === 0) && (!skipped || skipped.length === 0)) return null
   return (
     <div className="flex items-center gap-2 flex-wrap px-1" aria-label="Tickers in this scan">
@@ -13,6 +13,7 @@ export default function ScanChips({ tickers, counts, reasons, skipped, activeFil
         const on = activeFilter === t
         const n = counts?.[t] ?? 0
         const why = n === 0 ? reasons?.[t] : null
+        const detail = n === 0 ? details?.[t] : null   // the liquidity census, on hover
         return (
           <span key={t} className="inline-flex items-center gap-2">
             <span
@@ -24,7 +25,7 @@ export default function ScanChips({ tickers, counts, reasons, skipped, activeFil
                 onClick={() => n > 0 && onToggle?.(t)}
                 aria-pressed={on}
                 aria-disabled={n === 0 || undefined}
-                title={n === 0 ? `${t}: ${why ?? 'no setups in this scan'}` : on ? 'Show all tickers' : `Show only ${t}`}
+                title={n === 0 ? `${t}: ${why ?? 'no setups in this scan'}${detail ? ` — ${detail}` : ''}` : on ? 'Show all tickers' : `Show only ${t}`}
                 className={`flex items-center gap-2 pl-3 pr-2 h-8 text-[0.85rem] font-semibold ${on ? 'text-lc-violet' : 'text-lc-ink'}`}
               >
                 {t}
@@ -39,7 +40,7 @@ export default function ScanChips({ tickers, counts, reasons, skipped, activeFil
                 <XIcon />
               </button>
             </span>
-            {why && <span className="text-[0.82rem] text-lc-ink-2">— {why}</span>}
+            {why && <span className="text-[0.82rem] text-lc-ink-2" title={detail ?? undefined}>— {why}</span>}
           </span>
         )
       })}

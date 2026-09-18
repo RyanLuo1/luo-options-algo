@@ -55,12 +55,26 @@ except Exception:
     pass  # supabase package not installed — verify_token will return None
 
 
-def _zero_reason(stats, evaluated):
-    """Why a scanned ticker produced no setups, from scan_ticker's rejection counters.
-    code: no_chain | no_legs | min_credit | min_p | min_credit_or_p, with the counters."""
+def _zero_reason(stats, evaluated, census=None):
+    """Why a scanned ticker produced no setups, from scan_ticker's rejection counters and,
+    when given, the liquidity census (see screener.CENSUS_KEYS).
+    code: no_chain | wide_spread | no_quote | untraded | placeholder_iv | no_triplet | no_legs
+          | min_credit | min_p | min_upside | min_credit_or_p, with the counters (+ `census`)."""
     prem, pp, up = stats.get("below_min_premium", 0), stats.get("below_min_p", 0), stats.get("below_min_upside", 0)
+    c = census or {}
     if evaluated == 0:
-        code = "no_chain" if stats.get("no_chain", 0) and not stats.get("no_legs", 0) else "no_legs"
+        if stats.get("no_chain", 0) and not stats.get("no_legs", 0):
+            code = "no_chain"
+        elif not c:
+            code = "no_legs"                    # no census (older caller): the old code
+        elif c.get("contracts", 0) == 0:
+            code = "no_chain"                   # the chain came back empty in the strike window
+        elif c.get("tradeable", 0) > 0:
+            code = "no_triplet"                 # legs survive, never all three on one expiration
+        else:
+            buckets = {"wide_spread": c.get("wide_spread", 0), "no_quote": c.get("no_quote", 0) + c.get("no_greeks", 0),
+                       "untraded": c.get("untraded", 0), "placeholder_iv": c.get("placeholder_iv", 0)}
+            code = max(buckets, key=buckets.get)   # the guard that killed the most contracts
     elif up and not prem and not pp:
         code = "min_upside"
     elif prem and not pp:
@@ -69,8 +83,11 @@ def _zero_reason(stats, evaluated):
         code = "min_p"
     else:
         code = "min_credit_or_p"
-    return {"code": code, "evaluated": evaluated, "below_min_premium": prem, "below_min_p": pp,
-            "below_min_upside": up, "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
+    out = {"code": code, "evaluated": evaluated, "below_min_premium": prem, "below_min_p": pp,
+           "below_min_upside": up, "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
+    if census is not None:
+        out["census"] = dict(census)
+    return out
 
 
 def verify_token(req):
@@ -398,12 +415,12 @@ def run():
             price_by_ticker[ticker] = price
 
             tickers_scanned.append(ticker)
-            stats = {}
+            stats, census = {}, {}
             triplets, evaluated = scan_ticker(
                 ticker, price, week_exps,
                 float(requested_min_prem),
                 min_p_profit=float(requested_min_pp),
-                stats=stats,
+                stats=stats, census=census,   # bookkeeping only; the census never changes a filter
                 **scan_kwargs,   # empty for Income: the call is exactly the pre-mode call
             )
             for t in triplets:
@@ -411,7 +428,7 @@ def run():
             total_evaluated += evaluated
             all_triplets.extend(triplets)
             if not triplets:
-                ticker_reasons[ticker] = _zero_reason(stats, evaluated)
+                ticker_reasons[ticker] = _zero_reason(stats, evaluated, census)
 
         ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
         tickers_used    = sorted(tickers_scanned)

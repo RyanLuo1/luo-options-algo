@@ -28,7 +28,7 @@ try {
     return { best, chips, reasons, groupedOn, more, variants: document.querySelectorAll('tbody tr[data-kind="variant"]').length }
   })
   log('grouped by default: one best row per ticker with results, variants collapsed', g.groupedOn && g.best.length === new Set(g.best).size && g.variants === 0, `best rows ${g.best.join('/')} · expanders ${g.more.join(' | ')}`)
-  log('every scanned ticker is a chip; zero-count chips carry a cause', g.chips.length === 3 && g.reasons.every(r => /no setup cleared|missed the|delta and liquidity|no options chain/.test(r)), g.reasons.join(' | ') || 'no zero tickers')
+  log('every scanned ticker is a chip; zero-count chips carry a cause', g.chips.length === 3 && g.reasons.every(r => /no setup cleared|missed the|delta and liquidity|no options chain|quotes too wide|no live quotes|untraded|no complete three-leg/.test(r)), g.reasons.join(' | ') || 'no zero tickers')
   await page.screenshot({ path: `${OUT_DIR}/grouped-1440.png`, fullPage: true })
 
   // 2. expand a group: variants appear in algorithm order (ranks ascending), collapse hides them

@@ -15,6 +15,7 @@ Run:
 
 import argparse
 import sys
+import functools
 from datetime import datetime, date, timedelta, time
 from zoneinfo import ZoneInfo
 
@@ -93,29 +94,53 @@ def passes_quote_guards(bid, ask):
     return (ask - bid) / mid <= MAX_SPREAD_PCT
 
 
-def _parse_massive_contracts(raw):
+CENSUS_KEYS = ("contracts", "no_greeks", "placeholder_iv", "no_quote", "wide_spread", "untraded", "tradeable")
+
+
+def _parse_massive_contracts(raw, census=None):
     """Filter and normalize a list of Massive option snapshot objects.
 
     Prices come from the live quote (Options Advanced plan), not day.close —
     the last-trade price can be hours stale and violates strike monotonicity.
     Each contract keeps both sides; the leg role decides which side is the
     transactable premium (sell → bid, buy → ask).
+
+    `census` (optional dict) is a liquidity census, bookkeeping only: each
+    contract is tallied under the first guard it fails (keys in CENSUS_KEYS),
+    accumulated across calls. It never changes which contracts survive —
+    the default path (census=None) is byte-identical to before.
     """
+    if census is not None:
+        for k in CENSUS_KEYS:
+            census.setdefault(k, 0)
+        census["contracts"] += len(raw)
+
+    def tally(key):
+        if census is not None:
+            census[key] += 1
+
     result = []
     for o in raw:
         if o.greeks is None or o.greeks.delta is None:
+            tally("no_greeks")
             continue
         if o.implied_volatility is None or float(o.implied_volatility) <= MIN_IV:
+            tally("placeholder_iv")
             continue
         q = o.last_quote
         if q is None or q.bid is None or q.ask is None:
+            tally("no_quote")
             continue
         bid, ask = float(q.bid), float(q.ask)
         if not passes_quote_guards(bid, ask):
+            # the same guard, split for the census: no two-sided quote vs a quote that is too wide
+            tally("no_quote" if (bid <= 0 or ask <= 0 or ask < bid) else "wide_spread")
             continue
         vol = int(o.day.volume) if o.day is not None and o.day.volume is not None else 0
         if vol < MIN_VOLUME:
+            tally("untraded")
             continue
+        tally("tradeable")
         result.append({
             "strike": float(o.details.strike_price),
             "bid":    round(bid, 4),
@@ -127,7 +152,7 @@ def _parse_massive_contracts(raw):
     return result
 
 
-def _live_chain_provider(ticker, exp, side, strike_low, strike_high):
+def _live_chain_provider(ticker, exp, side, strike_low, strike_high, census=None):
     """Default chain source: Massive live snapshot → parsed contract dicts.
 
     Returns a list of {strike, bid, ask, mid, delta, volume} or None on a
@@ -149,13 +174,13 @@ def _live_chain_provider(ticker, exp, side, strike_low, strike_high):
     except Exception as e:
         print(f"\n    [!] {exp}: {side} chain error — {e}")
         return None
-    return _parse_massive_contracts(raw)
+    return _parse_massive_contracts(raw, census=census)
 
 
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
 def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
-                chain_provider=None, as_of=None, stats=None,
+                chain_provider=None, as_of=None, stats=None, census=None,
                 leg_b_delta=None, min_upside=0.0):
     """
     Builds all valid triplets for one ticker across the provided expirations.
@@ -201,6 +226,8 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
         min_p_profit = MIN_P_MAX_PROFIT
     if chain_provider is None:
         chain_provider = _live_chain_provider
+        if census is not None:   # the liquidity census rides on the live provider only (bookkeeping; no filter change)
+            chain_provider = functools.partial(_live_chain_provider, census=census)
     if as_of is None:
         as_of = datetime.today().date()
     leg_b_low, leg_b_high = leg_b_delta if leg_b_delta is not None else (LEG_B_DELTA_LOW, LEG_B_DELTA_HIGH)

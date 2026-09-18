@@ -62,6 +62,11 @@ export function zeroReasonText(reason, { minCredit, minRocPct, minPPct, minUpsid
     case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but failed the scanner’s ${minPPct}% probability rule (shorts expiring worthless, approx.)`
     case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but failed the scanner’s ${minPPct}% probability rule`
     case 'min_upside':      return `${n('below_min_upside')} candidates cleared the credit floor but all missed ${minUpsidePct}% upside per $ of collateral`
+    case 'wide_spread':     return 'quotes too wide'
+    case 'no_quote':        return 'no live quotes'
+    case 'placeholder_iv':  return 'no live quotes'
+    case 'untraded':        return 'untraded'
+    case 'no_triplet':      return 'no complete three-leg setup'
     case 'no_legs':         return 'no contract met the delta and liquidity rules'
     case 'liquidity':       return 'no contract met the delta and liquidity rules'
     case 'no_chain':        return 'no options chain returned'
@@ -88,6 +93,21 @@ export const moveToMax = row => (row.underlying_price > 0 ? (row.leg_b_strike - 
 export const MODES = {
   income: { label: 'Income', lead: 'Get paid to wait.', line: 'A credit up front; the short call caps the gain, the put means you may own the stock.', pick: 'Income setup' },
   upside: { label: 'Upside', lead: 'Own the upside.',   line: 'A small credit or none, a wide call spread, the same put below.', pick: 'Upside setup' },
+}
+
+/** The liquidity census behind a zero chip, for the hover: what the scanner saw and where each contract died. */
+export function zeroReasonDetail(reason) {
+  const c = reason?.census
+  if (!c || !c.contracts) return null
+  const n = k => Number(c[k] ?? 0).toLocaleString('en-US')
+  const parts = []
+  if (c.wide_spread) parts.push(`${n('wide_spread')} quotes too wide`)
+  if ((c.no_quote ?? 0) + (c.no_greeks ?? 0)) parts.push(`${Number((c.no_quote ?? 0) + (c.no_greeks ?? 0)).toLocaleString('en-US')} no live quote`)
+  if (c.placeholder_iv) parts.push(`${n('placeholder_iv')} placeholder quotes`)
+  if (c.untraded) parts.push(`${n('untraded')} untraded`)
+  parts.push(`${n('tradeable')} tradeable`)
+  const tail = reason?.code === 'no_triplet' ? ' — never all three legs on one expiration' : ''
+  return `${n('contracts')} contracts seen: ${parts.join(' · ')}${tail}`
 }
 
 /** The incumbent Screener metric: credit as a share of max profit. */
