@@ -70,7 +70,7 @@ export function zeroReasonText(reason, { minCredit, minRocPct, minPPct, minUpsid
     case 'no_legs':         return 'no contract met the delta and liquidity rules'
     case 'liquidity':       return 'no contract met the delta and liquidity rules'
     case 'no_chain':        return 'no options chain returned'
-    default:                return null
+    default:                return code ? `no setups — ${String(code).replace(/_/g, ' ')}` : null   // a code this bundle predates: still say something
   }
 }
 
