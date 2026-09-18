@@ -4,8 +4,9 @@ import SetupPanel from './SetupPanel'
 import { fmtMoney0, fmtPct0, expiryInfo, rowFigures, rowKey, upsidePerCollateral, shortsWorthless, liquidityCost, thinLegs } from './format'
 
 // One ticker's thin-quote setups (Tier 1: the volume floor off; the spread cap and the
-// two-sided quote unchanged; the user's floors unchanged). Display-only: its own labelled
-// group under the ranked list, never interleaved with Tier 0 rows, never counted in ranks,
+// two-sided quote unchanged; the user's floors unchanged). Display-only: a view of the
+// results zone shown IN PLACE OF the ranked list (one ticker at a time, a way back in the
+// head and on the chip), never interleaved with Tier 0 rows, never counted in ranks,
 // never saveable. The headline is the liquidity cost of the selected row — what patience is
 // worth — because a worst-case price is a floor, not a forecast.
 export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView, onClose, dimmed = false, initialKey = null, onSelect }) {
@@ -18,9 +19,9 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
   const selKey = selected ? rowKey(selected) : null
   const cost = selected ? liquidityCost(selected) : null
   const f0 = selected ? rowFigures(selected) : null
-  // Opening answers the chip's question somewhere the reader can see: scroll the group in and hand it focus.
+  // The view swaps in place; hand the heading focus so a keyboard user lands in it.
   const headRef = useRef(null), rowRefs = useRef({})
-  useEffect(() => { headRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); headRef.current?.focus({ preventScroll: true }) }, [])
+  useEffect(() => { headRef.current?.focus({ preventScroll: true }) }, [])
   function onRowKey(e, i) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
@@ -50,7 +51,7 @@ export default function RelaxedGroup({ ticker, group, ladder, scannedAt, onView,
             {scannedAt ? ` · scanned ${scannedAt}` : ''}
           </p>
         </div>
-        <Button size="sm" variant="ghost" onClick={onClose}>Hide</Button>
+        <Button size="sm" variant="secondary" onClick={onClose}>Back to ranked setups</Button>
       </div>
 
       {rows.length === 0 ? (

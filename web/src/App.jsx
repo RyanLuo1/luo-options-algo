@@ -60,7 +60,7 @@ export default function App() {
   const [sort,        setSort]        = useState(persisted.sort ?? null)
   const [sortCtx,     setSortCtx]     = useState(persisted.sortCtx ?? null)
   const [selectedKey, setSelectedKey] = useState(persisted.selectedKey ?? null)
-  const [relaxedOpen, setRelaxedOpen] = useState(persisted.relaxedOpen ?? { ctx: null, tickers: [] })   // per-ticker opt-in (Upside, display-only); persisted with its scan context so a trip to the editor comes back to it
+  const [relaxedView, setRelaxedView] = useState(persisted.relaxedView ?? { ctx: null, ticker: null })   // the results zone's view: one ticker's thin-quote setups in place of the ranked list (Upside, display-only); persisted with its scan context so a trip to the editor comes back to it
   const [relaxedSel, setRelaxedSel] = useState(persisted.relaxedSel ?? {})   // ticker -> selected Tier 1 row key
   // Rows already saved this session (by result_id, else rowKey): Save becomes idempotent.
   const [savedKeys,   setSavedKeys]   = useState(() => new Set(persisted.savedKeys ?? []))
@@ -134,8 +134,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys], relaxedOpen, relaxedSel })
-  }, [tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys, relaxedOpen, relaxedSel])
+    saveScreenerState({ tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys: [...savedKeys], relaxedView, relaxedSel })
+  }, [tickerInput, activeTickers, weeksMin, weeksMax, mode, creditByMode, minUpside, minUpsideStr, minRoc, minRocStr, grouped, tickerFilter, sort, sortCtx, selectedKey, savedKeys, relaxedView, relaxedSel])
 
   // ── Derived rows ───────────────────────────────────────────────────────────
   // The return-on-collateral floor is applied here (the API keeps its own
@@ -173,13 +173,9 @@ export default function App() {
     for (const t of tickersUsed) if ((counts[t] ?? 0) === 0 && (relaxed[t]?.rows?.length ?? 0) > 0) out[t] = relaxed[t].rows.length
     return out
   }, [mode, relaxed, tickersUsed, counts])
-  const openRelaxed = relaxedOpen.ctx === scanCtx ? relaxedOpen.tickers.filter(t => relaxedAvailable[t]) : []
-  function toggleRelaxed(t) {
-    setRelaxedOpen(prev => {
-      const cur = prev.ctx === scanCtx ? prev.tickers : []
-      return { ctx: scanCtx, tickers: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] }
-    })
-  }
+  // One view at a time: the ranked setups, or one ticker's thin-quote setups in their place.
+  const relaxedTicker = relaxedView.ctx === scanCtx && relaxedAvailable[relaxedView.ticker] ? relaxedView.ticker : null
+  function toggleRelaxed(t) { setRelaxedView(prev => ({ ctx: scanCtx, ticker: prev.ctx === scanCtx && prev.ticker === t ? null : t })) }
   function handleView(row) { navigate('/trade', { state: { triplet: { ...row, mode: 'upside' }, scan_id: null, source: { id: null, status: 'relaxed' }, from: 'screener' } }) }
   const displayed = tableRows.find(r => rowKey(r) === selectedKey) ?? tableRows[0] ?? null
   const displayedKey = displayed ? rowKey(displayed) : null
@@ -400,7 +396,7 @@ export default function App() {
 
           {tickersUsed.length > 0 && (
             <ScanChips tickers={activeTickers} counts={counts} reasons={reasons} details={reasonDetails} skipped={tickersSkipped} activeFilter={tickerFilter} onToggle={toggleTickerFilter} onRemove={removeTicker}
-              relaxedAvailable={relaxedAvailable} relaxedOpen={openRelaxed} onToggleRelaxed={toggleRelaxed} />
+              relaxedAvailable={relaxedAvailable} relaxedOpen={relaxedTicker ? [relaxedTicker] : []} onToggleRelaxed={toggleRelaxed} />
           )}
 
           {loading && <ProgressStrip tickerCount={lastRunTickers.length} />}
@@ -411,6 +407,10 @@ export default function App() {
             !loading && <FirstRun mode={mode} otherHasResults={!!otherResult} onExample={t => { setTickerInput(t); tickersRef.current?.focus() }} onManage={() => setManageOpen(true)} />
           ) : tableRows.length === 0 && rocRanked.length > 0 ? (
             <FilteredEmpty ticker={tickerFilter ?? (activeTickers.length === 0 ? 'the tickers you removed' : activeTickers.join(', '))} onShowAll={() => { setTickerFilter(null); setActiveTickers(tickersUsed) }} />
+          ) : relaxedTicker ? (
+            <RelaxedGroup key={`${scanCtx}:${relaxedTicker}`} ticker={relaxedTicker} group={relaxed[relaxedTicker]} ladder={ladder} scannedAt={lastRun ? String(lastRun).slice(11, 16) : null}
+              onView={handleView} onClose={() => toggleRelaxed(relaxedTicker)} dimmed={loading}
+              initialKey={relaxedSel[relaxedTicker] ?? null} onSelect={k => setRelaxedSel(prev => ({ ...prev, [relaxedTicker]: k }))} />
           ) : tableRows.length > 0 ? (
             <div className="grid grid-cols-[minmax(0,64fr)_minmax(0,36fr)] gap-4 items-start">
               <div className="min-w-0 max-h-[calc(100vh-14rem)] min-h-[28rem] flex flex-col">
@@ -437,11 +437,6 @@ export default function App() {
               onFocusTickers={() => { tickersRef.current?.focus(); tickersRef.current?.select() }}
             />
           )}
-          {openRelaxed.map(t => (
-            <RelaxedGroup key={`${scanCtx}:${t}`} ticker={t} group={relaxed[t]} ladder={ladder} scannedAt={lastRun ? String(lastRun).slice(11, 16) : null}
-              onView={handleView} onClose={() => toggleRelaxed(t)} dimmed={loading}
-              initialKey={relaxedSel[t] ?? null} onSelect={k => setRelaxedSel(prev => ({ ...prev, [t]: k }))} />
-          ))}
         </div>
       )}
 

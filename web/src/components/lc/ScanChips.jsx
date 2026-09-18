@@ -43,9 +43,9 @@ export default function ScanChips({ tickers, counts, reasons, details, skipped, 
             {why && <span className="text-[0.82rem] text-lc-ink-2" title={detail ?? undefined}>— {why}</span>}
             {n === 0 && relaxedAvailable?.[t] > 0 && (
               <button type="button" onClick={() => onToggleRelaxed?.(t)} aria-pressed={relaxedOpen?.includes(t) || false} data-relax={t}
-                title={`${relaxedAvailable[t]} setups with the volume floor off, priced at the worst case. Display only; never ranked, never saved.`}
+                title={`${relaxedAvailable[t]} setups with the volume floor off, priced at the bid and ask, shown in place of the ranked list. Display only; never ranked, never saved.`}
                 className="text-[0.82rem] font-semibold text-lc-violet hover:underline">
-                {relaxedOpen?.includes(t) ? 'Hide thin-quote setups' : 'Show thin-quote setups (worst-case priced)'}
+                {relaxedOpen?.includes(t) ? 'Back to ranked setups' : 'Show thin-quote setups (worst-case priced)'}
               </button>
             )}
           </span>

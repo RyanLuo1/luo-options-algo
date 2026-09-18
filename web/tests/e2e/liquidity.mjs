@@ -41,10 +41,11 @@ try {
   const tier0Rows = (await page.locator('section:not([data-relaxed-group]) tbody tr[data-kind]').count())
   await page.locator(`[data-relax="${ZERO}"]`).click(); await page.waitForTimeout(300)
   const group = page.locator(`[data-relaxed-group="${ZERO}"]`)
-  log('the group opens, labelled Tier 1 · volume floor off, saying what still holds', (await group.count()) === 1 && /Tier 1 · volume floor off/.test(await group.textContent()) && /spread cap still required · your credit and upside floors still apply/.test(await group.textContent()))
+  log('the group opens IN PLACE of the ranked list, labelled Tier 1 · volume floor off, saying what still holds', (await group.count()) === 1 && /Tier 1 · volume floor off/.test(await group.textContent()) && /spread cap still required · your credit and upside floors still apply/.test(await group.textContent()) && (await page.locator('section:not([data-relaxed-group]) tbody tr[data-kind]').count()) === 0 && (await group.getByRole('button', { name: 'Back to ranked setups' }).count()) === 1)
+  const groupTop = await group.evaluate(el => el.getBoundingClientRect().top)
+  log('no scroll needed: the group starts where the results were', groupTop >= 0 && groupTop < 900, `top ${Math.round(groupTop)}px`)
   const relaxedRows = await group.locator('table[data-tier="1"] tbody tr').count()
   log('relaxed rows sit in their own table, never in the ranked list', relaxedRows > 0 && (await page.locator('section:not([data-relaxed-group]) tbody tr[data-tier="1"]').count()) === 0, `${relaxedRows} Tier 1 rows · ${tier0Rows} Tier 0 rows`)
-  log('commitment 1: Tier 0 rows and ranks byte-identical with the group open', (await tier0Snapshot()) === before, tier0Rows === 0 ? '(no Tier 0 rows in this window: trivially)' : '')
   // ── the headline: what patience is worth
   const cost = await group.locator('[data-liquidity-cost]').textContent()
   log('the liquidity cost is the headline: at the bid/ask, at the mid, gap', /What patience is worth/.test(cost) && /At the bid\/ask/.test(cost) && /At the mid/.test(cost) && /Gap/.test(cost), cost.replace(/\s+/g, ' ').slice(0, 160))
@@ -53,8 +54,9 @@ try {
   log('gap = at the mid − at the bid/ask (≥ 0)', figs.length === 3 && Math.abs((num(figs[1]) - num(figs[0])) - num(figs[2])) <= 1 && num(figs[2]) >= 0, figs.join(' | '))
   log('the panel in the group is Tier 1, viewable, not saveable', (await group.getByText('Tier 1 · volume floor off').count()) >= 2 && (await group.getByRole('button', { name: 'View in editor' }).count()) === 1 && (await group.getByRole('button', { name: /Save to Tradebook/ }).count()) === 0 && /Not saveable/.test(await group.textContent()))
   await page.screenshot({ path: `${OUT_DIR}/liquidity-group-1440.png`, fullPage: true })
-  await page.locator(`[data-relax="${ZERO}"]`).click(); await page.waitForTimeout(200)
-  log('closing the group leaves the Tier 0 table byte-identical', (await page.locator(`[data-relaxed-group="${ZERO}"]`).count()) === 0 && (await tier0Snapshot()) === before)
+  log('the chip now offers the way back', /Back to ranked setups/.test(await page.locator(`[data-relax="${ZERO}"]`).textContent()))
+  await group.getByRole('button', { name: 'Back to ranked setups' }).click(); await page.waitForTimeout(200)
+  log('commitment 1: back from the group, the Tier 0 table is byte-identical (rows, ranks, selection)', (await page.locator(`[data-relaxed-group="${ZERO}"]`).count()) === 0 && (await tier0Snapshot()) === before, tier0Rows === 0 ? '(no Tier 0 rows in this window: trivially)' : `${tier0Rows} rows`)
 
   // ── view in the editor: read-only
   await page.locator(`[data-relax="${ZERO}"]`).click(); await page.waitForTimeout(200)
