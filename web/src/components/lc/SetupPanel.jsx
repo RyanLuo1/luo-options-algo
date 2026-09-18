@@ -154,7 +154,7 @@ function Leg({ role, strike, px, side, pay, volume = null }) {
       <span className={`text-[0.85rem] font-semibold ${pay ? 'text-lc-violet' : 'text-lc-ink-2'}`}>{role}</span>
       <span className="font-display font-extrabold text-[1.35rem] leading-tight tracking-[-0.01em] text-lc-ink">{strike}</span>
       <span className="text-[0.92rem] text-lc-ink-2">{fmtMoney2(px)} · {side}</span>
-      {thin && <span className="mt-1 self-start"><Pill tone="violet" title={`Below the ${THIN_FLOOR}-contract volume floor: quoted, thinly traded`}>Thin · {volume} traded today</Pill></span>}
+      {thin && <span className="mt-1 self-start whitespace-nowrap"><Pill tone="violet" title={`Quoted, but only ${volume} contract${volume === 1 ? '' : 's'} traded today — below the ${THIN_FLOOR}-contract volume floor`}>Thin · {volume} today</Pill></span>}
     </div>
   )
 }

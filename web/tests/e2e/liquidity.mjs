@@ -54,7 +54,7 @@ try {
   const figs = await group.evaluate(g => [...g.querySelectorAll('[data-liquidity-cost] .font-display')].map(el => el.textContent))
   const num = s => Number(String(s).replace(/[−$,]/g, '')) * (/−/.test(s) ? -1 : 1)
   log('gap = at the mid − at the bid/ask (≥ 0)', figs.length === 3 && Math.abs((num(figs[1]) - num(figs[0])) - num(figs[2])) <= 1 && num(figs[2]) >= 0, figs.join(' | '))
-  log('the dashboard marks the thin legs on their tiles', (await group.locator('section[aria-label^="Setup detail"] [data-thin="true"]').count()) >= 1 && /Thin · \d+ traded today/.test(await group.textContent()))
+  log('the dashboard marks the thin legs on their tiles', (await group.locator('section[aria-label^="Setup detail"] [data-thin="true"]').count()) >= 1 && /Thin · \d+ today/.test(await group.textContent()))
   log('the panel in the group is Tier 1, viewable, not saveable', (await group.getByText('Volume floor off').count()) >= 2 && (await group.getByRole('button', { name: 'View in editor' }).count()) === 1 && (await group.getByRole('button', { name: /Save to Tradebook/ }).count()) === 0 && /Not saveable/.test(await group.textContent()))
   await page.screenshot({ path: `${OUT_DIR}/liquidity-group-1440.png`, fullPage: true })
   log('the chip now offers the way back', /Back to ranked setups/.test(await page.locator(`[data-relax="${ZERO}"]`).textContent()))
