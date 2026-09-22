@@ -6,7 +6,7 @@ Plain Node scripts on Playwright (no test runner). They drive the real app: real
 cd web
 npx playwright install chromium          # once
 npm run test:e2e -- http://127.0.0.1:5002   # local (Flask serving the built app)
-npm run test:e2e -- https://luo-capital.com # live
+npm run test:e2e -- https://trigram.trade # live
 ```
 
 Each script prints `PASS` / `FAIL` lines and exits non-zero on any failure. Screenshots land in `tests/e2e/out/` (gitignored).

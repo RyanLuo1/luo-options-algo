@@ -23,10 +23,10 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
             type="button"
             onClick={() => onTabChange?.('screener')}
             className="flex items-center gap-2.5 text-lc-ink font-display font-bold text-[1.15rem] tracking-[-0.01em] shrink-0 whitespace-nowrap"
-            aria-label="Luo Capital, go to the screener"
+            aria-label="Trigram, go to the screener"
           >
             <Mark />
-            Luo Capital
+            Trigram
           </button>
 
           {/* Tab strip */}
@@ -68,6 +68,12 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
       <main className="flex-1 px-6 pb-10">
         <div className="mx-auto max-w-[1400px]">{children}</div>
       </main>
+
+      <footer className="px-6 pb-5">
+        <div className="mx-auto max-w-[1400px] text-[0.75rem] text-lc-ink-2">
+          Trigram by Luo Capital
+        </div>
+      </footer>
     </div>
   )
 }

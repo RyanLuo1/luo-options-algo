@@ -59,7 +59,7 @@ export default function Header({ marketOpen, lastRun, onRun, onClear, loading, i
 
         {/* Left — branding */}
         <div className="flex-shrink-0 leading-tight">
-          <div className="text-primary font-bold text-xl tracking-tight">Luo Capital</div>
+          <div className="text-primary font-bold text-xl tracking-tight">Trigram</div>
           <div className="text-tertiary text-xs mt-0.5">Options Screener</div>
         </div>
 

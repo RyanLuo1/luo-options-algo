@@ -1,5 +1,5 @@
 ---
-name: Luo Capital
+name: Trigram
 description: Soft fintech cards on a warm lilac ground — the trade as a stack of cards you can hold, priced at the real bid and ask.
 colors:
   ground: "#F1EEF3"
@@ -297,7 +297,7 @@ components:
     padding: "5px 12px"
 ---
 
-# Design System: Luo Capital
+# Design System: Trigram (by Luo Capital)
 
 ## Overview
 

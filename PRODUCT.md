@@ -12,11 +12,11 @@ Primary users are **external options traders** (confirmed 2026-09-12). The opera
 
 Situation: **at a desk, on a laptop, during US market hours**. The job is to run a scan, compare the ranked setups, inspect one, then either save it to the tradebook or open the trade editor to adjust strikes, and finally enter the trade at their broker. Density, scan speed, and keyboard-driven re-scans matter more than mobile layout; phone use is secondary and not a design target today.
 
-Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromoted.** Anyone who reaches luo-capital.com can create an account and use everything; nothing drives traffic there yet (robots disallow + noindex on the landing page until public launch). New accounts default to **plan = free** (entitlement lives in the auth user's `app_metadata.plan`; absence means free; only the service role can change it). **Nothing is gated today.** The plan claim and its helpers stay in code, dormant, for the membership gate.
+Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromoted.** Anyone who reaches trigram.trade can create an account and use everything; nothing drives traffic there yet (robots disallow + noindex on the landing page until public launch). New accounts default to **plan = free** (entitlement lives in the auth user's `app_metadata.plan`; absence means free; only the service role can change it). **Nothing is gated today.** The plan claim and its helpers stay in code, dormant, for the membership gate.
 
 ## Information Architecture
 
-**Decided 2026-09-22.** Luo Capital is a screener: **two calculator modes (Income · Upside) and a Tradebook.** That is the whole product.
+**Decided 2026-09-22.** Trigram is a screener: **two calculator modes (Income · Upside) and a Tradebook.** That is the whole product.
 
 - **Screener** (`/app`): the Call Spread Risk Reversal scan in Income or Upside mode, the ranked list, the setup dashboard, the trade editor (`/trade`).
 - **Tradebook** (`/tradebook`): saved trades, graded at expiration.
@@ -33,7 +33,7 @@ Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromot
 
 ## Product Purpose
 
-Luo Capital scans the options market for **Call Spread Risk Reversal** setups across a user-chosen ticker list, builds every valid three-leg structure per ticker and weekly expiration, filters to tradeable credit trades, scores them, and presents a ranked list. It replaces manually assembling three-leg trades across dozens of strikes and expirations.
+Trigram scans the options market for **Call Spread Risk Reversal** setups across a user-chosen ticker list, builds every valid three-leg structure per ticker and weekly expiration, filters to tradeable credit trades, scores them, and presents a ranked list. It replaces manually assembling three-leg trades across dozens of strikes and expirations.
 
 Success for a user: in one scan they see the strongest available structures right now, understand each one's credit, max profit, probability, and legs at a glance, and can act on it (save or edit) without leaving the flow.
 
@@ -47,7 +47,7 @@ Longer-term purpose: every scan and every saved trade is logged so realized outc
 
 ## Operating Context
 
-- **Live site:** https://luo-capital.com (Flask + Gunicorn behind Nginx on AWS EC2; React SPA served from the same origin).
+- **Live site:** https://trigram.trade (Flask + Gunicorn behind Nginx on AWS EC2; React SPA served from the same origin).
 - **Routes:** `/` (public landing page, unlisted), `/login` (sign in / create account), `/app` (screener), `/trade` (three-leg trade editor with live chain tables), `/tradebook` (saved trades); `/picks` and `/performance` redirect to `/app`.
 - **Screener flow:** tickers or an `@watchlist` typed in the header, filter controls (weeks range 1 to 12, minimum net premium, minimum P(max profit)) in a left drawer, results in a ranked table with a setup-detail band above it and a TradingView chart beside it. Removing a ticker chip or double-clicking one filters client-side without a rescan.
 - **Data sources:** Massive (Options Advanced plan) for options chains, quotes, Greeks, and historical stock bars; yfinance for today's stock price, indices (VIX, SPY), and earnings dates; Supabase for auth and persistence.
@@ -77,7 +77,7 @@ Undecided product facts (do not invent):
 
 ## Brand Commitments
 
-Name: **Luo Capital**. Product label used in the UI: **Options Screener**.
+Name: **Trigram** (renamed from Luo Capital 2026-09-22; “Luo Capital” remains the owning entity — maker's mark “Trigram by Luo Capital”). Product label used in the UI: **Options Screener**.
 
 Visual authority (**decided 2026-09-12**): the landing page `design/landing/v1` ("Soft Fintech Cards": warm lilac ground, white 24px cards, violet structure, lime reserved for the one primary action, Bricolage Grotesque + Figtree) is the design system, recorded in `DESIGN.md` and `.impeccable/design.json`. The old app frontend (dark slate, purple accent, JetBrains Mono) is **superseded**, not binding, and is being replaced screen by screen. Existing assets: `web/public/favicon.svg`, `web/public/icons.svg`, `design/landing/v1/hero.svg`. No logo file beyond the favicon exists.
 

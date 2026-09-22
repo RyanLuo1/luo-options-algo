@@ -2,7 +2,7 @@
 
 A full-stack platform that scans the options market for **Call Spread Risk Reversal** setups, ranks them with a delta-based scoring model, and presents the best opportunities through a fast, professional trading interface.
 
-Live at **[luo-capital.com](https://luo-capital.com)**.
+Live at **[trigram.trade](https://trigram.trade)**.
 
 ---
 

@@ -92,7 +92,7 @@ export default function LoginPage() {
     el?.focus({ preventScroll: true })
   }, [strip, busy])
 
-  useEffect(() => { document.title = `${TITLES[mode]} · Luo Capital`; return () => { document.title = 'Luo Capital' } }, [mode])
+  useEffect(() => { document.title = `${TITLES[mode]} · Trigram`; return () => { document.title = 'Trigram' } }, [mode])
 
   function switchMode(next) {
     setMode(next); setStrip(null); setShowPw(false); setSent(false)
@@ -168,9 +168,9 @@ export default function LoginPage() {
       {/* Wordmark: the app shell's header row (same padding, same 52px row, same size), so it holds still across /login → /app. */}
       <header className="shrink-0 px-6 pt-5">
         <div className="mx-auto max-w-[1400px] h-[52px] flex items-center">
-          <a href="/" className="inline-flex items-center gap-2.5 text-lc-ink font-display font-bold text-[1.15rem] tracking-[-0.01em] whitespace-nowrap" aria-label="Luo Capital home">
+          <a href="/" className="inline-flex items-center gap-2.5 text-lc-ink font-display font-bold text-[1.15rem] tracking-[-0.01em] whitespace-nowrap" aria-label="Trigram home">
             <Mark />
-            Luo Capital
+            Trigram
           </a>
         </div>
       </header>
