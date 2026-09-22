@@ -24,7 +24,7 @@ const statusRank = t => (t.status === 'open' ? 0 : t.status === 'pending' ? 1 : 
 export function StatusPill({ trade, size = 'sm' }) {
   if (trade.status === 'open') return <Pill tone="violet" size={size}>Open</Pill>
   if (trade.status === 'pending') return <Pill tone="quiet" size={size} title="Grades after the next close">Grading pending</Pill>
-  return <Pill tone="quiet" size={size}>Graded</Pill>
+  return <Pill tone="lime" size={size}>Graded</Pill>   // the theme's yellow, as the landing's "graded" chips (owner, 2026-09-22)
 }
 
 export default function TradebookTable({ trades, sort, onSort, onResetSort, selectedKey, onSelect, onOpen, dimmed = false }) {
