@@ -12,13 +12,24 @@ Primary users are **external options traders** (confirmed 2026-09-12). The opera
 
 Situation: **at a desk, on a laptop, during US market hours**. The job is to run a scan, compare the ranked setups, inspect one, then either save it to the tradebook or open the trade editor to adjust strikes, and finally enter the trade at their broker. Density, scan speed, and keyboard-driven re-scans matter more than mobile layout; phone use is secondary and not a design target today.
 
-Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromoted.** Anyone who reaches luo-capital.com can create an account and use the free tier; nothing drives traffic there yet (robots disallow + noindex on the landing page until public launch). New accounts default to **plan = free** (entitlement lives in the auth user's `app_metadata.plan`; absence means free; only the service role can change it). Paid is a plan value the app will gate on, not a product that exists yet.
+Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromoted.** Anyone who reaches luo-capital.com can create an account and use everything; nothing drives traffic there yet (robots disallow + noindex on the landing page until public launch). New accounts default to **plan = free** (entitlement lives in the auth user's `app_metadata.plan`; absence means free; only the service role can change it). **Nothing is gated today.** The plan claim and its helpers stay in code, dormant, for the membership gate.
+
+## Information Architecture
+
+**Decided 2026-09-22.** Luo Capital is a screener: **two calculator modes (Income · Upside) and a Tradebook.** That is the whole product.
+
+- **Screener** (`/app`): the Call Spread Risk Reversal scan in Income or Upside mode, the ranked list, the setup dashboard, the trade editor (`/trade`).
+- **Tradebook** (`/tradebook`): saved trades, graded at expiration.
+
+**Picks and Performance are removed from the product** (they were a curated model book and its return chart, planned as a paid tier). No tab, no teaser, no landing card, no copy; `/picks` and `/performance` redirect to `/app`. The research behind them — the shadow logging in the live scanner, the model book, the findings in `docs/private/` — **continues untouched as internal work and never becomes a user-facing surface.**
+
+**Commercial model:** a **flat membership for all features**, with the paywall built **last**. Until it ships, every feature is free to every account. **Copy that changes on paywall day** (nothing else on the public surfaces refers to a tier): the sign-up honesty line — "Free account. The screener and tradebook are yours — no card, no trial clock." — and the landing page's "free" language ("Run a free scan", "Free to use", "Both are yours with a free account", "The screener is free. No returns promised, no countdown."). They are true today and must be rewritten together when the membership gate ships.
 
 **Public-launch gate** (checklist; nothing on it is started, and it exists so the list cannot drift):
 - [ ] Massive business-tier conversation (data licensing for a public product)
 - [ ] Legal review of the disclosures (risk statement, "not advice", options-specific language)
 - [ ] Remove `robots.txt` Disallow and the landing page's `noindex, nofollow` meta (together)
-- [ ] Pricing decided for the paid plan
+- [ ] Pricing decided for the membership (flat, all features; the paywall is built last)
 
 ## Product Purpose
 
@@ -37,7 +48,7 @@ Longer-term purpose: every scan and every saved trade is logged so realized outc
 ## Operating Context
 
 - **Live site:** https://luo-capital.com (Flask + Gunicorn behind Nginx on AWS EC2; React SPA served from the same origin).
-- **Routes:** `/` (public landing page, unlisted), `/login` (sign in / create account), `/app` (screener), `/trade` (three-leg trade editor with live chain tables), `/tradebook` (saved trades).
+- **Routes:** `/` (public landing page, unlisted), `/login` (sign in / create account), `/app` (screener), `/trade` (three-leg trade editor with live chain tables), `/tradebook` (saved trades); `/picks` and `/performance` redirect to `/app`.
 - **Screener flow:** tickers or an `@watchlist` typed in the header, filter controls (weeks range 1 to 12, minimum net premium, minimum P(max profit)) in a left drawer, results in a ranked table with a setup-detail band above it and a TradingView chart beside it. Removing a ticker chip or double-clicking one filters client-side without a rescan.
 - **Data sources:** Massive (Options Advanced plan) for options chains, quotes, Greeks, and historical stock bars; yfinance for today's stock price, indices (VIX, SPY), and earnings dates; Supabase for auth and persistence.
 - **Market rhythm:** a scan takes seconds to tens of seconds depending on ticker count; quotes are real-time during the session and placeholder-filtered when the market is closed. The header shows a market open/closed badge and last-run time.
@@ -62,7 +73,7 @@ Constraints future work must respect:
 
 Undecided product facts (do not invent):
 - Phase 2 signal delivery (alerts, scheduled scrapes) has no committed channel or cadence.
-- Pricing, plans, and any commercial terms.
+- The membership's price and terms (the model is decided: flat, all features, paywall last).
 
 ## Brand Commitments
 

@@ -11,6 +11,18 @@ const page = await (await browser.newContext({ viewport: { width: 1440, height: 
 const errors = []; page.on('pageerror', e => errors.push(e.message))
 try {
   await signIn(page, acct)
+  // ── the shell (product decision 2026-09-22): Screener · Tradebook, no locked tabs, no plan pill
+  const shell = async p => p.evaluate(() => ({ tabs: [...document.querySelectorAll('[role="tablist"][aria-label="App sections"] [role="tab"]')].map(b => b.textContent.trim()), pill: /Free plan|Paid plan/.test(document.body.textContent), locks: document.querySelectorAll('[role="tablist"] svg').length }))
+  const sh = await shell(page)
+  log('shell @1440: two tabs, no lock icons, no plan pill', sh.tabs.join('·') === 'Screener·Tradebook' && !sh.pill && sh.locks === 0, JSON.stringify(sh))
+  for (const w of [1100, 390]) {
+    const ctx = await page.context().browser().newContext({ viewport: { width: w, height: 844 } }); const p2 = await ctx.newPage()
+    await signIn(p2, acct); await p2.waitForSelector('[role="tablist"]')
+    const s2 = await shell(p2); log(`shell @${w}: two tabs, no plan pill`, s2.tabs.join('·') === 'Screener·Tradebook' && !s2.pill && s2.locks === 0, JSON.stringify(s2))
+    await p2.screenshot({ path: `${OUT_DIR}/shell-${w}.png` }); await ctx.close()
+  }
+  for (const path of ['/picks', '/performance']) { await page.goto(BASE + path); await page.waitForURL(/\/app$/); }
+  log('/picks and /performance land on the screener', /\/app$/.test(page.url()))
   await page.waitForSelector('#lc-min-credit', { timeout: 15000 })   // the controls mount a beat after the shell
 
   // Defaults: dual-gate ($100 friction floor + 1% return on collateral), grouped view

@@ -8,7 +8,6 @@ import { parseTickersUnique, normalizeWatchlistName, validateWatchlistName, reso
 import useOptionsData from './hooks/useOptionsData'
 
 import AppShell         from './components/lc/AppShell'
-import LockedTeaser     from './components/lc/LockedTeaser'
 import ControlsBar      from './components/lc/ControlsBar'
 import ScanChips        from './components/lc/ScanChips'
 import RelaxedGroup     from './components/lc/RelaxedGroup'
@@ -373,9 +372,7 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <AppShell activeTab={activeTab} onTabChange={setActiveTab} plan={plan} marketOpen={marketOpen} lastRun={lastRun} onLogout={handleLogout}>
-      {activeTab !== 'screener' ? (
-        <LockedTeaser tab={activeTab} />
-      ) : (
+      {(
         <div className="flex flex-col gap-4 pt-6">
           <ControlsBar
             loading={loading} isStale={isStale} onRun={handleRun} canRun={canRun}

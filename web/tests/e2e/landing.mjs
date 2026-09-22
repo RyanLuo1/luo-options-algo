@@ -7,7 +7,7 @@ import { BASE, OUT_DIR, log, finish } from './helpers.mjs'
 
 mkdirSync(OUT_DIR, { recursive: true })
 // Banned on the landing (owner decision 2026-09-16): evidence claims and outcome-implying phrases.
-const BANNED = [/backtest/i, /validated/i, /\btested\b/i, /calculator/i, /keeps? most/i, /captures? the rise/i, /most of the rise/i, /usually wins?/i, /guaranteed/i, /win rate/i]
+const BANNED = [/backtest/i, /validated/i, /\btested\b/i, /calculator/i, /keeps? most/i, /captures? the rise/i, /most of the rise/i, /usually wins?/i, /guaranteed/i, /win rate/i, /\bPicks\b/, /\bPerformance\b/, /model book/i, /\bPaid\b/, /paid (plan|tier|ones?)/i, /\bSPY\b/, /book.s return/i]
 const html = await fetch(BASE + '/').then(r => r.text())
 const text = html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ')
 log('serves at the root', html.includes('One structure. Two ways to set it.'))
@@ -18,6 +18,7 @@ log('the NVDA sample appears once per section (the compact card beside the table
 log('the fourth tiles are shape facts, not ratios to compare', (html.match(/Stock must reach/g) || []).length === 2 && !/Upside per \$ of collateral/.test(text) && !/Return on collateral/.test(text))
 log('no P(profit) survives on the page', !/P\(profit\)/.test(text))
 log('the table ranks by the app\'s own caption', /Ranked by credit as a share of max profit/.test(text))
+log('What’s inside is two cards, Screener and Tradebook, with no tier tags', (html.match(/class="preview"/g) || []).length === 2 && (html.match(/class="tab( active)?" role="listitem"/g) || []).length === 2 && !/class="tab[^>]*>[^<]*<span class="pill/.test(html))
 log('the dashboard and the table say Income', /What a row opens into/.test(html) && (html.match(/pill pill-quiet">Income</g) || []).length === 3)
 
 const browser = await chromium.launch()

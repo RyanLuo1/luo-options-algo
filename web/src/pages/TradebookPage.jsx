@@ -6,7 +6,6 @@ import useAuth from '../hooks/useAuth'
 import useTradebook, { fetchSpot } from '../hooks/useTradebook'
 import { clearScreenerSession } from '../lib/sessionState'
 import AppShell from '../components/lc/AppShell'
-import LockedTeaser from '../components/lc/LockedTeaser'
 import SetupPanel from '../components/lc/SetupPanel'
 import TradebookTable, { StatusPill } from '../components/lc/TradebookTable'
 import { ErrorStrip } from '../components/lc/States'
@@ -111,9 +110,7 @@ export default function TradebookPage() {
 
   return (
     <AppShell activeTab={activeTab} onTabChange={id => (id === 'screener' ? navigate('/app') : setActiveTab(id))} plan={plan} marketOpen={null} lastRun={null} onLogout={handleLogout}>
-      {activeTab !== 'tradebook' ? (
-        <LockedTeaser tab={activeTab} />
-      ) : (
+      {(
         <div className="flex flex-col gap-4 pt-6">
           {/* Summary strip */}
           <section aria-label="Tradebook summary" className="bg-lc-card rounded-lc shadow-lc px-6 py-4 flex items-start gap-8 flex-wrap">

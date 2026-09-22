@@ -322,7 +322,7 @@
          font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink-2); white-space: nowrap; }
   .tab.active { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
   .tab .pill { padding: 2px 9px; font-size: .72rem; }
-  .previews { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4); padding-top: var(--s-4); }
+  .previews { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-4); padding-top: var(--s-4); }
   .preview { border: 1.5px solid var(--line); border-radius: calc(var(--radius) / 2 + 6px); padding: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); background: var(--card); }
   .preview h3 { margin: 0; font-size: 1.25rem; font-weight: 700; }
   .preview p { margin: 0; font-size: .95rem; color: var(--ink-2); }
@@ -376,7 +376,6 @@
     .dash { grid-template-columns: 1fr; }
     .dash-side { grid-template-columns: repeat(4, 1fr); }
     .dash-stat.gauge { grid-column: span 2; }
-    .previews { grid-template-columns: 1fr 1fr; }
     .hero-grid, .proof-grid, .output-grid { grid-template-columns: 1fr; }
     .steps { grid-template-columns: 1fr; }
     .hero { padding-block: var(--s-6) var(--s-8); }
@@ -721,14 +720,12 @@
   <section id="inside" class="wrap" aria-labelledby="inside-h">
     <div class="section-head">
       <h2 id="inside-h">What’s inside</h2>
-      <p class="lede">Two free tools to find and track trades. Two paid ones if you’d rather follow a book than build your own.</p>
+      <p class="lede">Two tools: find the trade, then track it. Both are yours with a free account.</p>
     </div>
     <div class="card inside-panel">
       <div class="tabbar" role="list" aria-label="App tabs">
-        <span class="tab active" role="listitem">Screener <span class="pill pill-lime">Free</span></span>
-        <span class="tab" role="listitem">Tradebook <span class="pill pill-lime">Free</span></span>
-        <span class="tab" role="listitem">Picks <span class="pill pill-quiet">Paid</span></span>
-        <span class="tab" role="listitem">Performance <span class="pill pill-quiet">Paid</span></span>
+        <span class="tab active" role="listitem">Screener</span>
+        <span class="tab" role="listitem">Tradebook</span>
       </div>
       <div class="previews">
         <article class="preview">
@@ -739,7 +736,7 @@
             <div class="row"><span class="dot quiet"></span><span class="bar"></span><span class="bar short ink"></span></div>
           </div>
           <h3>Screener</h3>
-          <p>Pick your stocks, choose Income or Upside, set a floor, and get the list. Every row prices at the real bid and ask.</p>
+          <p>Pick your stocks, choose Income or Upside, set a floor, and get the list. Every row prices at the real bid and ask, and every zero says why.</p>
         </article>
         <article class="preview">
           <div class="mini" aria-hidden="true">
@@ -748,27 +745,7 @@
             <div class="row"><span class="bar short ink"></span><span class="bar"></span><span class="chip mute">open</span></div>
           </div>
           <h3>Tradebook</h3>
-          <p>Save the trades you like. When they expire, each one is graded against what the stock actually did.</p>
-        </article>
-        <article class="preview">
-          <div class="mini" aria-hidden="true">
-            <div class="row"><svg class="lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="bar"></span><span class="chip">pick</span></div>
-            <div class="row"><svg class="lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="bar"></span><span class="chip">pick</span></div>
-            <div class="row"><svg class="lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="bar"></span><span class="chip">pick</span></div>
-          </div>
-          <h3>Picks</h3>
-          <p>A curated model book: the setups we’d actually take, kept small and updated as scans come in.</p>
-        </article>
-        <article class="preview">
-          <div class="mini" aria-hidden="true">
-            <svg viewBox="0 0 200 80" fill="none">
-              <path d="M8 52 C40 58, 70 40, 100 46 S160 34, 192 38" stroke="#6547E6" stroke-width="3.5" stroke-linecap="round"/>
-              <path d="M8 44 C40 40, 70 52, 100 42 S160 44, 192 38" stroke="#D9D2E3" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="1 7"/>
-            </svg>
-            <div class="row" style="justify-content:space-between"><span class="chip">the book</span><span class="chip mute">SPY</span></div>
-          </div>
-          <h3>Performance</h3>
-          <p>The book’s return alongside SPY on a single chart, updated as trades settle. What happened, not what might.</p>
+          <p>Save the trades you like. When they expire, each one is graded against what the stock actually did, in plain dollars.</p>
         </article>
       </div>
     </div>

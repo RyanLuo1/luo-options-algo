@@ -1,7 +1,7 @@
 // A swappable metric bar for table cells. The metric is a prop (a function of
 // the row returning 0..1) plus a label, never a formula in the cell, so the
-// Screener can render credit ÷ max (the incumbent ranking) and Picks can later
-// render ROC in the same table with no re-layout.
+// Screener can render credit ÷ max (the incumbent ranking) or max profit ÷
+// collateral (Upside) in the same table with no re-layout.
 export default function MetricBar({ value, label, className = '' }) {
   const v = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
   return (

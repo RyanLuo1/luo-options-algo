@@ -43,6 +43,9 @@ const router = createBrowserRouter([
       { path: '/app',       element: <ProtectedRoute><App /></ProtectedRoute> },
       { path: '/trade',     element: <ProtectedRoute><TradePage /></ProtectedRoute> },
       { path: '/tradebook', element: <ProtectedRoute><TradebookPage /></ProtectedRoute> },
+      // Removed surfaces (product decision 2026-09-22): the old paths land on the screener.
+      { path: '/picks',       element: <Navigate to="/app" replace /> },
+      { path: '/performance', element: <Navigate to="/app" replace /> },
     ],
   },
 ])

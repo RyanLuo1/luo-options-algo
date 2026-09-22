@@ -37,12 +37,10 @@ export function rowFigures(r) {
   return { credit, maxProfit, collateral, breakeven, effectiveCost, debit: r.net_premium < 0 }
 }
 
-/** The four-tab shell definition (Tradebook is a route; Picks/Performance are locked). */
+/** The app shell's tabs: the Screener and the Tradebook (a route). Product decision 2026-09-22: nothing else. */
 export const TABS = [
-  { id: 'screener',    label: 'Screener',    free: true },
-  { id: 'tradebook',   label: 'Tradebook',   free: true, href: '/tradebook' },
-  { id: 'picks',       label: 'Picks',       locked: true },
-  { id: 'performance', label: 'Performance', locked: true },
+  { id: 'screener',  label: 'Screener' },
+  { id: 'tradebook', label: 'Tradebook', href: '/tradebook' },
 ]
 
 /** Stable identity for a ranked row (ticker + expiration + the three strikes). */

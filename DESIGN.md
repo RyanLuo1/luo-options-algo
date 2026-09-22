@@ -334,7 +334,7 @@ A restrained two-accent palette on tinted neutrals: violet does structure, chart
 - **Card White** (`card`): every card, table, stat tile, active tab, preview tile, and the bought-leg point fill on curves. The step badge's numeral is also white.
 - **Ink** (`ink`): primary text, the wordmark, tickers, money figures, and the ring around sold-leg points. Lime always carries ink text.
 - **Ink Two** (`ink-2`): secondary text, captions, column headers, the "sell" leg label, pill-quiet text, nav links, and chart axis labels. Tinted from the ground hue: 7.5:1 on white, 6.4:1 on the ground.
-- **Ink Three** (`ink-3`): icon tint only (the paid-row lock glyph, the "isn't" cross icon). It fails AA as text on the ground and is never used as text.
+- **Ink Three** (`ink-3`): icon tint only (the "isn't" cross icon). It fails AA as text on the ground and is never used as text.
 - **Hairline** (`line`): 1px table rules, 1.5px outlines on secondary/ghost buttons, preview tiles and the curve box, and the dashed baseline in every payoff SVG.
 - **Mini Bar Deep** (`mini-bar-deep`): a darker bar/dot fill used inside the mini mocks and as the dotted SPY comparison curve. It exists in the build as an untokenized literal `#D9D2E3` reused three times; promote it to a custom property before reusing it in the app.
 
@@ -347,7 +347,7 @@ A restrained two-accent palette on tinted neutrals: violet does structure, chart
 
 **The Tinted Gray Rule.** No neutral gray anywhere. Every gray in the system is warmed toward the ground's lilac hue (`ink-2`, `ink-3`, `line`, `ground-deep`).
 
-**The Profit / Loss Rule** (decided 2026-09-12 in the Screener shape). Profit is `profit` ink `#1F7A4D` on `profit-tint` `#DDF3E6`; loss is `loss` ink `#C8325A` on `loss-tint` `#FBE3E9`. Both clear 4.5:1 on white and read apart from violet (structure) and lime (action). They color only realized or projected P&L: Tradebook outcomes, Performance, the loss zone of a payoff curve, and the error state of a field (loss ink only). Never chrome, never a border on a card, never color alone: every P&L value carries a sign or a word, every zone a label. Borderline probability is a quiet pill, not a tint. **On the loss tint, text uses `loss-ink` `#A8264B`** (added 2026-09-13 in the login pass): `loss` on `loss-tint` measures 4.25:1, under the floor for small text, while `loss-ink` clears 5.67:1 there and 6.9:1 on white. `loss` stays the ink for P&L figures on white and for the error border of a field.
+**The Profit / Loss Rule** (decided 2026-09-12 in the Screener shape). Profit is `profit` ink `#1F7A4D` on `profit-tint` `#DDF3E6`; loss is `loss` ink `#C8325A` on `loss-tint` `#FBE3E9`. Both clear 4.5:1 on white and read apart from violet (structure) and lime (action). They color only realized or projected P&L: Tradebook outcomes, the loss zone of a payoff curve, and the error state of a field (loss ink only). Never chrome, never a border on a card, never color alone: every P&L value carries a sign or a word, every zone a label. Borderline probability is a quiet pill, not a tint. **On the loss tint, text uses `loss-ink` `#A8264B`** (added 2026-09-13 in the login pass): `loss` on `loss-tint` measures 4.25:1, under the floor for small text, while `loss-ink` clears 5.67:1 there and 6.9:1 on white. `loss` stays the ink for P&L figures on white and for the error border of a field.
 
 ## Typography
 
@@ -442,7 +442,7 @@ Tactile and calm: everything is a white card or a tile within one, buttons lift 
 ### Pills
 - **Style:** inline-flex, 5px 12px padding, 0.8rem Figtree 600, tracking 0.01em, 24px radius, 6px internal gap.
 - **Default:** `violet-soft` background, violet text — labels such as "Expires Oct 17" and "Sample setup · illustrative".
-- **Quiet:** `ground-deep` background, `ink-2` text — secondary facts ("5 weeks") and the "Paid" tag.
+- **Quiet:** `ground-deep` background, `ink-2` text — secondary facts ("5 weeks").
 - **Lime:** lime background, ink text — "Free" tags only, plus the one result-line flourish at 0.9rem / 8px 14px.
 - **In tabs:** 2px 9px padding at 0.72rem.
 
@@ -459,11 +459,11 @@ Tactile and calm: everything is a white card or a tile within one, buttons lift 
 
 ### Navigation
 - **Landing header:** 24px block padding; brand lockup left (28px three-bar mark + "Luo Capital" in display 700 at 1.15rem); center links in Figtree 500 `ink-2`, hover violet, no underline, 32px gaps; a ghost "Run a free scan" button right. Links hide under 760px.
-- **Tab strip (the app's navigation grammar):** a `ground` bar with 6px padding and an 18px radius holding equal-flex tabs; each tab is Bricolage 700 at 1rem, `ink-2`, 12px 14px padding, 12px radius, with a trailing Free/Paid pill. The active tab is white with ink text and the Rest shadow — a card sitting in a tray. Tabs wrap two-up under 640px at 10px 8px padding and 0.95rem, text allowed to break. This bar is literally the app shell: Screener · Tradebook · Picks · Performance.
+- **Tab strip (the app's navigation grammar):** a `ground` bar with 6px padding and an 18px radius holding equal-flex tabs; each tab is Bricolage 700 at 1rem, `ink-2`, 12px 14px padding, 12px radius. The active tab is white with ink text and the Rest shadow — a card sitting in a tray. Tabs wrap two-up under 640px at 10px 8px padding and 0.95rem, text allowed to break. This bar is literally the app shell: Screener · Tradebook.
 
 ### Preview Tile and Mini Mock
 - **Preview tile:** white, 1.5px `line` border, 18px radius, 16px padding, vertical stack with 12px gaps: mini mock on top, title (display 700 at 1.25rem), then a 0.95rem `ink-2` paragraph. No shadow, no hover.
-- **Mini mock:** a `ground` panel, 12px radius, 12px padding, 96px min-height, rows of 8px-gap items: 8px-tall 999px bars in `line` (a `short` bar is 40% wide; `ink` variant uses `mini-bar-deep`), 10px violet dots (`quiet` variant `mini-bar-deep`), 16px-tall chips at 0.66rem 700 in violet-on-`violet-soft` (`ok` = lime/ink, `mute` = `ground-deep`/`ink-2`), and a 14px `ink-3` lock glyph on paid rows. The Performance mini is two crossing curves at 3.5px stroke, round caps: violet solid and `mini-bar-deep` dotted (`1 7` dash), ending level.
+- **Mini mock:** a `ground` panel, 12px radius, 12px padding, 96px min-height, rows of 8px-gap items: 8px-tall 999px bars in `line` (a `short` bar is 40% wide; `ink` variant uses `mini-bar-deep`), 10px violet dots (`quiet` variant `mini-bar-deep`), 16px-tall chips at 0.66rem 700 in violet-on-`violet-soft` (`ok` = lime/ink, `mute` = `ground-deep`/`ink-2`).
 
 ### Setup Card (signature)
 The hero cluster's front card and the "What a scan hands you" card are the same object at two densities. Header row: ticker (display 800) left, meta in `ink-2` at 0.85rem right (date · weeks · stock price). Credit: display 800 at 2.2rem (hero) with a body-face caption. Then either a 2×2 KPI grid (Credit collected highlighted `violet-soft`, Max profit, P(max profit), Collateral; keys 0.8rem 600, values display 800 at 1.6rem) or straight to the leg list. **Leg rows:** `ground` tiles, 24px radius, 8px 12px padding (10px 14px on the setup card), flex space-between, 0.9rem, 6px gaps; the leg label leads with "Buy" in violet 600 or "Sell" in `ink-2` 600, the price trails at 600 with its side ("$11.40 ask" / "$6.20 bid"); on the setup card a small `ink-2` 0.8rem caption sits under the label ("you pay the ask" / "you collect the bid"). **Downside block:** a 1px `line` top rule, 16px above and below, 0.92rem `ink-2` with ink 600 figures: breakeven and the worst case in plain dollars. Stat row (hero variant): 16px gaps, 0.9rem, `ink-2` keys with ink 600 values.
@@ -504,8 +504,6 @@ A card laid out as a column with 16px gaps: a 36px violet circle badge (white di
 ### Carrying this into the app
 - **Screener** → the ranked table card (with a real selected-row state, to be defined), the setup card as the detail band, the leg rows with pay/collect captions, default pills for the scan-set chips and quiet pills for facts, the primary lime button for Run Scan (one per screen), ghost buttons for header actions, and the tab strip as the shell.
 - **Tradebook** → the ranked table's structure plus a status chip column (the "graded" / "open" chips from the Tradebook mini are the seed), and the profit/loss pair once defined (open token).
-- **Picks** → the setup dashboard (leg tiles, curve box, stat grid with gauge) as the per-pick page, and the lock glyph in `ink-3` for gated rows.
-- **Performance** → the two-curve chart from the Performance mini scaled up: violet solid for the book, `mini-bar-deep` dotted for SPY, round caps, ending level, inside a curve box; stat cards for the headline figures.
 - **Everywhere** → 24px outer radius with 18 / 12 derived inner radii; ground tiles inside white cards; money in ink, display 800, tabular, with a caption beneath.
 
 ### Copy conventions (decided 2026-09-15 in the Upside shape)

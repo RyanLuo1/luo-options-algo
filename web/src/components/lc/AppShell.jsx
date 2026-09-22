@@ -1,13 +1,13 @@
 import { useNavigate } from 'react-router-dom'
-import { Pill, LockIcon } from './ui'
 import { TABS } from './format'
 
-// The four-tab app shell (DESIGN.md tab strip). Tradebook is a route; Picks and
-// Performance are locked for the free plan and open a teaser in the content
-// area (App owns `activeTab`). The strip is a real tablist.
+// The app shell (DESIGN.md tab strip): Screener · Tradebook. Tradebook is a route;
+// App owns `activeTab`. The strip is a real tablist. `plan` is accepted and
+// deliberately renders nothing: the membership gate is built last (2026-09-22).
 
 export default function AppShell({ activeTab, onTabChange, plan = 'free', marketOpen, lastRun, onLogout, children }) {
   const navigate = useNavigate()
+  void plan   // dormant entitlement claim — see web/src/lib/entitlements.js
 
   function pick(tab) {
     if (tab.href) { navigate(tab.href); return }
@@ -45,7 +45,6 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
                   className={`flex items-center gap-2 h-10 px-3.5 max-lc:px-2.5 max-lc:gap-1.5 rounded-lc-half font-display font-bold text-[1rem] whitespace-nowrap transition-colors
                     ${active ? 'bg-lc-card text-lc-ink shadow-lc' : 'text-lc-ink-2 hover:text-lc-ink'}`}
                 >
-                  {tab.locked && <LockIcon className="w-3.5 h-3.5 text-lc-ink-3" />}
                   {tab.label}
                 </button>
               )
@@ -55,7 +54,6 @@ export default function AppShell({ activeTab, onTabChange, plan = 'free', market
           {/* Status cluster */}
           <div className="flex items-center gap-3 max-lc:gap-2 shrink-0 justify-self-end">
             <MarketBadge open={marketOpen} lastRun={lastRun} />
-            <Pill tone="quiet" className="whitespace-nowrap" aria-label={`Plan: ${plan}`}>{plan === 'paid' ? 'Paid plan' : 'Free plan'}</Pill>
             <button
               type="button"
               onClick={onLogout}

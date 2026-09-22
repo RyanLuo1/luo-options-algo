@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabase'
 import useAuth from '../hooks/useAuth'
 import { clearScreenerSession } from '../lib/sessionState'
 import AppShell from '../components/lc/AppShell'
-import LockedTeaser from '../components/lc/LockedTeaser'
 import { Button, Pill, XIcon } from '../components/lc/ui'
 import { fmtMoney0, fmtMoney2, fmtPct0, expiryInfo, shortsWorthless, pMaxApprox, pPutAssigned } from '../components/lc/format'
 
@@ -123,9 +122,6 @@ export default function TradePage() {
         </div>
       </AppShell>
     )
-  }
-  if (activeTab !== 'screener' && activeTab !== 'tradebook') {
-    return <AppShell {...shellProps}><LockedTeaser tab={activeTab} /></AppShell>
   }
 
   const exp = expiryInfo(triplet.expiration)
