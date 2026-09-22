@@ -12,7 +12,8 @@ import { BASE, OUT_DIR, ENV, log, finish, makeAccount, cleanupAccount, signIn, r
 mkdirSync(OUT_DIR, { recursive: true })
 const acct = await makeAccount('liq')
 const SUPABASE_URL = ENV.SUPABASE_URL || ENV.VITE_SUPABASE_URL, ANON = ENV.VITE_SUPABASE_ANON_KEY
-const TICKERS = 'MU, TSM, NVDA', ZERO = 'MU', WEEKS = [7, 8]
+// The window moves with the market: override with LIQ_TICKERS / LIQ_ZERO / LIQ_WEEKS (e.g. LIQ_WEEKS=7,9 LIQ_ZERO=META).
+const TICKERS = process.env.LIQ_TICKERS || 'MU, TSM, NVDA', ZERO = process.env.LIQ_ZERO || 'MU', WEEKS = (process.env.LIQ_WEEKS || '7,8').split(',').map(Number)
 
 const browser = await chromium.launch()
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
