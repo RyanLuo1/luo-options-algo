@@ -64,6 +64,20 @@ try {
   log('Upside is a sorted list, not a ranking: heading, status, no numerals, no lime', /Upside setups/.test(await page.textContent('h2')) && /Sorted by max profit per \$ of collateral/.test(await body()) && (await page.locator('tbody tr[data-kind="best"] td:first-child span.bg-lc-lime').count()) === 0 && (await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] td:first-child')].every(td => td.textContent.trim() === '·'))))
   const order = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind="best"] [role="img"]')].map(el => +el.getAttribute('aria-label').match(/(\d+)%$/)[1]))
   log('Upside heads are ordered by their own metric', order.every((v, i) => i === 0 || v <= order[i - 1]), order.join(' ≥ '))
+  // every row, not just the heads: the flat list is non-increasing in max profit ÷ collateral
+  await page.getByRole('button', { name: 'Flat list' }).click(); await page.waitForTimeout(200)
+  const flat = await page.evaluate(() => [...document.querySelectorAll('tbody tr[data-kind] [role="img"]')].map(el => +el.getAttribute('aria-label').match(/(\d+)%$/)[1]))
+  log('Upside: every row is non-increasing in max profit ÷ collateral (flat list)', flat.length > 1 && flat.every((v, i) => i === 0 || v <= flat[i - 1]), `${flat.length} rows`)
+  await page.getByRole('button', { name: 'Best per ticker' }).click(); await page.waitForTimeout(200)
+  // and the API itself orders Upside that way (collateral = put strike), Income by the incumbent score
+  const apiOrder = await page.evaluate(async () => {
+    const run = async body => (await (await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json()).ranked
+    const up = await run({ tickers: ['MU'], mode: 'upside', weeks_min: 4, weeks_max: 6, min_premium: 0, min_upside: 0 })
+    const inc = await run({ tickers: ['MU'], mode: 'income', weeks_min: 4, weeks_max: 6 })
+    const m = r => (r.net_premium + r.spread_width) / r.leg_c_strike
+    return { up: up.length, upSorted: up.every((r, i) => i === 0 || m(r) <= m(up[i - 1]) + 1e-12), inc: inc.length, incSorted: inc.every((r, i) => i === 0 || r.score <= inc[i - 1].score + 1e-12) }
+  })
+  log('the API orders Upside by max profit ÷ collateral and Income by score', apiOrder.upSorted && apiOrder.incSorted, JSON.stringify(apiOrder))
   log('the metric bar is max profit per $ of collateral', (await page.locator('[role="img"][aria-label^="Max profit per $ of collateral"]').count()) > 0)
   log('the Move to max column is present', (await page.getByRole('button', { name: /Move to max/ }).count()) === 1 && /\+\d+\.\d%/.test(await page.textContent('tbody')))
   const up = await page.evaluate(() => { const r = document.querySelector('tbody tr[data-selected="true"]'); return { db: +r.dataset.db } })

@@ -492,7 +492,15 @@ def run():
                     relaxed[ticker] = _tier1_rows(chains, ticker, price, week_exps, float(requested_min_prem),
                                                   float(requested_min_pp), scan_kwargs)
 
-        ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
+        # Income ranks by the incumbent score (credit ÷ width) — unchanged. Upside's list is ordered by
+        # its own metric, max profit ÷ collateral with collateral = the put strike (the product's single
+        # definition; the bar, the column and the Tier 1 rows use the same), so the API order, the logged
+        # rank and the table agree (research review, 2026-09-22: the score is ~0 for wide setups, so
+        # ordering Upside by it was noise). Web-path ordering only; nothing here writes to the corpus.
+        if requested_mode == "upside":
+            ranked = sorted(all_triplets, key=lambda t: (t["net_premium"] + t["spread_width"]) / t["leg_c_strike"], reverse=True)
+        else:
+            ranked = sorted(all_triplets, key=lambda t: t["score"], reverse=True)
         tickers_used    = sorted(tickers_scanned)
         tickers_skipped = [t for t in tickers if t not in tickers_scanned]
 
