@@ -21,7 +21,7 @@ export default function useOptionsData(mode = 'income') {
   const [error,   setError]   = useState(null)  // string or null
 
   // Persist scan results so they survive in-session navigation (/, /trade, /tradebook).
-  // Cleared when the tab closes (sessionStorage default) or on logout (Header).
+  // Cleared when the tab closes (sessionStorage default) or on logout (AppShell/pages).
   useEffect(() => {
     saveScreenerResults({ results })
   }, [results])

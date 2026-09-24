@@ -302,10 +302,8 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/view_sector_scans.py`      | Read-only   | Any time — review a day's sector scans (status + picks per sector/slot) |
 | `scripts/run_sector_scan.sh`        | Wrapper     | Cron only — runs `sector_scan.py` per slot with ET-time/DST gating + logging |
 | `scripts/extract_quotes.py`         | Writes files| Per trading day — stream the OPRA quotes flat file → `data/extracts/DATE.parquet` (gitignored) |
-| `scripts/extract_catchup.sh`        | Wrapper     | **Legacy — unscheduled** former Mac launchd catch-up wrapper; kept for reference (see Scheduled Automation) |
 | `scripts/ec2_extract_catchup.sh`    | Wrapper     | EC2 cron (14:05 ET Tue–Sat, ET-gated dual UTC lines, flock) — extract+validate as flat files publish → `/home/ubuntu/logs/extract_catchup.log` |
 | `scripts/replay_scan.py`            | **Writes**  | B1b backtest replay — scan a historical (date, slot) from extracts → `ml_dataset` `source='backtest_open'/'backtest_close'` (default dry-run; `--write` to persist) |
-| `scripts/run_ml_backfill.sh`        | Wrapper     | **Legacy — unscheduled** former Mac launchd nightly-backfill wrapper; kept for reference (see Scheduled Automation) |
 | `scripts/ec2_ml_backfill.sh`        | Wrapper     | EC2 cron (18:30 ET Mon–Fri, ET-gated dual UTC lines) — nightly `backfill_ml_outcomes.py` → `/home/ubuntu/logs/ml_backfill.log` |
 | `scripts/validate_extract.py`       | Read-only   | After an extraction — integrity + REST cross-check + ml_dataset comparison |
 | `scripts/backfill_outcomes.py`      | **Writes**  | After options expire — populates `trade_outcomes` (tradebook trades) |
@@ -318,6 +316,9 @@ First match wins — order is load-bearing and matches the SQL `case` block in `
 | `scripts/blend_candidate_eval.py`   | Read-only   | The prespecified blend's single run (REJECTED 2026-09-07 — do not iterate) |
 | `scripts/phase_e_sizing_sim.py`     | Read-only   | Per-ticker caps × equal-collateral sizing on the v1 best book |
 | `scripts/risk_adjusted_metrics.py`  | Read-only   | Portfolio-level Sharpe/Sortino/DD (settle-dated; DD is an optimistic bound) |
+| `scripts/upside_evaluation.py`      | Read-only   | Upside-variant (backtest4) evaluation — three rankings vs random, income comparison |
+| `scripts/gate_evaluation.py`        | Read-only   | Probability-gate (backtest5) evaluation — three policies × two rankings |
+| `scripts/v3_evaluation.py`          | Read-only   | Universe-expansion (backtest3) evaluation — REJECTED verdict, 118 stands |
 
 ### Universe Builder — `scripts/build_universe.py` → `data/universe.json`
 
@@ -743,7 +744,7 @@ Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`
 
 ## Scheduled Automation (who runs what, where)
 
-**ALL scheduled automation lives on EC2 (cron). The Mac is interactive-only** — no launchd/cron jobs. (Decided 2026-08-03: macOS TCC denies cron AND launchd agents Full Disk Access for files under `~/Desktop`, so Mac scheduled jobs silently never ran; both `com.luocapital.*` LaunchAgents are permanently unloaded — the plists may still sit in `~/Library/LaunchAgents/` but nothing is bootstrapped. Do not re-load them; schedule on EC2 instead.)
+**ALL scheduled automation lives on EC2 (cron). The Mac is interactive-only** — no launchd/cron jobs. (Decided 2026-08-03: macOS TCC denies cron AND launchd agents Full Disk Access for files under `~/Desktop`, so Mac scheduled jobs silently never ran. **Cleanup completed 2026-09-24:** both `com.luocapital.*` LaunchAgents were found still bootstrapped and failing daily on the TCC denial — they were booted out via `launchctl bootout`, the plists deleted from `~/Library/LaunchAgents/`, and the legacy wrapper scripts removed from the repo (git history preserves them). Nothing Mac-scheduled remains; schedule on EC2 only.)
 
 | Job | Scheduler | Schedule | Script | Log (EC2) |
 |---|---|---|---|---|
@@ -766,7 +767,7 @@ Two scan-provenance columns were added later (see `docs/scan_history_schema.sql`
 - **(f) Outcome backfill** over the replay rows: `scripts/backfill_ml_outcomes.py` (idempotent, yfinance-first closes).
 - **(g) Phase C opens** — descriptive analytics per `docs/RANKER_SPEC.md`, reading the labeled `ml_dataset`.
 
-All four wrappers share the same pattern: UTC box without `CRON_TZ` → cron fires at both the EDT and EST UTC times, the wrapper gates on the real ET clock, exactly one fire proceeds per day; always `exit 0`; size-capped logs. The extraction wrapper additionally holds a `flock` (multi-hour runs must not overlap) and skips if < 5 GB free on `/`. The extractor needs `boto3` + `pyarrow` in the EC2 venv and the `MASSIVE_S3_*` keys in the EC2 `.env` (both present since 2026-08-03). **EC2 S3 throughput caveat:** files.massive.com serves ~3 MB/s per stream to EC2 — a single day-file (~130–180 GB) takes many hours; the daily one-file cadence absorbs this, and the flock makes a long run safe. Extracts accumulate on EC2 under `data/extracts/` (~65–70 MB/day + day_aggs); rsync down to the Mac when a replay needs them. The Mac's legacy wrappers (`scripts/extract_catchup.sh`, `scripts/run_ml_backfill.sh`) remain in the repo for reference but are unscheduled everywhere.
+All four wrappers share the same pattern: UTC box without `CRON_TZ` → cron fires at both the EDT and EST UTC times, the wrapper gates on the real ET clock, exactly one fire proceeds per day; always `exit 0`; size-capped logs. The extraction wrapper additionally holds a `flock` (multi-hour runs must not overlap) and skips if < 5 GB free on `/`. The extractor needs `boto3` + `pyarrow` in the EC2 venv and the `MASSIVE_S3_*` keys in the EC2 `.env` (both present since 2026-08-03). **EC2 S3 throughput caveat:** files.massive.com serves ~3 MB/s per stream to EC2 — a single day-file (~130–180 GB) takes many hours; the daily one-file cadence absorbs this, and the flock makes a long run safe. Extracts accumulate on EC2 under `data/extracts/` (~65–70 MB/day + day_aggs); rsync down to the Mac when a replay needs them. The Mac's legacy wrappers were removed 2026-09-24 (git history preserves them; the EC2 wrappers cite them as port source).
 
 ---
 

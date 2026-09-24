@@ -6,7 +6,7 @@
  *   - luo-capital-screener-results  : useOptionsData scan response (result)
  *
  * State survives in-session navigation (e.g. screener → /trade → back) but is
- * wiped on logout (Header) or when the tab closes (browser default).
+ * wiped on logout (AppShell/pages) or when the tab closes (browser default).
  */
 
 const STATE_KEY   = 'luo-capital-screener-state'
