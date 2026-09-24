@@ -218,8 +218,8 @@ export default function App() {
     setActiveTab('screener')
     setLastRunTickers(tickers)
     // Upside is a calculator: the probability gate is off (0); the gauge still shows every chance per setup.
-    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit: mode === 'upside' ? 0 : MIN_P_PROFIT, mode, minUpside, ...overrides })
-  }, [loading, canRun, tickerInput, watchlists, weeksMin, weeksMax, minPremium, mode, minUpside, runScan])
+    runScan({ tickers, weeksMin, weeksMax, minPremium, minPProfit: mode === 'upside' ? 0 : MIN_P_PROFIT, mode, minUpside, minRoc: mode === 'income' ? minRoc : undefined, ...overrides })
+  }, [loading, canRun, tickerInput, watchlists, weeksMin, weeksMax, minPremium, mode, minUpside, minRoc, runScan])
   const handleRun = useCallback(() => runWith(), [runWith])
 
   // No-results actions: apply the lower threshold to the controls AND rerun with it.
@@ -238,7 +238,7 @@ export default function App() {
     const runMode = rerun.mode === 'upside' ? 'upside' : 'income'
     if (runMode !== mode) setModeRaw(runMode)
     setActiveTab('screener'); setLastRunTickers(tickers); setDismissedError(null)
-    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: runMode === 'upside' ? 0 : MIN_P_PROFIT, mode: runMode, minUpside })
+    runScan({ tickers, weeksMin: rerun.weeksMin ?? weeksMin, weeksMax: rerun.weeksMax ?? weeksMax, minPremium: rerun.minPremium ?? minPremium, minPProfit: runMode === 'upside' ? 0 : MIN_P_PROFIT, mode: runMode, minUpside, minRoc: runMode === 'income' ? minRoc : undefined })
     navigate(location.pathname, { replace: true, state: null })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rerun])

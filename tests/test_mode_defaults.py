@@ -107,6 +107,7 @@ class TestDefaultPathByteIdentity(unittest.TestCase):
             body = "\n".join(c for c in calls if not c.startswith("scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None"))
             self.assertNotIn("leg_b_delta", body, rel)
             self.assertNotIn("min_upside", body, rel)
+            self.assertNotIn("min_roc", body, rel)
 
 
 class TestUpsidePreset(unittest.TestCase):

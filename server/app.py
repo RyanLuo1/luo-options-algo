@@ -60,7 +60,7 @@ def _zero_reason(stats, evaluated, census=None):
     when given, the liquidity census (see screener.CENSUS_KEYS).
     code: no_chain | wide_spread | no_quote | untraded | placeholder_iv | no_triplet | no_legs
           | min_credit | min_p | min_upside | min_credit_or_p, with the counters (+ `census`)."""
-    prem, pp, up = stats.get("below_min_premium", 0), stats.get("below_min_p", 0), stats.get("below_min_upside", 0)
+    prem, pp, up, roc = stats.get("below_min_premium", 0), stats.get("below_min_p", 0), stats.get("below_min_upside", 0), stats.get("below_min_roc", 0)
     c = census or {}
     if evaluated == 0:
         if stats.get("no_chain", 0) and not stats.get("no_legs", 0):
@@ -75,6 +75,8 @@ def _zero_reason(stats, evaluated, census=None):
             buckets = {"wide_spread": c.get("wide_spread", 0), "no_quote": c.get("no_quote", 0) + c.get("no_greeks", 0),
                        "untraded": c.get("untraded", 0), "placeholder_iv": c.get("placeholder_iv", 0)}
             code = max(buckets, key=buckets.get)   # the guard that killed the most contracts
+    elif roc:
+        code = "min_roc"                     # the floor is the last gate: these candidates cleared everything else, so it is what emptied the list
     elif up and not prem and not pp:
         code = "min_upside"
     elif prem and not pp:
@@ -84,7 +86,7 @@ def _zero_reason(stats, evaluated, census=None):
     else:
         code = "min_credit_or_p"
     out = {"code": code, "evaluated": evaluated, "below_min_premium": prem, "below_min_p": pp,
-           "below_min_upside": up, "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
+           "below_min_upside": up, "below_min_roc": roc, "no_legs": stats.get("no_legs", 0), "no_chain": stats.get("no_chain", 0)}
     if census is not None:
         out["census"] = dict(census)
     return out
@@ -238,7 +240,7 @@ def _get_market_context():
 def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
                  weeks_min, weeks_max, min_premium, min_p_profit,
                  ranked, total_evaluated, market_open, elapsed_ms,
-                 error_message, market_context, mode="income"):
+                 error_message, market_context, mode="income", min_roc=0.0):
     """
     Persist a scan run and all produced triplets.
 
@@ -271,7 +273,20 @@ def log_scan_run(*, user_id, tickers_requested, tickers_used, tickers_skipped,
         # scans, so income logging is byte-identical before and after the column exists.
         if mode != "income":
             run_row["mode"] = mode
-        run_resp = _supabase.table("scan_runs").insert(run_row).execute()
+        # scan_runs.min_roc (docs/scan_roc_migration.sql): the return-on-collateral floor the run was
+        # scanned under, written only when a floor was set. Until the column exists the insert is
+        # retried without it (logging is best-effort and must never lose the run).
+        if min_roc and float(min_roc) > 0:
+            run_row["min_roc"] = float(min_roc)
+        try:
+            run_resp = _supabase.table("scan_runs").insert(run_row).execute()
+        except Exception as e:
+            if "min_roc" in run_row and "min_roc" in str(e):
+                print(f"[scan_runs] min_roc column missing — run docs/scan_roc_migration.sql; logging the run without it ({e})", file=sys.stderr)
+                run_row.pop("min_roc")
+                run_resp = _supabase.table("scan_runs").insert(run_row).execute()
+            else:
+                raise
         if not run_resp.data:
             return None, []
         scan_id = run_resp.data[0]["id"]
@@ -383,6 +398,19 @@ def run():
         if not isinstance(requested_min_upside, (int, float)) or not (0 <= requested_min_upside <= 5):
             return jsonify({"error": "min_upside must be a number between 0 and 5"}), 400
         scan_kwargs["min_upside"] = float(requested_min_upside)
+    # Income only: the return-on-collateral floor (credit ÷ put strike, per share) is a request
+    # parameter, applied on the server before sorting and logging so the logged list is the shown
+    # list (provenance fix, 2026-09-24). Default 0 = no floor; the cron/replay/CLI never pass it.
+    requested_min_roc = 0.0
+    if requested_mode == "income" and "min_roc" in body:
+        requested_min_roc = body.get("min_roc")
+        if not isinstance(requested_min_roc, (int, float)) or not (0 <= requested_min_roc <= 1):
+            return jsonify({"error": "min_roc must be a number between 0 and 1"}), 400
+        requested_min_roc = float(requested_min_roc)
+        if requested_min_roc > 0:
+            scan_kwargs["min_roc"] = requested_min_roc
+    elif "min_roc" in body:
+        return jsonify({"error": "min_roc is Income-only: Upside has its own floor (min_upside)"}), 400
 
     # ── The liquidity ladder is fixed (display-only, Upside-only): no tier parameter exists,
     #    and an Income request may not ask for relaxation at all.
@@ -516,6 +544,7 @@ def run():
             min_premium        = float(requested_min_prem),
             min_p_profit       = float(requested_min_pp),
             mode               = requested_mode,
+            min_roc            = requested_min_roc,
             ranked             = ranked,
             total_evaluated    = total_evaluated,
             market_open        = is_open,
@@ -576,6 +605,7 @@ def run():
             "weeks_max_used":       requested_weeks_max,
             "min_premium_used":     float(requested_min_prem),
             "min_p_profit_used":    float(requested_min_pp),
+            "min_roc_used":         requested_min_roc,
             "mode_used":            requested_mode,
             "min_upside_used":      scan_kwargs.get("min_upside"),
             "leg_b_delta_used":     list(scan_kwargs.get("leg_b_delta", (0.20, 0.40))),

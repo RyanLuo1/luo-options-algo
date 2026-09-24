@@ -225,7 +225,7 @@ class CachedLiveChains:
 # ── Core scan ──────────────────────────────────────────────────────────────────
 
 def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
-                chain_provider=None, as_of=None, stats=None, census=None,
+                chain_provider=None, as_of=None, stats=None, census=None, min_roc=0.0,
                 leg_b_delta=None, min_upside=0.0):
     """
     Builds all valid triplets for one ticker across the provided expirations.
@@ -277,6 +277,7 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
         as_of = datetime.today().date()
     leg_b_low, leg_b_high = leg_b_delta if leg_b_delta is not None else (LEG_B_DELTA_LOW, LEG_B_DELTA_HIGH)
     upside_gate = float(min_upside or 0.0) > 0.0
+    roc_gate = float(min_roc or 0.0) > 0.0   # Income's return-on-collateral floor (web only); 0 = off, the default path
 
     triplets        = []
     total_evaluated = 0
@@ -285,6 +286,8 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
     stats.update(no_chain=0, no_legs=0, below_min_premium=0, below_min_p=0)
     if upside_gate:
         stats["below_min_upside"] = 0
+    if roc_gate:
+        stats["below_min_roc"] = 0
 
     strike_low  = round(price * 0.70, 2)
     strike_high = round(price * 1.30, 2)
@@ -363,6 +366,13 @@ def scan_ticker(ticker, price, week_exps, min_premium, min_p_profit=None,
                     # both per share — collateral is the put strike (cash-secured).
                     if upside_gate and (net_premium + spread_width) / leg_c["strike"] < min_upside:
                         stats["below_min_upside"] += 1
+                        continue
+
+                    # Income's return-on-collateral floor (off by default): credit ÷ collateral,
+                    # both per share — collateral is the put strike. Applied here so the logged
+                    # list is the shown list (the client re-applies the same rule live).
+                    if roc_gate and net_premium / leg_c["strike"] < min_roc - 1e-9:
+                        stats["below_min_roc"] += 1
                         continue
 
                     triplets.append({

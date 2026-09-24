@@ -56,6 +56,7 @@ export function zeroReasonText(reason, { minCredit, minRocPct, minPPct, minUpsid
   const credit = `$${Number(minCredit).toLocaleString('en-US')}`
   switch (code) {
     case 'roc':             return `no setup cleared the ${minRocPct}% return floor`
+    case 'min_roc':         return `${n('below_min_roc')} candidates cleared ${credit} but not the ${minRocPct}% return floor`
     case 'min_credit':      return Number(minCredit) === 0 ? `${n('below_min_premium')} candidates were all net debits — no true credit structure exists` : Number(minCredit) < 0 ? `${n('below_min_premium')} candidates all cost more than ${fmtMoney0(-Number(minCredit))} to open` : `${n('below_min_premium')} candidates all missed the ${credit} minimum`
     case 'min_p':           return `${n('below_min_p')} candidates cleared ${credit} but failed the scanner’s ${minPPct}% probability rule (shorts expiring worthless, approx.)`
     case 'min_credit_or_p': return `${n('below_min_premium')} candidates missed the ${credit} minimum; ${n('below_min_p')} cleared it but failed the scanner’s ${minPPct}% probability rule`

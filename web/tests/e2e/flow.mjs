@@ -43,6 +43,7 @@ try {
   const sel = await page.evaluate(() => { const r = document.querySelector('tbody tr[data-selected="true"]'); const t = [...r.children].map(td => td.textContent.trim()); return { rank: t[0], ticker: t[1], strikes: t[3] } })
   const panelTicker = (await page.locator('section[aria-label^="Setup detail"]').getAttribute('aria-label')).replace('Setup detail: ', '').split(' ')[0]
   log('selected row drives the panel', sel.ticker === panelTicker, `${sel.ticker} ${sel.strikes} (rank ${sel.rank})`)
+  const shownCount = +(((await page.textContent('body')).match(/(\d[\d,]*) setups? of/) || [])[1] || '').replace(/,/g, '')   // the results header: N setups of M evaluated
   await page.screenshot({ path: `${OUT_DIR}/flow-selected.png` })
 
   await page.getByRole('button', { name: 'Save to Tradebook' }).click()
@@ -58,6 +59,8 @@ try {
   if (acct.id) {
     const db = await rowsFor(acct, 'tradebook', 'ticker,leg_a_strike,leg_b_strike,leg_c_strike,scan_id,result_id')
     log('DB row carries scan_id + result_id provenance', db.length === 1 && !!db[0].scan_id && !!db[0].result_id, JSON.stringify(db[0]))
+    const prov = (await page.textContent('body')).match(/rank (\d+) of (\d+)/)
+    log('the provenance pill’s rank N of M equals the rank and count the table showed (the return floor runs on the server before logging)', !!prov && +prov[1] === +sel.rank && +prov[2] === shownCount, `pill ${prov ? prov[0] : 'missing'} · table rank ${sel.rank} of ${shownCount}`)
   }
 } catch (e) { log('exception', false, e.message); await page.screenshot({ path: `${OUT_DIR}/flow-failure.png` }).catch(() => {}) }
 if (errors.length) console.log('page errors:', errors.join(' | '))

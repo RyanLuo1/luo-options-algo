@@ -35,7 +35,7 @@ export default function useOptionsData(mode = 'income') {
   }, [])
 
   // ── Risk reversal scan ──────────────────────────────────────────────────────
-  const runScan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit, mode: runMode = 'income', minUpside } = {}) => {
+  const runScan = useCallback(async ({ tickers, weeksMin, weeksMax, minPremium, minPProfit, mode: runMode = 'income', minUpside, minRoc } = {}) => {
     setLoading(true)
     setError(null)
 
@@ -48,6 +48,7 @@ export default function useOptionsData(mode = 'income') {
       if (minPProfit !== undefined)          body.min_p_profit = minPProfit
       body.mode = runMode
       if (runMode === 'upside' && minUpside !== undefined) body.min_upside = minUpside
+      if (runMode === 'income' && minRoc !== undefined) body.min_roc = minRoc   // the return floor runs on the server too, so the logged list is the shown list
 
       // Forward the Supabase JWT so the server can attribute this scan in
       // scan_runs (logging is server-side, best-effort).
@@ -110,6 +111,7 @@ export default function useOptionsData(mode = 'income') {
     minPremiumUsed:  result?.min_premium_used ?? null,
     minPProfitUsed:  result?.min_p_profit_used ?? null,
     minUpsideUsed:   result?.min_upside_used ?? null,
+    minRocUsed:      result?.min_roc_used ?? null,
     modeUsed:        result?.mode_used ?? null,
     otherResult,     // the other mode's last result (or null)
     totalEvaluated:  result?.total_evaluated  ?? 0,
