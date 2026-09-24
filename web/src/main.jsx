@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom'
 import './index.css'
@@ -7,7 +7,6 @@ import TradePage from './pages/TradePage.jsx'
 import TradebookPage from './pages/TradebookPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import useAuth from './hooks/useAuth.js'
-import { readStoredTheme } from './hooks/useTheme.js'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -18,26 +17,9 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-// ThemeScope — route-scoped theming (pathless layout route wrapping all pages).
-// /login honors the stored 'luo-theme' preference; every OTHER route force-adds
-// the `dark` class WITHOUT overwriting the stored preference, so the app can
-// never appear light outside /login. Remove the force-dark branch when
-// app-wide light mode ships.
-function ThemeScope() {
-  const { pathname } = useLocation()
-  useEffect(() => {
-    if (pathname === '/login') {
-      document.documentElement.classList.toggle('dark', readStoredTheme() !== 'light')
-    } else {
-      document.documentElement.classList.add('dark')
-    }
-  }, [pathname])
-  return <Outlet />
-}
-
 const router = createBrowserRouter([
   {
-    element: <ThemeScope />,
+    element: <Outlet />,   // one pathless layout route; the app is light-only (the theme path was removed 2026-09-24)
     children: [
       { path: '/login',     element: <LoginPage /> },
       { path: '/app',       element: <ProtectedRoute><App /></ProtectedRoute> },
