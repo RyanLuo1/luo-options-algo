@@ -79,7 +79,7 @@ Undecided product facts (do not invent):
 
 Name: **Trigram** (renamed from Luo Capital 2026-09-22; “Luo Capital” remains the owning entity — maker's mark “Trigram by Luo Capital”). Product label used in the UI: **Options Screener**.
 
-Visual authority (**decided 2026-09-12**): the landing page `design/landing/v1` ("Soft Fintech Cards": warm lilac ground, white 24px cards, violet structure, lime reserved for the one primary action, Bricolage Grotesque + Figtree) is the design system, recorded in `DESIGN.md` and `.impeccable/design.json`. The old app frontend (dark slate, purple accent, JetBrains Mono) is **superseded**, not binding, and is being replaced screen by screen. Existing assets: `web/public/favicon.svg`, `web/public/icons.svg`, `design/landing/v1/hero.svg`. No logo file beyond the favicon exists.
+Visual authority (**decided 2026-09-12**): the landing page `design/landing/v1` ("Soft Fintech Cards": warm lilac ground, white 24px cards, violet structure, lime reserved for the one primary action, Bricolage Grotesque + Figtree) is the design system, recorded in `DESIGN.md`; the app owns its tokens in `web/src/index.css` and `web/tailwind.config.js` (the design tooling's own files are local, untracked). The old app frontend (dark slate, purple accent, JetBrains Mono) is **superseded**, not binding, and is being replaced screen by screen. Existing assets: `web/public/favicon.svg`, `web/public/icons.svg`, `design/landing/v1/hero.svg`. No logo file beyond the favicon exists.
 
 Practical conventions that any replacement should still solve for (functional, not stylistic): money and P&L must be visually distinguishable from action and status color; numeric columns must align (tabular figures).
 

@@ -34,21 +34,12 @@ docs/private/*
 docs/POD_SELECTION_CASE_STUDY.md
 
 # Impeccable (design skill) — ephemeral/runtime state and the vendored detector binary.
-# Tracked: .claude/skills/impeccable/*.md + reference/, .claude/agents/, PRODUCT.md, .impeccable/config.json, .impeccable/live/config.json
-# Design notes stay local (public repo): critique snapshots and surface briefs. design.json + config stay tracked.
-.impeccable/critique/
-.impeccable/surfaces/
-.claude/skills/impeccable/scripts/bin/
-.impeccable/config.local.json
-.impeccable/hook.cache.json
-.impeccable/hook.pending.json
-.impeccable/*.png
-.impeccable/review/
-.impeccable/questions/
-.impeccable/live/sessions/
-.impeccable/live/previews/
-.impeccable/live/cache/
-.impeccable/live/inject-journal.json
+# Design tooling stays local (public repo; internal, not secret): the Impeccable skill, its agents,
+# and every working file under .impeccable/ (design.json, config, critiques, briefs). The app owns its
+# tokens in web/src/index.css + web/tailwind.config.js; DESIGN.md is the human record. Untracked 2026-09-24.
+.claude/skills/impeccable/
+.claude/agents/impeccable-*.md
+.impeccable/
 
 # Screener e2e screenshots (web/tests/e2e/*.mjs write here)
 web/tests/e2e/out/
