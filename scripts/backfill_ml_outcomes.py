@@ -78,21 +78,38 @@ def fetch_unfilled_rows():
     silently froze. Filtering to expired rows server-side shrinks the scan
     to the actionable subset, and keyset pagination (id > last) avoids the
     deep-OFFSET rescans."""
-    today = date.today().isoformat()
-    rows, last_id = [], None
-    while True:
-        q = (supabase.table('ml_dataset').select(_FETCH_COLS)
-             .eq('outcome_filled', False)
-             .lt('expiration', today)
-             .order('id')
-             .limit(_PAGE))
-        if last_id is not None:
-            q = q.gt('id', last_id)
-        batch = q.execute().data or []
-        rows.extend(batch)
-        if len(batch) < _PAGE:
-            return rows
-        last_id = batch[-1]['id']
+    # One equality query per candidate expiration date: each hits the
+    # partial index (docs/ml_dataset_unfilled_index.sql) on its leading
+    # column with no cross-date sort — a range+ORDER BY variant still timed
+    # out against the grown/churned table even with the index. ~430 tiny
+    # queries beat one impossible one.
+    from datetime import timedelta
+    d = date(2025, 8, 1)
+    today = date.today()
+    rows = []
+    while d < today:
+        if d.weekday() in (3, 4):        # expirations are Fridays (holiday weeks: Thursdays)
+            offset = 0
+            while True:
+                # NO ORDER BY, deliberately: any ordering on this predicate
+                # bait-and-switches the planner into a full index walk (an
+                # empty date then takes 8s+ and times out; unordered is
+                # ~0.1s — bisected empirically 2026-09-29). Unordered offset
+                # pages aren't stable across statements, but the run is
+                # idempotent: a slipped row labels on the next nightly run,
+                # and a duplicate is a no-op via the outcome_filled=False
+                # update guard.
+                batch = (supabase.table('ml_dataset').select(_FETCH_COLS)
+                         .eq('outcome_filled', False)
+                         .eq('expiration', d.isoformat())
+                         .range(offset, offset + _PAGE - 1)
+                         .execute().data or [])
+                rows.extend(batch)
+                if len(batch) < _PAGE:
+                    break
+                offset += _PAGE
+        d += timedelta(days=1)
+    return rows
 
 
 def count_unfilled():
