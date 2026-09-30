@@ -61,21 +61,38 @@ from backfill_outcomes import (  # noqa: E402
 
 _PAGE = 1000  # PostgREST caps responses at 1000 rows; page past it
 
+# Only what compute_outcome/build_update/logging consume — select('*') over
+# the grown table was the first half of the 2026-09 statement-timeout crash.
+_FETCH_COLS = ("id,ticker,sector,scan_date,expiration,net_premium,"
+               "leg_a_strike,leg_b_strike,leg_c_strike,is_best_in_sector")
+
 
 def fetch_unfilled_rows():
-    """All ml_dataset rows with outcome_filled = false (paginated)."""
-    rows, offset = [], 0
+    """ml_dataset rows with outcome_filled = false AND expiration already
+    past (the only rows a run can act on), narrow columns, KEYSET-paginated.
+
+    Rewritten 2026-09-29: the original select('*') / no-expiration-filter /
+    OFFSET-pagination version started exceeding Supabase's statement
+    timeout (57014) once the backtest2–5 corpora grew the table to ~450k
+    rows — the nightly cron crashed at fetch and live shadow labeling
+    silently froze. Filtering to expired rows server-side shrinks the scan
+    to the actionable subset, and keyset pagination (id > last) avoids the
+    deep-OFFSET rescans."""
+    today = date.today().isoformat()
+    rows, last_id = [], None
     while True:
-        resp = (supabase.table('ml_dataset').select('*')
-                .eq('outcome_filled', False)
-                .order('id')
-                .range(offset, offset + _PAGE - 1)
-                .execute())
-        batch = resp.data or []
+        q = (supabase.table('ml_dataset').select(_FETCH_COLS)
+             .eq('outcome_filled', False)
+             .lt('expiration', today)
+             .order('id')
+             .limit(_PAGE))
+        if last_id is not None:
+            q = q.gt('id', last_id)
+        batch = q.execute().data or []
         rows.extend(batch)
         if len(batch) < _PAGE:
             return rows
-        offset += _PAGE
+        last_id = batch[-1]['id']
 
 
 def count_unfilled():
