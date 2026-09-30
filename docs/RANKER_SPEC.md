@@ -369,7 +369,16 @@ Prerequisites before running: the CHECK-constraint migration, a `--top-n`
 one month. Extracts, `lib/bs.py`, and the PIT context stack are reused
 unchanged.
 
-## 5c. Phase E shadow clock — STARTED (first shadow scan 2026-09-08)
+## 5c. Phase E shadow clock — STARTED 2026-09-08 · **ENDS 2026-10-22** (data boundary)
+
+> **Program close-out (decided 2026-09-29):** Trigram remains a personal
+> project; the Massive plan is cancelled and live data ends 2026-10-22.
+> The shadow therefore has a fixed end: **the final graded read on
+> Oct 20 (day 42) is the program's closing result** — did the backtest's
+> winner (ROC) hold out-of-sample, stated plainly either way, one-regime
+> caveat attached. An interim read lands Oct 6 (day 28, no decisions).
+> Full calendar: the close-out runbook in CLAUDE.md. No production
+> ranking change ships in the remaining window.
 
 The live scanner logs a **ROC shadow ranking** alongside production
 (deployed 2026-09-06; first scan Tue 2026-09-08 — Mon 09-07 is Labor Day).

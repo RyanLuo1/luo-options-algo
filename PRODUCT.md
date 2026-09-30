@@ -2,6 +2,24 @@
 
 <!-- impeccable:product-schema 1 -->
 
+## Decision (2026-09-29): Trigram is a personal project, not a product
+
+**No paywall, no public launch — decided by the owner 2026-09-29.** The
+Massive Options Advanced plan is cancelled effective that day; live data
+continues through **Oct 22, 2026**, after which the account drops to the
+free tier (end-of-day data only — no live quotes, Greeks, or flat files).
+Consequences recorded here:
+- The public-launch gate checklist is **retired** (its items — data
+  licensing, legal review, de-listing robots, pricing — no longer apply).
+- The flat-membership commercial model and its paywall-day copy notes are
+  **removed**; nothing will ever be gated. The dormant entitlement
+  scaffold in code stays dormant.
+- The site remains live as an **unlisted demonstration** (end-of-day data
+  after Oct 22, with a banner saying so). Sign-up stays open; nothing is
+  promoted.
+- The research program closes with the shadow period's final graded read
+  (Oct 20) — see RANKER_SPEC §5c and the close-out runbook in CLAUDE.md.
+
 ## Platform
 
 web
@@ -23,13 +41,7 @@ Access model (**decided 2026-09-12**): **sign-up is open, unlisted, and unpromot
 
 **Picks and Performance are removed from the product** (they were a curated model book and its return chart, planned as a paid tier). No tab, no teaser, no landing card, no copy; `/picks` and `/performance` redirect to `/app`. The research behind them — the shadow logging in the live scanner, the model book, the findings in `docs/private/` — **continues untouched as internal work and never becomes a user-facing surface.**
 
-**Commercial model:** a **flat membership for all features**, with the paywall built **last**. Until it ships, every feature is free to every account. **Copy that changes on paywall day** (nothing else on the public surfaces refers to a tier): the sign-up honesty line — "Free account. The screener and tradebook are yours — no card, no trial clock." — and the landing page's "free" language ("Run a free scan", "Free to use", "Both are yours with a free account", "The screener is free. No returns promised, no countdown."). They are true today and must be rewritten together when the membership gate ships.
-
-**Public-launch gate** (checklist; nothing on it is started, and it exists so the list cannot drift):
-- [ ] Massive business-tier conversation (data licensing for a public product)
-- [ ] Legal review of the disclosures (risk statement, "not advice", options-specific language)
-- [ ] Remove `robots.txt` Disallow and the landing page's `noindex, nofollow` meta (together)
-- [ ] Pricing decided for the membership (flat, all features; the paywall is built last)
+**Commercial model: none (2026-09-29).** The earlier flat-membership plan and its paywall-day copy notes, and the public-launch gate checklist, are retired — see the Decision section at the top. The "free" language on the public surfaces is now simply permanent truth.
 
 ## Product Purpose
 
@@ -73,7 +85,6 @@ Constraints future work must respect:
 
 Undecided product facts (do not invent):
 - Phase 2 signal delivery (alerts, scheduled scrapes) has no committed channel or cadence.
-- The membership's price and terms (the model is decided: flat, all features, paywall last).
 
 ## Brand Commitments
 
